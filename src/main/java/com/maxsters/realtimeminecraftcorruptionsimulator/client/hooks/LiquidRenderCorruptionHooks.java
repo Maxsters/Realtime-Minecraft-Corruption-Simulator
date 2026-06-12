@@ -21,7 +21,7 @@ public final class LiquidRenderCorruptionHooks {
             return false;
         }
 
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         float world = stack.intensity(CorruptionSurface.WORLD_RENDER) * 0.52F;
         float texture = stack.intensity(CorruptionSurface.TEXTURE_MEMORY) * 0.64F;
         float intensity = Mth.clamp(Math.max(world, texture), 0.0F, 1.0F);

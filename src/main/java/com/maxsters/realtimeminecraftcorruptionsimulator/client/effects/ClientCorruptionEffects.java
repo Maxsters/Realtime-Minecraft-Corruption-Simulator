@@ -17,6 +17,14 @@ public final class ClientCorruptionEffects {
             return CorruptionEffectStack.local(0);
         }
 
+        return fromClientSnapshot();
+    }
+
+    public static CorruptionEffectStack currentForWorldRendering() {
+        return fromClientSnapshot();
+    }
+
+    private static CorruptionEffectStack fromClientSnapshot() {
         CorruptionProfileSnapshot snapshot = ClientCorruptionState.snapshot();
         return snapshot == null ? CorruptionEffectStack.local(0) : CorruptionEffectStack.from(snapshot);
     }

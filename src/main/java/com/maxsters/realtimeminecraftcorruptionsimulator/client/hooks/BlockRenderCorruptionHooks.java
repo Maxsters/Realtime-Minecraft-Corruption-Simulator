@@ -17,7 +17,7 @@ public final class BlockRenderCorruptionHooks {
     }
 
     public static boolean beginTesselate(BlockState state, BlockPos pos, PoseStack poseStack) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         if (state == null || pos == null || poseStack == null || !stack.activeOrExtreme(CorruptionSurface.BLOCK_COLLISION)) {
             return false;
         }

@@ -112,7 +112,7 @@ public final class ItemTextureCorruptionManager {
             return quads;
         }
 
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = state == null ? ClientCorruptionEffects.current() : ClientCorruptionEffects.currentForWorldRendering();
         if (!stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)
                 && !stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)
                 && !stack.activeOrExtreme(CorruptionSurface.LIGHT_FIELD)) {
@@ -120,7 +120,7 @@ public final class ItemTextureCorruptionManager {
         }
 
         CorruptedItemBakedModel wrapper = runtimeBlockWrapper(model, state);
-        return wrapper == null ? quads : wrapper.transform(quads);
+        return wrapper == null ? quads : wrapper.transform(quads, stack);
     }
 
     public static BakedQuad corruptRenderedBlockQuad(@Nullable BlockState state, BakedQuad quad) {
@@ -128,7 +128,7 @@ public final class ItemTextureCorruptionManager {
             return quad;
         }
 
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         if (!stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)
                 && !stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)) {
             return quad;
@@ -289,7 +289,8 @@ public final class ItemTextureCorruptionManager {
             if (delegate == null) {
                 return Collections.emptyList();
             }
-            return transform(withReturnedQuadHookSuppressed(() -> delegate.getQuads(state, side, random, data, renderType)));
+            CorruptionEffectStack stack = state == null ? ClientCorruptionEffects.current() : ClientCorruptionEffects.currentForWorldRendering();
+            return transform(withReturnedQuadHookSuppressed(() -> delegate.getQuads(state, side, random, data, renderType)), stack);
         }
 
         @Override
@@ -361,10 +362,13 @@ public final class ItemTextureCorruptionManager {
         }
 
         private List<BakedQuad> transform(List<BakedQuad> quads) {
+            return transform(quads, ClientCorruptionEffects.current());
+        }
+
+        private List<BakedQuad> transform(List<BakedQuad> quads, CorruptionEffectStack stack) {
             for (BakedQuad quad : quads) {
                 rememberAtlasSprite(quad.getSprite());
             }
-            CorruptionEffectStack stack = ClientCorruptionEffects.current();
             if (quads.isEmpty()) {
                 return quads;
             }

@@ -68,7 +68,7 @@ public final class VisualCorruptionManager {
         Map<Holder.Reference<Block>, BlockColor> originalHandlers = snapshotBlockColorHandlers(event.getBlockColors());
         Block[] blocks = ForgeRegistries.BLOCKS.getValues().toArray(Block[]::new);
         event.register((state, level, pos, tintIndex) -> {
-                    CorruptionEffectStack stack = ClientCorruptionEffects.current();
+                    CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
                     boolean active = stack.active(CorruptionSurface.BIOME_TINT);
                     int baseColor = originalBlockColor(originalHandlers, state, level, pos, tintIndex);
                     if (baseColor < 0) {

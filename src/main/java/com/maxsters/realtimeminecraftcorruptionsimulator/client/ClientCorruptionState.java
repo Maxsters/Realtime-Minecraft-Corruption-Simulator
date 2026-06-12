@@ -9,7 +9,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 
 @OnlyIn(Dist.CLIENT)
 public final class ClientCorruptionState {
-    private static CorruptionProfileSnapshot latestSnapshot = localSnapshot();
+    private static volatile CorruptionProfileSnapshot latestSnapshot = localSnapshot();
 
     private ClientCorruptionState() {
     }
