@@ -1,0 +1,31 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.maxsters.realtimeminecraftcorruptionsimulator.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "BoatFluidStateMixin",
+    "ChunkGeneratorMixin",
+    "EntityCollisionMixin",
+    "EntityFluidStateMixin",
+    "FeatureMixin",
+    "NoiseBasedChunkGeneratorMixin",
+    "NoiseRouterMixin",
+    "PathNavigationMixin"
+  ],
+  "client": [
+    "client.BoatRendererMixin",
+    "client.EntityRenderDispatcherMixin",
+    "client.LevelRendererMixin",
+    "client.LiquidBlockRendererMixin",
+    "client.LivingEntityRendererMixin",
+    "client.ModelBlockRendererMixin",
+    "client.ModelPartMixin",
+    "client.SheetedDecalTextureGeneratorMixin",
+    "client.SimpleBakedModelMixin",
+    "client.TerrainParticleMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

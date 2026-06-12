@@ -1,0 +1,21 @@
+# IDE
+.classpath
+.metadata
+.project
+.settings/
+.idea/
+*.iml
+*.ipr
+*.iws
+*.launch
+bin/
+eclipse/
+out/
+
+# Gradle
+.gradle/
+build/
+
+# Forge run output
+run/
+run-data/

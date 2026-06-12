@@ -1,0 +1,80 @@
+package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
+
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ItemTextureCorruptionManager;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.BlockRenderCorruptionHooks;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.block.ModelBlockRenderer;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.BlockAndTintGetter;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraftforge.client.model.data.ModelData;
+import org.spongepowered.asm.mixin.Dynamic;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(ModelBlockRenderer.class)
+public abstract class ModelBlockRendererMixin {
+    @Unique
+    private final ThreadLocal<Boolean> rmc$renderSpaceOffsetApplied = ThreadLocal.withInitial(() -> false);
+
+    @Inject(
+            method = "tesselateBlock(Lnet/minecraft/world/level/BlockAndTintGetter;Lnet/minecraft/client/resources/model/BakedModel;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;ZLnet/minecraft/util/RandomSource;JILnet/minecraftforge/client/model/data/ModelData;Lnet/minecraft/client/renderer/RenderType;)V",
+            at = @At("HEAD"),
+            remap = false,
+            require = 0
+    )
+    private void rmc$beginRenderSpaceOffset(BlockAndTintGetter level, BakedModel model, BlockState state, BlockPos pos, PoseStack poseStack, VertexConsumer consumer, boolean checkSides, RandomSource random, long seed, int packedOverlay, ModelData modelData, RenderType renderType, CallbackInfo callback) {
+        rmc$renderSpaceOffsetApplied.set(BlockRenderCorruptionHooks.beginTesselate(state, pos, poseStack));
+    }
+
+    @Inject(
+            method = "tesselateBlock(Lnet/minecraft/world/level/BlockAndTintGetter;Lnet/minecraft/client/resources/model/BakedModel;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;ZLnet/minecraft/util/RandomSource;JILnet/minecraftforge/client/model/data/ModelData;Lnet/minecraft/client/renderer/RenderType;)V",
+            at = @At("RETURN"),
+            remap = false,
+            require = 0
+    )
+    private void rmc$endRenderSpaceOffset(BlockAndTintGetter level, BakedModel model, BlockState state, BlockPos pos, PoseStack poseStack, VertexConsumer consumer, boolean checkSides, RandomSource random, long seed, int packedOverlay, ModelData modelData, RenderType renderType, CallbackInfo callback) {
+        BlockRenderCorruptionHooks.endTesselate(poseStack, rmc$renderSpaceOffsetApplied.get());
+        rmc$renderSpaceOffsetApplied.remove();
+    }
+
+    @ModifyVariable(
+            method = {
+                    "putQuadData(Lnet/minecraft/world/level/BlockAndTintGetter;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;Lcom/mojang/blaze3d/vertex/VertexConsumer;Lcom/mojang/blaze3d/vertex/PoseStack$Pose;Lnet/minecraft/client/renderer/block/model/BakedQuad;FFFFIIIII)V",
+                    "m_111023_(Lnet/minecraft/world/level/BlockAndTintGetter;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;Lcom/mojang/blaze3d/vertex/VertexConsumer;Lcom/mojang/blaze3d/vertex/PoseStack$Pose;Lnet/minecraft/client/renderer/block/model/BakedQuad;FFFFIIIII)V"
+            },
+            at = @At("HEAD"),
+            argsOnly = true,
+            ordinal = 0,
+            remap = false,
+            require = 0
+    )
+    @Dynamic("Targets both mapped dev names and SRG runtime aliases for ModelBlockRenderer#putQuadData.")
+    private BakedQuad rmc$corruptEmittedBlockQuad(BakedQuad quad,
+                                                  BlockAndTintGetter level,
+                                                  BlockState state,
+                                                  BlockPos pos,
+                                                  VertexConsumer consumer,
+                                                  PoseStack.Pose pose,
+                                                  BakedQuad originalQuad,
+                                                  float shade0,
+                                                  float shade1,
+                                                  float shade2,
+                                                  float shade3,
+                                                  int light0,
+                                                  int light1,
+                                                  int light2,
+                                                  int light3,
+                                                  int packedOverlay) {
+        return ItemTextureCorruptionManager.corruptRenderedBlockQuad(state, quad);
+    }
+}

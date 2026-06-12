@@ -1,0 +1,387 @@
+package com.maxsters.realtimeminecraftcorruptionsimulator.profile;
+
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionSavedData;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+public final class CorruptionEffectStack {
+    private static final float ACTIVE_THRESHOLD = 0.006F;
+
+    private final int corruptionLevel;
+    private final int previousCorruptionLevel;
+    private final int corruptionDelta;
+    private final int calibrationConfidence;
+    private final int stabilityDebt;
+    private final int profileCoherence;
+    private final long fixedSeed;
+    private final int enabledTargetsMask;
+
+    private CorruptionEffectStack(int corruptionLevel, int previousCorruptionLevel, int corruptionDelta, int calibrationConfidence, int stabilityDebt, int profileCoherence, long fixedSeed, int enabledTargetsMask) {
+        this.corruptionLevel = clampPercent(corruptionLevel);
+        this.previousCorruptionLevel = clampPercent(previousCorruptionLevel);
+        this.corruptionDelta = clampPercent(corruptionDelta);
+        this.calibrationConfidence = clampPercent(calibrationConfidence);
+        this.stabilityDebt = clampPercent(stabilityDebt);
+        this.profileCoherence = clampPercent(profileCoherence);
+        this.fixedSeed = fixedSeed;
+        this.enabledTargetsMask = CorruptionTarget.normalizeMask(enabledTargetsMask);
+    }
+
+    public static CorruptionEffectStack from(CorruptionSavedData data) {
+        if (data == null) {
+            return local(0);
+        }
+        return new CorruptionEffectStack(
+                data.getCorruptionLevel(),
+                data.getPreviousCorruptionLevel(),
+                data.getCorruptionDelta(),
+                data.getCalibrationConfidence(),
+                data.getStabilityDebt(),
+                data.getProfileCoherence(),
+                data.getFixedCorruptionSeed(),
+                data.getEnabledTargetsMask()
+        );
+    }
+
+    public static CorruptionEffectStack from(CorruptionProfileSnapshot snapshot) {
+        if (snapshot == null) {
+            return local(0);
+        }
+        return new CorruptionEffectStack(
+                snapshot.getCorruptionLevel(),
+                snapshot.getPreviousCorruptionLevel(),
+                snapshot.getCorruptionDelta(),
+                snapshot.getCalibrationConfidence(),
+                snapshot.getStabilityDebt(),
+                snapshot.getProfileCoherence(),
+                snapshot.getFixedCorruptionSeed(),
+                snapshot.getEnabledTargetsMask()
+        );
+    }
+
+    public static CorruptionEffectStack local(int corruptionLevel) {
+        return local(corruptionLevel, CorruptionProfileManager.DEFAULT_PROFILE.fixedSeed(), CorruptionTarget.ALL_MASK);
+    }
+
+    public static CorruptionEffectStack local(int corruptionLevel, long fixedSeed, int enabledTargetsMask) {
+        int clampedLevel = clampPercent(corruptionLevel);
+        return new CorruptionEffectStack(
+                clampedLevel,
+                0,
+                clampedLevel,
+                100,
+                0,
+                100,
+                fixedSeed,
+                enabledTargetsMask
+        );
+    }
+
+    public int level() {
+        return corruptionLevel;
+    }
+
+    public int previousLevel() {
+        return previousCorruptionLevel;
+    }
+
+    public int delta() {
+        return corruptionDelta;
+    }
+
+    public int calibrationConfidence() {
+        return calibrationConfidence;
+    }
+
+    public int stabilityDebt() {
+        return stabilityDebt;
+    }
+
+    public int profileCoherence() {
+        return profileCoherence;
+    }
+
+    public long fixedSeed() {
+        return fixedSeed;
+    }
+
+    public int enabledTargetsMask() {
+        return enabledTargetsMask;
+    }
+
+    public boolean targetEnabled(CorruptionTarget target) {
+        return CorruptionTarget.enabled(enabledTargetsMask, target);
+    }
+
+    public boolean surfaceEnabled(CorruptionSurface surface) {
+        return targetEnabled(CorruptionTarget.forSurface(surface));
+    }
+
+    public boolean extreme(CorruptionSurface surface) {
+        if (corruptionLevel < 92 || !surfaceEnabled(surface)) {
+            return false;
+        }
+        float level = corruptionLevel / 100.0F;
+        float pressure = intensity(surface) * 0.68F + instability() * 0.22F + layerCount() / 24.0F * 0.10F;
+        float threshold = 0.72F - smoothstep(level) * 0.18F;
+        return pressure >= threshold;
+    }
+
+    public boolean activeOrExtreme(CorruptionSurface surface) {
+        return extreme(surface) || active(surface);
+    }
+
+    public boolean activeOrExtreme(CorruptionSurface surface, String targetId) {
+        return extreme(surface) || active(surface, targetId);
+    }
+
+    public float intensityOrExtreme(CorruptionSurface surface) {
+        return intensity(surface);
+    }
+
+    public int layerCount() {
+        if (corruptionLevel <= 0) {
+            return 0;
+        }
+        float level = corruptionLevel / 100.0F;
+        return Math.max(1, Math.min(24, Math.round(1.0F + (float) Math.pow(level, 0.82F) * 23.0F)));
+    }
+
+    public float instability() {
+        float confidenceLoss = (100 - calibrationConfidence) / 100.0F;
+        float coherenceLoss = (100 - profileCoherence) / 100.0F;
+        float debt = stabilityDebt / 100.0F;
+        return clamp01(confidenceLoss * 0.30F + coherenceLoss * 0.32F + debt * 0.38F);
+    }
+
+    public boolean active(CorruptionSurface surface) {
+        return intensity(surface) > ACTIVE_THRESHOLD;
+    }
+
+    public boolean active(CorruptionSurface surface, String targetId) {
+        return targetIntensity(surface, targetId) > ACTIVE_THRESHOLD;
+    }
+
+    public float intensity(CorruptionSurface surface) {
+        if (corruptionLevel <= 0 || !surfaceEnabled(surface)) {
+            return 0.0F;
+        }
+
+        float level = corruptionLevel / 100.0F;
+        float levelPressure = (float) Math.pow(level, 1.18F);
+        float layerPressure = layerPressure(surface);
+        float disorder = instability();
+        float deltaPressure = smoothstep(clamp01(corruptionDelta / 70.0F)) * level;
+        float coherenceDamping = 0.74F + profileCoherence / 100.0F * 0.26F;
+        float raw = levelPressure * (0.64F + layerPressure * 0.46F) * coherenceDamping;
+        raw += disorder * surface.instabilityBias() * (0.28F + level * 0.72F);
+        raw += deltaPressure * surface.deltaBias() * 0.62F;
+        return clamp01(raw);
+    }
+
+    public float targetIntensity(CorruptionSurface surface, String targetId) {
+        float global = intensity(surface);
+        if (global <= ACTIVE_THRESHOLD) {
+            return 0.0F;
+        }
+        if (targetId == null || targetId.isBlank()) {
+            return global;
+        }
+
+        long hash = mix(surfaceSeed(surface, targetId, 0));
+        float gate = clamp01(0.08F + global * (0.46F + surface.targetBias()) + instability() * 0.24F + Math.min(0.18F, layerCount() * 0.006F));
+        if (unit(hash) > gate) {
+            return 0.0F;
+        }
+        return clamp01(global * (0.62F + unit(hash >>> 17) * 0.62F) + instability() * 0.12F);
+    }
+
+    public List<CorruptionMutation> mutations(CorruptionSurface surface, String targetId, int limit) {
+        float targetStrength = targetIntensity(surface, targetId);
+        if (targetStrength <= ACTIVE_THRESHOLD) {
+            return Collections.emptyList();
+        }
+
+        int layers = Math.max(1, layerCount());
+        int max = Math.max(1, Math.min(Math.max(1, limit), layers));
+        List<CorruptionMutation> result = new ArrayList<>(max);
+        for (int layer = 0; layer < layers && result.size() < max; layer++) {
+            float progress = layerProgress(layer);
+            if (progress <= 0.0F) {
+                continue;
+            }
+
+            long seed = mutationSeed(surface, targetId, layer, result.size());
+            float gate = clamp01(surface.affinity() * 0.72F + targetStrength * 0.34F + instability() * 0.20F);
+            if (unit(seed ^ 0x4D55544154494F4EL) > gate) {
+                continue;
+            }
+
+            float strength = clamp01(targetStrength * (0.42F + progress * 0.48F + unit(seed >>> 11) * 0.22F) + instability() * 0.10F);
+            if (strength > ACTIVE_THRESHOLD) {
+                result.add(new CorruptionMutation(surface, surface.operationFor(seed), layer, strength, seed));
+            }
+        }
+
+        if (result.isEmpty()) {
+            int layer = Math.max(0, layers - 1);
+            long seed = mutationSeed(surface, targetId, layer, 0);
+            result.add(new CorruptionMutation(surface, surface.operationFor(seed), layer, targetStrength, seed));
+        }
+        return result;
+    }
+
+    public int mutationCount(CorruptionSurface surface, String targetId, int max) {
+        float targetStrength = targetIntensity(surface, targetId);
+        if (targetStrength <= ACTIVE_THRESHOLD) {
+            return 0;
+        }
+        int upperBound = Math.max(1, max);
+        return Math.max(1, Math.min(upperBound, 1 + Math.round(targetStrength * Math.min(upperBound - 1, layerCount() / 2.0F))));
+    }
+
+    public float scaled(CorruptionSurface surface, float min, float max) {
+        return min + (max - min) * intensity(surface);
+    }
+
+    public double scaled(CorruptionSurface surface, double min, double max) {
+        return min + (max - min) * intensity(surface);
+    }
+
+    public float unit(CorruptionSurface surface, int salt) {
+        return unit(mix(surfaceSeed(surface, null, salt)));
+    }
+
+    public float unit(CorruptionSurface surface, String targetId, int salt) {
+        return unit(mix(surfaceSeed(surface, targetId, salt)));
+    }
+
+    public float signed(CorruptionSurface surface, int salt, float amplitude) {
+        return (unit(surface, salt) * 2.0F - 1.0F) * amplitude * intensity(surface);
+    }
+
+    public float signed(CorruptionSurface surface, String targetId, int salt, float amplitude) {
+        return (unit(surface, targetId, salt) * 2.0F - 1.0F) * amplitude * targetIntensity(surface, targetId);
+    }
+
+    public boolean chance(CorruptionSurface surface, int salt, float maxChance) {
+        float chance = clamp01(maxChance * intensity(surface) + instability() * 0.08F);
+        return unit(surface, salt) < chance;
+    }
+
+    public int range(CorruptionSurface surface, int salt, int bound) {
+        if (bound <= 0) {
+            return 0;
+        }
+        return Math.floorMod((int) mix(surfaceSeed(surface, null, salt)), bound);
+    }
+
+    public int range(CorruptionSurface surface, String targetId, int salt, int bound) {
+        if (bound <= 0) {
+            return 0;
+        }
+        return Math.floorMod((int) mix(surfaceSeed(surface, targetId, salt)), bound);
+    }
+
+    public int stableInt(CorruptionSurface surface, int salt) {
+        return (int) mix(surfaceSeed(surface, null, salt));
+    }
+
+    public long stableLong(CorruptionSurface surface, int salt) {
+        return mix(surfaceSeed(surface, null, salt));
+    }
+
+    public long stableLong(CorruptionSurface surface, String targetId, int salt) {
+        return mix(surfaceSeed(surface, targetId, salt));
+    }
+
+    public int bucket(CorruptionSurface surface, int salt, int intensitySteps) {
+        int steps = Math.max(1, intensitySteps);
+        int intensityBucket = Math.round(intensity(surface) * steps);
+        return layerCount() * 31 + intensityBucket * 7 + range(surface, salt, 7);
+    }
+
+    public int bucket(CorruptionSurface surface, String targetId, int salt, int intensitySteps) {
+        int steps = Math.max(1, intensitySteps);
+        int intensityBucket = Math.round(targetIntensity(surface, targetId) * steps);
+        return layerCount() * 31 + intensityBucket * 7 + range(surface, targetId, salt, 7);
+    }
+
+    private float layerPressure(CorruptionSurface surface) {
+        if (corruptionLevel <= 0) {
+            return 0.0F;
+        }
+
+        float level = corruptionLevel / 100.0F;
+        long hash = mix(fixedSeed ^ surface.salt() * 0x9E37_79B9_7F4A_7C15L);
+        float seedGain = 0.58F + unit(hash) * 0.84F;
+        float affinityGain = 0.28F + surface.affinity() * 0.72F;
+        return clamp01(level * affinityGain * seedGain + smoothstep(level) * 0.22F);
+    }
+
+    private float layerProgress(int layer) {
+        int layers = Math.max(1, layerCount());
+        float layerPosition = (layer + 1.0F) / layers;
+        float level = corruptionLevel / 100.0F;
+        return clamp01((0.38F + layerPosition * 0.62F) * (0.25F + level * 0.75F));
+    }
+
+    private long mutationSeed(CorruptionSurface surface, String targetId, int layer, int salt) {
+        long value = surfaceSeed(surface, targetId, salt);
+        value ^= (long) layer * 0x632B_E59B_D9B4_E019L;
+        value ^= (long) layerCount() * 0x8515_7AF5L;
+        return mix(value);
+    }
+
+    private long surfaceSeed(CorruptionSurface surface, String targetId, int salt) {
+        long value = fixedSeed;
+        value ^= surface.salt() * 0x9E37_79B9_7F4A_7C15L;
+        value ^= Integer.toUnsignedLong(salt) * 0xBF58_476D_1CE4_E5B9L;
+        if (targetId != null && !targetId.isBlank()) {
+            value ^= stableString(targetId) * 0x94D0_49BB_1331_11EBL;
+        }
+        value ^= (long) corruptionLevel << 32;
+        value ^= (long) previousCorruptionLevel << 17;
+        value ^= (long) corruptionDelta << 9;
+        return value;
+    }
+
+    private static long stableString(String value) {
+        long hash = 0xcbf29ce484222325L;
+        for (int index = 0; index < value.length(); index++) {
+            hash ^= value.charAt(index);
+            hash *= 0x100000001b3L;
+            hash ^= hash >>> 32;
+        }
+        return hash;
+    }
+
+    private static float smoothstep(float value) {
+        float clamped = clamp01(value);
+        return clamped * clamped * (3.0F - 2.0F * clamped);
+    }
+
+    private static float unit(long value) {
+        return ((value >>> 40) & 0xFF_FFFFL) / 16_777_215.0F;
+    }
+
+    private static long mix(long value) {
+        value ^= value >>> 33;
+        value *= 0xff51afd7ed558ccdL;
+        value ^= value >>> 33;
+        value *= 0xc4ceb9fe1a85ec53L;
+        value ^= value >>> 33;
+        return value;
+    }
+
+    private static int clampPercent(int value) {
+        return Math.max(0, Math.min(100, value));
+    }
+
+    private static float clamp01(float value) {
+        return Math.max(0.0F, Math.min(1.0F, value));
+    }
+}
