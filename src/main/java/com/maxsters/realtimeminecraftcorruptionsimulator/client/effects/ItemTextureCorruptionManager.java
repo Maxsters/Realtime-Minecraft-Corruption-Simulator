@@ -472,13 +472,16 @@ public final class ItemTextureCorruptionManager {
                 return quad;
             }
 
-            TextureAtlasSprite replacement = replacementSprite(sourceSprite, stack, targetId, bucket);
+            long seed = stack.stableLong(CorruptionSurface.TEXTURE_MEMORY, targetId, bucket ^ effectHash);
+            int textureMode = Math.floorMod((int) (seed >>> 29), 10);
+            TextureAtlasSprite replacement = textureMode >= 6 && unitHash(seed ^ 0x5352434E43484D44L) < 0.72F
+                    ? sourceSprite
+                    : replacementSprite(sourceSprite, stack, targetId, bucket);
             if (replacement == null) {
                 replacement = sourceSprite;
             }
 
             int[] vertices = quad.getVertices().clone();
-            long seed = stack.stableLong(CorruptionSurface.TEXTURE_MEMORY, targetId, bucket ^ effectHash);
             int vertexIndex = 0;
             for (int vertex = 0; vertex + 5 < vertices.length; vertex += 8) {
                 float u = Float.intBitsToFloat(vertices[vertex + 4]);
@@ -486,7 +489,7 @@ public final class ItemTextureCorruptionManager {
                 float localU = sourceSprite.getUOffset(u);
                 float localV = sourceSprite.getVOffset(v);
                 long vertexSeed = mixLong(seed ^ vertexIndex * 0x9E3779B97F4A7C15L);
-                float[] leaked = corruptedLeakUv(localU, localV, seed, vertexSeed, intensity);
+                float[] leaked = corruptedLeakUv(localU, localV, seed, vertexSeed, intensity, textureMode);
                 vertices[vertex + 4] = Float.floatToRawIntBits(replacement.getU(leaked[0]));
                 vertices[vertex + 5] = Float.floatToRawIntBits(replacement.getV(leaked[1]));
                 vertices[vertex + 3] = corruptedLeakColor(vertices[vertex + 3], seed, vertexSeed, intensity);
@@ -495,11 +498,10 @@ public final class ItemTextureCorruptionManager {
             return new BakedQuad(vertices, quad.getTintIndex(), quad.getDirection(), replacement, quad.isShade());
         }
 
-        private float[] corruptedLeakUv(float localU, float localV, long seed, long vertexSeed, float intensity) {
+        private float[] corruptedLeakUv(float localU, float localV, long seed, long vertexSeed, float intensity, int mode) {
             float centeredU = localU - 8.0F;
             float centeredV = localV - 8.0F;
             float stretchPower = intensity * intensity;
-            int mode = Math.floorMod((int) (seed >>> 29), 6);
             float stretchU = 1.0F + unitHash(seed ^ 0x53545255L) * (4.0F + stretchPower * 88.0F);
             float stretchV = 1.0F + unitHash(seed ^ 0x53545256L) * (3.0F + stretchPower * 72.0F);
             if (mode == 0 || mode == 3) {
@@ -508,10 +510,26 @@ public final class ItemTextureCorruptionManager {
             if (mode == 1 || mode == 4) {
                 stretchU = Math.max(0.015F, 0.18F - intensity * 0.14F);
             }
+            boolean scrunchU = mode == 6 || mode == 8 || mode == 9;
+            boolean scrunchV = mode == 7 || mode == 8 || mode == 9;
+            if (scrunchU) {
+                stretchU = Math.max(0.006F, 0.30F - intensity * (mode == 9 ? 0.27F : 0.22F));
+                stretchV = Math.min(stretchV, 0.92F + unitHash(seed ^ 0x564352554E43L) * (0.36F + intensity * 0.50F));
+            }
+            if (scrunchV) {
+                stretchV = Math.max(0.006F, 0.30F - intensity * (mode == 9 ? 0.27F : 0.22F));
+                stretchU = Math.min(stretchU, 0.92F + unitHash(seed ^ 0x554352554E43L) * (0.36F + intensity * 0.50F));
+            }
             float shearU = centeredV * signedHash(seed ^ 0x53484555L, 1.0F) * intensity * 3.8F;
             float shearV = centeredU * signedHash(seed ^ 0x53484556L, 1.0F) * intensity * 3.2F;
             float offsetU = signedHash(seed ^ 0x4F464655L, 1.0F) * (8.0F + stretchPower * 128.0F);
             float offsetV = signedHash(seed ^ 0x4F464656L, 1.0F) * (8.0F + stretchPower * 112.0F);
+            if (mode >= 6) {
+                shearU *= 0.18F + intensity * 0.22F;
+                shearV *= 0.18F + intensity * 0.22F;
+                offsetU = signedHash(seed ^ 0x5543524F4646L, 0.35F + intensity * 5.0F);
+                offsetV = signedHash(seed ^ 0x5643524F4646L, 0.35F + intensity * 5.0F);
+            }
             float leakedU = 8.0F + centeredU * stretchU + shearU + offsetU;
             float leakedV = 8.0F + centeredV * stretchV + shearV + offsetV;
 

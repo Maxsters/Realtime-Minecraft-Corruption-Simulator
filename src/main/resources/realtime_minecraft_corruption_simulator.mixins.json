@@ -17,6 +17,7 @@
     "client.AmbientOcclusionFaceMixin",
     "client.BoatRendererMixin",
     "client.EntityRenderDispatcherMixin",
+    "client.FontStringRenderOutputMixin",
     "client.LevelRendererMixin",
     "client.LightTextureMixin",
     "client.LiquidBlockRendererMixin",

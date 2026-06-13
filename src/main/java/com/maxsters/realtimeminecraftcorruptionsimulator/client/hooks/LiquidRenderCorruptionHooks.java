@@ -8,6 +8,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -23,8 +24,14 @@ public final class LiquidRenderCorruptionHooks {
         }
 
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
-        if (!stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)) {
+        Vec3 renderOffset = BlockRenderCorruptionHooks.currentRenderSpaceOffset();
+        boolean hasRenderOffset = BlockRenderCorruptionHooks.hasRenderSpaceOffset(renderOffset);
+        boolean hasGeometryCorruption = stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY);
+        if (!hasGeometryCorruption && !hasRenderOffset) {
             return consumer;
+        }
+        if (!hasGeometryCorruption) {
+            return new CorruptedLiquidVertexConsumer(consumer, LiquidGeometryContext.renderOffsetOnly(renderOffset));
         }
 
         ResourceLocation fluidId = ForgeRegistries.FLUIDS.getKey(fluidState.getType());
@@ -32,7 +39,7 @@ public final class LiquidRenderCorruptionHooks {
         float intensity = stack.extreme(CorruptionSurface.MODEL_GEOMETRY)
                 ? 1.0F
                 : Math.max(stack.targetIntensity(CorruptionSurface.MODEL_GEOMETRY, targetId), stack.intensity(CorruptionSurface.MODEL_GEOMETRY) * 0.85F);
-        if (intensity <= 0.01F) {
+        if (intensity <= 0.01F && !hasRenderOffset) {
             return consumer;
         }
 
@@ -40,7 +47,8 @@ public final class LiquidRenderCorruptionHooks {
                 stack,
                 stack.stableLong(CorruptionSurface.MODEL_GEOMETRY, targetId, 0x4C495147),
                 intensity,
-                stack.extreme(CorruptionSurface.MODEL_GEOMETRY)
+                stack.extreme(CorruptionSurface.MODEL_GEOMETRY),
+                renderOffset
         ));
     }
 
@@ -77,23 +85,35 @@ public final class LiquidRenderCorruptionHooks {
         private final long seed;
         private final float intensity;
         private final boolean extreme;
+        private final Vec3 renderOffset;
+        private final boolean geometryCorruption;
         private int vertexOrdinal;
 
-        private LiquidGeometryContext(CorruptionEffectStack stack, long seed, float intensity, boolean extreme) {
+        private LiquidGeometryContext(CorruptionEffectStack stack, long seed, float intensity, boolean extreme, Vec3 renderOffset) {
             this.stack = stack;
             this.seed = seed;
             this.intensity = intensity;
             this.extreme = extreme;
+            this.renderOffset = renderOffset;
+            this.geometryCorruption = intensity > 0.01F;
+        }
+
+        private static LiquidGeometryContext renderOffsetOnly(Vec3 renderOffset) {
+            return new LiquidGeometryContext(null, 0L, 0.0F, false, renderOffset);
         }
 
         private double[] corrupt(double x, double y, double z) {
+            if (!geometryCorruption) {
+                return withRenderOffset(x, y, z);
+            }
+
             int ordinal = vertexOrdinal++;
             int face = ordinal >> 2;
             int corner = ordinal & 3;
             long faceSeed = mixLong(seed ^ (long) face * 0x9E3779B97F4A7C15L);
             float chance = extreme ? 1.0F : Mth.clamp(0.12F + intensity * 0.82F + stack.instability() * 0.08F, 0.0F, 0.97F);
             if (unit(faceSeed ^ 0x4348414EL) > chance) {
-                return new double[] {x, y, z};
+                return withRenderOffset(x, y, z);
             }
 
             double baseX = Math.floor(x);
@@ -159,11 +179,18 @@ public final class LiquidRenderCorruptionHooks {
                 }
             }
 
-            return new double[] {
+            return withRenderOffset(
                     clampAroundBlock(nx, baseX),
                     clampAroundBlock(ny, baseY),
                     clampAroundBlock(nz, baseZ)
-            };
+            );
+        }
+
+        private double[] withRenderOffset(double x, double y, double z) {
+            if (!BlockRenderCorruptionHooks.hasRenderSpaceOffset(renderOffset)) {
+                return new double[] {x, y, z};
+            }
+            return new double[] {x + renderOffset.x, y + renderOffset.y, z + renderOffset.z};
         }
 
         private static double scale(long hash, double span) {

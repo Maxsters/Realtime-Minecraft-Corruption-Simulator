@@ -8,6 +8,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
@@ -17,16 +18,31 @@ public final class BlockRenderCorruptionHooks {
     }
 
     public static boolean beginTesselate(BlockState state, BlockPos pos, PoseStack poseStack) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
-        if (state == null || pos == null || poseStack == null || !stack.activeOrExtreme(CorruptionSurface.BLOCK_COLLISION)) {
+        if (state == null || pos == null || poseStack == null) {
             return false;
+        }
+
+        Vec3 offset = currentRenderSpaceOffset();
+        if (!hasRenderSpaceOffset(offset)) {
+            return false;
+        }
+
+        poseStack.pushPose();
+        poseStack.translate(offset.x, offset.y, offset.z);
+        return true;
+    }
+
+    public static Vec3 currentRenderSpaceOffset() {
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
+        if (!stack.activeOrExtreme(CorruptionSurface.BLOCK_COLLISION)) {
+            return Vec3.ZERO;
         }
 
         float intensity = stack.extreme(CorruptionSurface.BLOCK_COLLISION)
                 ? 1.0F
                 : stack.intensity(CorruptionSurface.BLOCK_COLLISION);
         if (intensity <= 0.01F) {
-            return false;
+            return Vec3.ZERO;
         }
 
         Minecraft minecraft = Minecraft.getInstance();
@@ -41,13 +57,11 @@ public final class BlockRenderCorruptionHooks {
         double x = snappedSigned(seed ^ 0x585348494654L, blockSpan) * dynamic;
         double y = snappedSigned(seed ^ 0x595348494654L, blockSpan * 0.72D) * dynamicWave(seed ^ 0x59444E4DL, phase, intensity);
         double z = snappedSigned(seed ^ 0x5A5348494654L, blockSpan) * dynamicWave(seed ^ 0x5A444E4DL, phase, intensity);
-        if (Math.abs(x) + Math.abs(y) + Math.abs(z) < 0.03125D) {
-            return false;
-        }
+        return new Vec3(x, y, z);
+    }
 
-        poseStack.pushPose();
-        poseStack.translate(x, y, z);
-        return true;
+    public static boolean hasRenderSpaceOffset(Vec3 offset) {
+        return offset != null && Math.abs(offset.x) + Math.abs(offset.y) + Math.abs(offset.z) >= 0.03125D;
     }
 
     public static void endTesselate(PoseStack poseStack, boolean applied) {

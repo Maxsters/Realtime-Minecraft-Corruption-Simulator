@@ -646,21 +646,30 @@ public final class FontTextureCorruptionManager {
             }
 
             long seed = stack.stableLong(CorruptionSurface.GUI_SURFACE, targetId + ":stretch_render:" + signature, 0x53545246) ^ FONT_MUTATION_SEED;
+            float warpChance = stack.extreme(CorruptionSurface.TEXTURE_MEMORY) || stack.extreme(CorruptionSurface.GUI_SURFACE)
+                    ? 0.72F
+                    : clampFloat(0.075F + intensity * 0.42F, 0.0F, 0.60F);
+            if (unit(seed ^ 0x474C595048474154L) > warpChance) {
+                delegate.render(italic, x, y, matrix, consumer, red, green, blue, alpha, light);
+                return;
+            }
+
+            float warpIntensity = clampFloat(intensity * (0.48F + unit(seed ^ 0x57415250494E54L) * 0.78F), 0.0F, 1.20F);
             float x0 = x + left;
             float x1 = x + right;
             float y0 = y + up - 3.0F;
             float y1 = y + down - 3.0F;
             float width = Math.max(1.0F, x1 - x0);
             float height = Math.max(1.0F, y1 - y0);
-            int strips = 3 + Math.round(intensity * 10.0F);
-            float stretch = intensity * intensity;
-            float maxExtraX = clampFloat(width * (0.45F + intensity * 13.0F) + unit(seed >>> 9) * 42.0F * stretch, 0.75F, 128.0F);
-            float maxExtraY = clampFloat(height * (0.08F + intensity * 0.95F), 0.20F, 9.0F);
+            int strips = 2 + Math.round(warpIntensity * 6.0F);
+            float stretch = warpIntensity * warpIntensity;
+            float maxExtraX = clampFloat(width * (0.24F + warpIntensity * 2.15F) + unit(seed >>> 9) * 24.0F * stretch, 0.60F, 54.0F);
+            float maxExtraY = clampFloat(height * (0.06F + warpIntensity * 0.38F), 0.15F, 8.25F);
             float minX = x0 - maxExtraX;
             float maxX = x1 + maxExtraX;
             float minY = y0 - maxExtraY;
             float maxY = y1 + maxExtraY;
-            float italicSkew = italic ? 0.34F + intensity * 0.75F : 0.0F;
+            float italicSkew = italic ? 0.18F + warpIntensity * 0.46F : 0.0F;
 
             for (int strip = 0; strip < strips; strip++) {
                 float t0 = strip / (float) strips;
@@ -673,20 +682,20 @@ public final class FontTextureCorruptionManager {
                 float rightPull0 = maxExtraX * unit(h0 >>> 31) * (0.10F + stretch);
                 float leftPull1 = maxExtraX * unit(h1 >>> 19) * (0.10F + stretch);
                 float rightPull1 = maxExtraX * unit(h1 >>> 31) * (0.10F + stretch);
-                if (unit(h0 >>> 51) < 0.18F + stretch * 0.68F) {
+                if (unit(h0 >>> 51) < 0.06F + stretch * 0.42F) {
                     rightPull0 += maxExtraX * (0.18F + unit(h0 >>> 3) * 0.82F);
                 }
-                if (unit(h1 >>> 51) < 0.18F + stretch * 0.68F) {
+                if (unit(h1 >>> 51) < 0.06F + stretch * 0.42F) {
                     leftPull1 += maxExtraX * (0.18F + unit(h1 >>> 3) * 0.82F);
                 }
-                float jitterSpan = Math.max(1.0F, maxExtraX * (0.08F + intensity * 0.18F));
+                float jitterSpan = Math.max(0.25F, maxExtraX * (0.04F + warpIntensity * 0.16F));
                 float left0 = clampFloat(x0 + signedOffset(h0 >>> 7, Math.round(jitterSpan)) - leftPull0 + (1.0F - t0) * italicSkew, minX, maxX);
                 float right0 = clampFloat(x1 + signedOffset(h0 >>> 23, Math.round(jitterSpan)) + rightPull0 + (1.0F - t0) * italicSkew, minX, maxX);
                 float left1 = clampFloat(x0 + signedOffset(h1 >>> 7, Math.round(jitterSpan)) - leftPull1 + (1.0F - t1) * italicSkew, minX, maxX);
                 float right1 = clampFloat(x1 + signedOffset(h1 >>> 23, Math.round(jitterSpan)) + rightPull1 + (1.0F - t1) * italicSkew, minX, maxX);
                 float topOffset = signedOffset(h0 >>> 39, Math.round(maxExtraY));
                 float bottomOffset = signedOffset(h1 >>> 39, Math.round(maxExtraY));
-                if (unit(h0 >>> 5) < intensity * 0.42F) {
+                if (unit(h0 >>> 5) < warpIntensity * 0.34F) {
                     float center = (top + bottom) * 0.5F + topOffset * 0.35F;
                     float thickness = clampFloat(0.18F + unit(h0 >>> 13) * 0.72F, 0.18F, Math.max(0.24F, height / strips));
                     top = center - thickness;
@@ -703,18 +712,18 @@ public final class FontTextureCorruptionManager {
                 glyphVertex(consumer, matrix, right0, clampFloat(top - topOffset * 0.18F, minY, maxY), u1, uvTop, red, green, blue, alpha, light);
             }
 
-            int lineCount = unit(seed ^ 0x4C494E454348L) < 0.18F + intensity * 0.48F ? 1 + Math.round(intensity * 2.0F) : 0;
+            int lineCount = unit(seed ^ 0x4C494E454348L) < 0.04F + warpIntensity * 0.32F ? 1 + Math.round(warpIntensity * 2.0F) : 0;
             for (int line = 0; line < lineCount; line++) {
                 long hash = mix(seed ^ 0x4C494E45L ^ line * 0x94D049BB133111EBL);
                 float center = clampFloat(y0 + height * unit(hash >>> 7) + signedOffset(hash >>> 19, Math.max(1, Math.round(maxExtraY))), minY, maxY);
-                float thickness = clampFloat(0.16F + unit(hash >>> 27) * (0.30F + intensity * 0.85F), 0.16F, 1.35F);
+                float thickness = clampFloat(0.30F + unit(hash >>> 27) * (0.54F + warpIntensity * 0.55F), 0.30F, 2.55F);
                 float reachLeft = maxExtraX * (0.25F + unit(hash >>> 35) * 0.75F);
                 float reachRight = maxExtraX * (0.25F + unit(hash >>> 43) * 0.75F);
                 float start = clampFloat(x0 - reachLeft, minX, maxX);
                 float end = clampFloat(x1 + reachRight, minX, maxX);
                 float uvTop = v0 + (v1 - v0) * clampFloat(unit(hash >>> 11), 0.0F, 0.96F);
                 float uvBottom = Math.min(v1, uvTop + (v1 - v0) * (0.025F + unit(hash >>> 22) * 0.12F));
-                float lineAlpha = alpha * clampFloat(0.32F + intensity * 0.36F, 0.0F, 0.72F);
+                float lineAlpha = alpha * clampFloat(0.54F + warpIntensity * 0.42F, 0.0F, 0.92F);
 
                 glyphVertex(consumer, matrix, start, clampFloat(center - thickness, minY, maxY), u0, uvTop, red, green, blue, lineAlpha, light);
                 glyphVertex(consumer, matrix, start, clampFloat(center + thickness, minY, maxY), u0, uvBottom, red, green, blue, lineAlpha, light);
