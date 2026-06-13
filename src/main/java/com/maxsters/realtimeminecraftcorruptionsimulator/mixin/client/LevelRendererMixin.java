@@ -2,11 +2,15 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.CloudRenderCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.BreakingTextureCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.LightingCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.SkyRenderCorruptionHooks;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.world.level.BlockAndTintGetter;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
@@ -20,6 +24,20 @@ import java.util.List;
 
 @Mixin(LevelRenderer.class)
 public abstract class LevelRendererMixin {
+    @Inject(
+            method = {
+                    "getLightColor(Lnet/minecraft/world/level/BlockAndTintGetter;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;)I",
+                    "m_109537_"
+            },
+            at = @At("RETURN"),
+            cancellable = true,
+            remap = false,
+            require = 0
+    )
+    private static void rmc$corruptPackedLight(BlockAndTintGetter level, BlockState state, BlockPos pos, CallbackInfoReturnable<Integer> callback) {
+        callback.setReturnValue(LightingCorruptionHooks.mutatePackedLight(level, state, pos, callback.getReturnValue()));
+    }
+
     @Inject(
             method = {
                     "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",

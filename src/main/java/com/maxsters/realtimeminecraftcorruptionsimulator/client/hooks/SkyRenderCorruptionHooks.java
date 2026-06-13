@@ -23,24 +23,24 @@ public final class SkyRenderCorruptionHooks {
     }
 
     public static void onRenderSky(LevelRenderer renderer) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         String signature = starMutationActive(stack) ? starSignature(stack) : "";
         if (signature.equals(appliedSignature)) {
             return;
         }
-        appliedSignature = signature;
         Method method = createStarsMethod();
         if (method == null || renderer == null) {
             return;
         }
         try {
             method.invoke(renderer);
+            appliedSignature = signature;
         } catch (ReflectiveOperationException | RuntimeException ignored) {
         }
     }
 
     public static void beginBuild() {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         if (!starMutationActive(stack)) {
             BUILD_CONTEXT.remove();
             return;
@@ -124,7 +124,7 @@ public final class SkyRenderCorruptionHooks {
             return createStarsMethod;
         }
         createStarsMethodChecked = true;
-        for (String name : new String[]{"createStars", "m_109835_"}) {
+        for (String name : new String[]{"createStars", "m_109837_", "m_109835_"}) {
             try {
                 Method method = LevelRenderer.class.getDeclaredMethod(name);
                 method.setAccessible(true);

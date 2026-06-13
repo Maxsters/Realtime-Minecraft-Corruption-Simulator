@@ -14,9 +14,11 @@
     "PathNavigationMixin"
   ],
   "client": [
+    "client.AmbientOcclusionFaceMixin",
     "client.BoatRendererMixin",
     "client.EntityRenderDispatcherMixin",
     "client.LevelRendererMixin",
+    "client.LightTextureMixin",
     "client.LiquidBlockRendererMixin",
     "client.LivingEntityRendererMixin",
     "client.ModelBlockRendererMixin",

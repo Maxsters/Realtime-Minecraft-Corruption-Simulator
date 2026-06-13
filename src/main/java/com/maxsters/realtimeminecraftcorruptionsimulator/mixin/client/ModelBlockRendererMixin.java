@@ -2,13 +2,16 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ItemTextureCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.BlockRenderCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.LightingCorruptionHooks;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.ModelBlockRenderer;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.block.state.BlockState;
@@ -19,12 +22,26 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(ModelBlockRenderer.class)
 public abstract class ModelBlockRendererMixin {
     @Unique
     private final ThreadLocal<Boolean> rmc$renderSpaceOffsetApplied = ThreadLocal.withInitial(() -> false);
+
+    @Redirect(
+            method = {
+                    "tesselateBlock(Lnet/minecraft/world/level/BlockAndTintGetter;Lnet/minecraft/client/resources/model/BakedModel;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;ZLnet/minecraft/util/RandomSource;JILnet/minecraftforge/client/model/data/ModelData;Lnet/minecraft/client/renderer/RenderType;)V",
+                    "m_234379_"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Minecraft;useAmbientOcclusion()Z", remap = false),
+            remap = false,
+            require = 0
+    )
+    private boolean rmc$corruptAmbientOcclusionSwitch() {
+        return LightingCorruptionHooks.mutateAmbientOcclusionSwitch(Minecraft.useAmbientOcclusion());
+    }
 
     @Inject(
             method = "tesselateBlock(Lnet/minecraft/world/level/BlockAndTintGetter;Lnet/minecraft/client/resources/model/BakedModel;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;ZLnet/minecraft/util/RandomSource;JILnet/minecraftforge/client/model/data/ModelData;Lnet/minecraft/client/renderer/RenderType;)V",
@@ -45,6 +62,19 @@ public abstract class ModelBlockRendererMixin {
     private void rmc$endRenderSpaceOffset(BlockAndTintGetter level, BakedModel model, BlockState state, BlockPos pos, PoseStack poseStack, VertexConsumer consumer, boolean checkSides, RandomSource random, long seed, int packedOverlay, ModelData modelData, RenderType renderType, CallbackInfo callback) {
         BlockRenderCorruptionHooks.endTesselate(poseStack, rmc$renderSpaceOffsetApplied.get());
         rmc$renderSpaceOffsetApplied.remove();
+    }
+
+    @Redirect(
+            method = {
+                    "renderModelFaceFlat(Lnet/minecraft/world/level/BlockAndTintGetter;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;IIZLcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;Ljava/util/List;Ljava/util/BitSet;)V",
+                    "m_111001_"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/BlockAndTintGetter;getShade(Lnet/minecraft/core/Direction;Z)F", remap = false),
+            remap = false,
+            require = 0
+    )
+    private float rmc$corruptFlatShade(BlockAndTintGetter level, Direction direction, boolean shade) {
+        return LightingCorruptionHooks.mutateShade(level, direction, shade, level.getShade(direction, shade));
     }
 
     @ModifyVariable(

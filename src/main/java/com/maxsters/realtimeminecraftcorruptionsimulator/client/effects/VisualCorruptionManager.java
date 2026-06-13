@@ -594,6 +594,7 @@ public final class VisualCorruptionManager {
         return stack.level()
                 + ":" + stack.fixedSeed()
                 + ":" + stack.bucket(CorruptionSurface.BIOME_TINT, 0x42494F4D, 64)
+                + ":" + stack.bucket(CorruptionSurface.LIGHT_FIELD, 0x4C494748, 64)
                 + ":" + stack.bucket(CorruptionSurface.TEXTURE_MEMORY, 0x544558, 64)
                 + ":" + stack.bucket(CorruptionSurface.MODEL_GEOMETRY, 0x4D4F444C, 64)
                 + ":" + stack.bucket(CorruptionSurface.BLOCK_COLLISION, 0x434F4C4C, 64)
