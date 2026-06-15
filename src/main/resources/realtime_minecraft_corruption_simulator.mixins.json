@@ -6,15 +6,23 @@
   "mixins": [
     "BoatFluidStateMixin",
     "ChunkGeneratorMixin",
+    "ClimateSamplerMixin",
+    "ConfiguredWorldCarverMixin",
+    "EntityAttackableMixin",
     "EntityCollisionMixin",
     "EntityFluidStateMixin",
     "FeatureMixin",
-    "NoiseBasedChunkGeneratorMixin",
+    "LivingEntityTargetingMixin",
     "NoiseRouterMixin",
-    "PathNavigationMixin"
+    "PathNavigationMixin",
+    "PlayerMechanicsMixin",
+    "SurfaceRulesStateRuleMixin"
   ],
   "client": [
+    "client.AbstractSliderButtonMixin",
     "client.AmbientOcclusionFaceMixin",
+    "client.BiomeColorsMixin",
+    "client.BlockEntityRenderDispatcherMixin",
     "client.BoatRendererMixin",
     "client.EntityRenderDispatcherMixin",
     "client.FontStringRenderOutputMixin",
@@ -24,6 +32,8 @@
     "client.LivingEntityRendererMixin",
     "client.ModelBlockRendererMixin",
     "client.ModelPartMixin",
+    "client.OptionInstanceMixin",
+    "client.ParticleMixin",
     "client.SheetedDecalTextureGeneratorMixin",
     "client.SimpleBakedModelMixin",
     "client.TerrainParticleMixin"

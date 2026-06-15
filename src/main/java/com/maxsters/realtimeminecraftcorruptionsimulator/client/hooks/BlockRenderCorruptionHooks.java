@@ -5,12 +5,20 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffec
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraftforge.registries.ForgeRegistries;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 @OnlyIn(Dist.CLIENT)
 public final class BlockRenderCorruptionHooks {
@@ -68,6 +76,88 @@ public final class BlockRenderCorruptionHooks {
         if (applied && poseStack != null) {
             poseStack.popPose();
         }
+    }
+
+    public static List<BakedQuad> corruptBlockFaces(BlockState state, Direction side, List<BakedQuad> quads) {
+        if (quads == null || quads.isEmpty()) {
+            return quads;
+        }
+
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
+        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)
+                && !stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)
+                && !stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)) {
+            return quads;
+        }
+
+        Minecraft minecraft = Minecraft.getInstance();
+        String dimension = minecraft.level == null ? "no_level" : minecraft.level.dimension().location().toString();
+        String blockId = state == null ? "unknown" : blockTargetId(state);
+        String targetId = "missing_block_faces:" + dimension + ":" + blockId;
+        float intensity = Mth.clamp(Math.max(
+                stack.extreme(CorruptionSurface.WORLD_RENDER) ? 1.0F : stack.intensity(CorruptionSurface.WORLD_RENDER),
+                Math.max(
+                        (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 1.0F : stack.intensity(CorruptionSurface.MODEL_GEOMETRY)) * 0.76F,
+                        (stack.extreme(CorruptionSurface.TEXTURE_MEMORY) ? 1.0F : stack.intensity(CorruptionSurface.TEXTURE_MEMORY)) * 0.48F
+                )
+        ), 0.0F, 1.0F);
+        if (intensity <= 0.015F) {
+            return quads;
+        }
+
+        float chance = stack.extreme(CorruptionSurface.WORLD_RENDER)
+                ? 0.98F
+                : Mth.clamp(0.05F + intensity * 0.76F + stack.instability() * 0.10F, 0.0F, 0.92F);
+        int bucket = stack.bucket(CorruptionSurface.WORLD_RENDER, targetId, 0x46414345, 96);
+        if (stack.unit(CorruptionSurface.WORLD_RENDER, targetId + ":enabled", bucket) > chance) {
+            return quads;
+        }
+
+        if (side != null) {
+            return faceDropped(stack, targetId, side, bucket, intensity) ? Collections.emptyList() : quads;
+        }
+
+        List<BakedQuad> filtered = null;
+        for (BakedQuad quad : quads) {
+            if (faceDropped(stack, targetId, quad.getDirection(), bucket, intensity)) {
+                if (filtered == null) {
+                    filtered = new ArrayList<>(quads.size());
+                }
+                continue;
+            }
+            if (filtered != null) {
+                filtered.add(quad);
+            }
+        }
+        return filtered == null ? quads : filtered;
+    }
+
+    private static boolean faceDropped(CorruptionEffectStack stack, String targetId, Direction direction, int bucket, float intensity) {
+        if (direction == null) {
+            return false;
+        }
+        Direction primary = missingFaceDirection(stack, targetId, bucket, 0);
+        Direction secondary = missingFaceDirection(stack, targetId, bucket, 1);
+        if (direction == primary) {
+            return true;
+        }
+        float secondaryChance = Mth.clamp(Math.max(0.0F, intensity - 0.32F) * 0.84F + stack.instability() * 0.08F, 0.0F, 0.78F);
+        if (direction == secondary && stack.unit(CorruptionSurface.WORLD_RENDER, targetId + ":secondary", bucket ^ 0x534543) < secondaryChance) {
+            return true;
+        }
+        float scatterChance = Mth.clamp(Math.max(0.0F, intensity - 0.58F) * 0.38F, 0.0F, 0.28F);
+        return stack.unit(CorruptionSurface.WORLD_RENDER, targetId + ":scatter:" + direction.getName(), bucket ^ direction.ordinal()) < scatterChance;
+    }
+
+    private static Direction missingFaceDirection(CorruptionEffectStack stack, String targetId, int bucket, int ordinal) {
+        long seed = stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId + ":global_face:" + ordinal, bucket ^ 0x4D495353);
+        Direction[] directions = Direction.values();
+        return directions[Math.floorMod((int) (seed >>> (ordinal * 11)), directions.length)];
+    }
+
+    private static String blockTargetId(BlockState state) {
+        ResourceLocation id = ForgeRegistries.BLOCKS.getKey(state.getBlock());
+        return id == null ? "unknown" : id.toString();
     }
 
     private static double snappedSigned(long value, double amplitude) {

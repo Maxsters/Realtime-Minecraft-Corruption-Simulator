@@ -14,9 +14,18 @@ public final class CorruptedDensityFunction implements DensityFunction {
 
     @Override
     public double compute(FunctionContext context) {
+        WorldgenCorruptionHooks.DensityCoordinates coordinates = WorldgenCorruptionHooks.corruptDensityCoordinates(
+                channel,
+                context.blockX(),
+                context.blockY(),
+                context.blockZ()
+        );
+        FunctionContext sampleContext = coordinates.matches(context.blockX(), context.blockY(), context.blockZ())
+                ? context
+                : new CoordinateFunctionContext(coordinates.x(), coordinates.y(), coordinates.z());
         return WorldgenCorruptionHooks.corruptDensitySample(
                 channel,
-                delegate.compute(context),
+                delegate.compute(sampleContext),
                 context.blockX(),
                 context.blockY(),
                 context.blockZ(),
@@ -27,18 +36,26 @@ public final class CorruptedDensityFunction implements DensityFunction {
 
     @Override
     public void fillArray(double[] values, ContextProvider contextProvider) {
-        delegate.fillArray(values, contextProvider);
+        if (WorldgenCorruptionHooks.shouldUseFastDensityFill()) {
+            delegate.fillArray(values, contextProvider);
+            for (int i = 0; i < values.length; i++) {
+                FunctionContext context = contextProvider.forIndex(i);
+                values[i] = WorldgenCorruptionHooks.corruptDensitySample(
+                        channel,
+                        values[i],
+                        context.blockX(),
+                        context.blockY(),
+                        context.blockZ(),
+                        delegate.minValue(),
+                        delegate.maxValue()
+                );
+            }
+            return;
+        }
+
         for (int i = 0; i < values.length; i++) {
             FunctionContext context = contextProvider.forIndex(i);
-            values[i] = WorldgenCorruptionHooks.corruptDensitySample(
-                    channel,
-                    values[i],
-                    context.blockX(),
-                    context.blockY(),
-                    context.blockZ(),
-                    delegate.minValue(),
-                    delegate.maxValue()
-            );
+            values[i] = compute(context);
         }
     }
 
@@ -60,5 +77,8 @@ public final class CorruptedDensityFunction implements DensityFunction {
     @Override
     public KeyDispatchDataCodec<? extends DensityFunction> codec() {
         return delegate.codec();
+    }
+
+    private record CoordinateFunctionContext(int blockX, int blockY, int blockZ) implements FunctionContext {
     }
 }

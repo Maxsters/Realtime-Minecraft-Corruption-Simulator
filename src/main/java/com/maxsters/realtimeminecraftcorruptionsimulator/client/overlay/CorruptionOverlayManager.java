@@ -3,6 +3,11 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.overlay;
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionState;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.AudioCorruptionManager;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.FontTextureCorruptionManager;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ItemTextureCorruptionManager;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.TextureMutationManager;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.VisualCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.config.GlobalCorruptionSettings;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.ModNetwork;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.ApplyCorruptionSettingsPacket;
@@ -27,6 +32,7 @@ import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.joml.Matrix4f;
@@ -104,6 +110,10 @@ public final class CorruptionOverlayManager {
         return CorruptionOverlayPanel.panelBounds(LAYOUT, screenWidth, screenHeight).contains(mouseX, mouseY);
     }
 
+    public static boolean isSeedEditing() {
+        return seedEditing;
+    }
+
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) {
@@ -145,6 +155,11 @@ public final class CorruptionOverlayManager {
         if (interactionMode && minecraft.screen == null) {
             releaseMouseForOverlay();
         }
+        if (seedEditing) {
+            interactionMode = true;
+            releaseMouseForOverlay();
+            KeyMapping.releaseAll();
+        }
 
         updateDragFromCurrentMouse();
     }
@@ -154,7 +169,11 @@ public final class CorruptionOverlayManager {
         if (Minecraft.getInstance().screen != null) {
             return;
         }
-        if (seedEditing && handleSeedEditKey(event)) {
+        if (seedEditing) {
+            interactionMode = true;
+            releaseMouseForOverlay();
+            handleSeedEditKey(event.getKey(), event.getModifiers(), event.getAction(), true);
+            event.setCanceled(true);
             return;
         }
         if (overlayKey == null) {
@@ -166,13 +185,22 @@ public final class CorruptionOverlayManager {
         }
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onMouseButton(InputEvent.MouseButton.Pre event) {
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.screen != null || event.getButton() != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+        if (minecraft.screen != null) {
             return;
         }
-        if (!interactionMode) {
+        if (seedEditing && event.getButton() != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            interactionMode = true;
+            releaseMouseForOverlay();
+            event.setCanceled(true);
+            return;
+        }
+        if (event.getButton() != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            return;
+        }
+        if (!interactionMode && !seedEditing) {
             return;
         }
 
@@ -181,7 +209,13 @@ public final class CorruptionOverlayManager {
         if (event.getAction() == GLFW.GLFW_PRESS) {
             boolean consumed = handleMousePress(mouseX, mouseY);
             if (!consumed && interactionMode) {
-                interactionMode = false;
+                if (seedEditing) {
+                    interactionMode = true;
+                    releaseMouseForOverlay();
+                    consumed = true;
+                } else {
+                    interactionMode = false;
+                }
             }
             event.setCanceled(consumed);
             return;
@@ -193,12 +227,33 @@ public final class CorruptionOverlayManager {
         }
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onScreenMousePressed(ScreenEvent.MouseButtonPressed.Pre event) {
         if (event.getButton() != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            if (seedEditing) {
+                event.setCanceled(true);
+            }
             return;
         }
         if (handleMousePress(event.getMouseX(), event.getMouseY())) {
+            event.setCanceled(true);
+        } else if (seedEditing) {
+            event.setCanceled(true);
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onScreenKeyPressed(ScreenEvent.KeyPressed.Pre event) {
+        if (!seedEditing) {
+            return;
+        }
+        handleSeedEditKey(event.getKeyCode(), event.getModifiers(), GLFW.GLFW_PRESS, true);
+        event.setCanceled(true);
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onScreenCharacterTyped(ScreenEvent.CharacterTyped.Pre event) {
+        if (seedEditing) {
             event.setCanceled(true);
         }
     }
@@ -374,8 +429,7 @@ public final class CorruptionOverlayManager {
             if (currentPage == CorruptionOverlayPanel.Page.SETTINGS) {
                 CorruptionOverlayPanel.Rect seedField = CorruptionOverlayPanel.seedFieldBounds(LAYOUT, screenWidth, screenHeight);
                 if (seedField.contains(mouseX, mouseY)) {
-                    seedEditing = true;
-                    seedEditText = latestSnapshot.getCorruptionSeedLabel();
+                    beginSeedEditing();
                     mouseAction = MouseAction.PANEL;
                     return true;
                 }
@@ -387,6 +441,10 @@ public final class CorruptionOverlayManager {
                 CorruptionOverlayPanel.Rect randomSeed = CorruptionOverlayPanel.randomSeedButtonBounds(LAYOUT, screenWidth, screenHeight);
                 if (randomSeed.contains(mouseX, mouseY)) {
                     mouseAction = MouseAction.SEED_RANDOM;
+                    return true;
+                }
+                if (seedEditing) {
+                    mouseAction = MouseAction.PANEL;
                     return true;
                 }
                 for (CorruptionOverlayPanel.TargetHitBox hitBox : CorruptionOverlayPanel.targetHitBoxes(LAYOUT, screenWidth, screenHeight)) {
@@ -513,12 +571,23 @@ public final class CorruptionOverlayManager {
         if (minecraft.getConnection() != null) {
             ModNetwork.sendToServer(new ApplyCorruptionSettingsPacket(level, seed, seedLabel, enabledTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount));
         } else {
+            CorruptionProfileSnapshot previous = ClientCorruptionState.snapshot();
             GlobalCorruptionSettings.apply(level, seed, seedLabel, enabledTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount);
             ClientCorruptionState.reset();
-            latestSnapshot = ClientCorruptionState.localSnapshot();
+            CorruptionProfileSnapshot current = ClientCorruptionState.snapshot();
+            latestSnapshot = current;
             pendingLevel = latestSnapshot.getCorruptionLevel();
             lastKnownActiveLevel = pendingLevel;
+            notifyLocalSettingsChanged(previous, current);
         }
+    }
+
+    private static void notifyLocalSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
+        TextureMutationManager.onSettingsChanged(previous, current);
+        FontTextureCorruptionManager.onSettingsChanged(previous, current);
+        ItemTextureCorruptionManager.onSettingsChanged(previous, current);
+        VisualCorruptionManager.onSettingsChanged(previous, current);
+        AudioCorruptionManager.onSettingsChanged(previous, current);
     }
 
     private static void submitSeedEdit() {
@@ -546,6 +615,14 @@ public final class CorruptionOverlayManager {
     private static void toggleTarget(CorruptionTarget target) {
         int mask = latestSnapshot.getEnabledTargetsMask() ^ target.mask();
         applyCurrentSettings(latestSnapshot.getCorruptionLevel(), latestSnapshot.getFixedCorruptionSeed(), latestSnapshot.getCorruptionSeedLabel(), mask, latestSnapshot.getAutoIncreaseIntervalTicks(), latestSnapshot.getAutoIncreaseAmount());
+    }
+
+    private static void beginSeedEditing() {
+        seedEditing = true;
+        interactionMode = true;
+        seedEditText = latestSnapshot.getCorruptionSeedLabel();
+        releaseMouseForOverlay();
+        KeyMapping.releaseAll();
     }
 
     private static void startDrag(MouseAction action, double mouseX, double mouseY) {
@@ -639,12 +716,10 @@ public final class CorruptionOverlayManager {
         }
     }
 
-    private static boolean handleSeedEditKey(InputEvent.Key event) {
-        int action = event.getAction();
+    private static boolean handleSeedEditKey(int key, int modifiers, int action, boolean captureUnhandled) {
         if (action != GLFW.GLFW_PRESS && action != GLFW.GLFW_REPEAT) {
-            return false;
+            return captureUnhandled;
         }
-        int key = event.getKey();
         if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
             submitSeedEdit();
             return true;
@@ -664,16 +739,16 @@ public final class CorruptionOverlayManager {
             seedEditText = "";
             return true;
         }
-        if ((event.getModifiers() & GLFW.GLFW_MOD_CONTROL) != 0 && key == GLFW.GLFW_KEY_V) {
+        if ((modifiers & GLFW.GLFW_MOD_CONTROL) != 0 && key == GLFW.GLFW_KEY_V) {
             seedEditText = sanitizeSeedText(Minecraft.getInstance().keyboardHandler.getClipboard());
             return true;
         }
-        String character = keyToSeedCharacter(key, (event.getModifiers() & GLFW.GLFW_MOD_SHIFT) != 0);
+        String character = keyToSeedCharacter(key, (modifiers & GLFW.GLFW_MOD_SHIFT) != 0);
         if (!character.isEmpty() && seedEditText.length() < 96) {
             seedEditText = sanitizeSeedText(seedEditText + character);
             return true;
         }
-        return false;
+        return captureUnhandled;
     }
 
     private static String keyToSeedCharacter(int key, boolean shift) {

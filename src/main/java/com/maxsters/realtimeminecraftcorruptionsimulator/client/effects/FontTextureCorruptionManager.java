@@ -38,6 +38,7 @@ public final class FontTextureCorruptionManager {
 
     private static Field minecraftFontManagerField;
     private static Field fontManagerFontSetsField;
+    private static Field fontSetNameField;
     private static Field fontSetProvidersField;
     private static Field fontSetGlyphsField;
     private static Field fontSetGlyphInfosField;
@@ -118,7 +119,7 @@ public final class FontTextureCorruptionManager {
 
         boolean changed = false;
         for (Map.Entry<ResourceLocation, FontSet> entry : fontSets.entrySet()) {
-            if (ClientCorruptionProtection.isProtectedResource(entry.getKey())) {
+            if (!isMutableFontSet(entry.getKey(), entry.getValue()) || ClientCorruptionProtection.isProtectedResource(entry.getKey())) {
                 continue;
             }
             List<GlyphProvider> providers = providers(entry.getValue());
@@ -166,6 +167,9 @@ public final class FontTextureCorruptionManager {
         }
 
         for (Map.Entry<ResourceLocation, FontSet> entry : fontSets.entrySet()) {
+            if (!isMutableFontSet(entry.getKey(), entry.getValue())) {
+                continue;
+            }
             List<GlyphProvider> providers = providers(entry.getValue());
             if (providers == null || providers.isEmpty()) {
                 continue;
@@ -392,6 +396,34 @@ public final class FontTextureCorruptionManager {
     private static boolean fontMutationActive(CorruptionEffectStack stack) {
         return stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)
                 || stack.activeOrExtreme(CorruptionSurface.GUI_SURFACE);
+    }
+
+    private static boolean isMutableFontSet(ResourceLocation fontId, FontSet fontSet) {
+        return isNamedResource(fontId) && isNamedResource(fontSetName(fontSet));
+    }
+
+    private static boolean isNamedResource(ResourceLocation id) {
+        return id != null && id.getPath() != null && !id.getPath().isBlank();
+    }
+
+    private static ResourceLocation fontSetName(FontSet fontSet) {
+        if (fontSet == null) {
+            return null;
+        }
+        Field field = fontSetNameField;
+        if (field == null) {
+            field = findField(FontSet.class, "name", "f_95052_");
+            fontSetNameField = field;
+        }
+        if (field == null) {
+            return null;
+        }
+        try {
+            Object value = field.get(fontSet);
+            return value instanceof ResourceLocation id ? id : null;
+        } catch (IllegalAccessException | RuntimeException ignored) {
+            return null;
+        }
     }
 
     private static String fontSignature(CorruptionEffectStack stack) {

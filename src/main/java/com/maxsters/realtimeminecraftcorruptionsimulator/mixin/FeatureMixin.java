@@ -26,6 +26,25 @@ public abstract class FeatureMixin<FC extends FeatureConfiguration> {
     )
     private void rmc$corruptFeaturePlacement(FC config, WorldGenLevel level, ChunkGenerator chunkGenerator, RandomSource random, BlockPos origin, CallbackInfoReturnable<Boolean> callback) {
         Feature<?> feature = (Feature<?>) (Object) this;
+        if (WorldgenCorruptionHooks.isFeatureOriginRerouteActive()) {
+            return;
+        }
+
+        BlockPos reroutedOrigin = WorldgenCorruptionHooks.corruptFeatureOrigin(feature, level, origin);
+        if (!reroutedOrigin.equals(origin)) {
+            WorldgenCorruptionHooks.beginFeatureOriginReroute();
+            try {
+                @SuppressWarnings("unchecked")
+                Feature<FC> typedFeature = (Feature<FC>) (Object) this;
+                callback.setReturnValue(typedFeature.place(config, level, chunkGenerator, random, reroutedOrigin));
+            } catch (RuntimeException exception) {
+                callback.setReturnValue(WorldgenCorruptionHooks.handleFeatureRerouteFailure(feature, origin, reroutedOrigin, exception));
+            } finally {
+                WorldgenCorruptionHooks.endFeatureOriginReroute();
+            }
+            return;
+        }
+
         if (WorldgenCorruptionHooks.shouldSkipFeature(feature, level, origin)) {
             callback.setReturnValue(WorldgenCorruptionHooks.fakeFeatureSuccess(feature, origin));
         }

@@ -140,6 +140,46 @@ public final class ModelRenderCorruptionHooks {
         rotate(poseStack, clock ^ 0x52454E54495459L, 0.45F + intensity * 2.6F, intensity);
     }
 
+    public static boolean beginShadowRender(PoseStack poseStack, Entity entity, float partialTick, float radius) {
+        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        if (poseStack == null || entity == null || !stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
+            return false;
+        }
+
+        String targetId = animationTargetId(entity, "shadow");
+        float intensity = stack.extreme(CorruptionSurface.WORLD_RENDER)
+                ? 1.0F
+                : Math.max(stack.targetIntensity(CorruptionSurface.WORLD_RENDER, targetId), stack.intensity(CorruptionSurface.WORLD_RENDER) * 0.78F);
+        if (intensity <= 0.015F) {
+            return false;
+        }
+        long clock = animationClock(stack, entity, targetId) ^ Float.floatToIntBits(partialTick) ^ Float.floatToIntBits(radius);
+        float chance = Mth.clamp(0.08F + intensity * 0.78F + stack.instability() * 0.10F, 0.0F, 0.94F);
+        if (stack.unit(CorruptionSurface.WORLD_RENDER, targetId, entity.getId() ^ 0x53484457) > chance) {
+            return false;
+        }
+
+        poseStack.pushPose();
+        double height = Math.max(0.05D, entity.getBbHeight());
+        double width = Math.max(0.05D, entity.getBbWidth());
+        poseStack.translate(
+                signedUnit(clock ^ 0x5853484457L) * width * (0.10D + intensity * 1.35D),
+                height * (0.18D + unit(clock ^ 0x5953484457L) * intensity * 0.72D),
+                signedUnit(clock ^ 0x5A53484457L) * width * (0.10D + intensity * 1.35D)
+        );
+        if (unit(clock ^ 0x5343484CL) < 0.28F + intensity * 0.42F) {
+            float scale = Mth.clamp(0.25F + unit(clock ^ 0x534853434CL) * (1.0F + intensity * 4.0F), 0.05F, 5.5F);
+            poseStack.scale(scale, scale, scale);
+        }
+        return true;
+    }
+
+    public static void endShadowRender(PoseStack poseStack, boolean applied) {
+        if (applied && poseStack != null) {
+            poseStack.popPose();
+        }
+    }
+
     public static void mutateModelPartTransform(ModelPart part, PoseStack poseStack) {
         RenderContext context = currentContext();
         if (context == null || !context.active() || part == null || poseStack == null) {
@@ -160,13 +200,14 @@ public final class ModelRenderCorruptionHooks {
                 ^ stack.stableLong(CorruptionSurface.ANIMATION_TIMING, targetId, 0x414E494D);
 
         if (geometryIntensity > 0.0F) {
-            double offsetSpan = (0.025D + geometryIntensity * 0.34D) * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 2.85D : 1.0D);
-            double x = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, targetId + ":offset_x", 0.0D, offsetSpan, -0.85D, 0.85D, 0x11, geometryClock);
-            double y = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, targetId + ":offset_y", 0.0D, offsetSpan, -0.85D, 0.85D, 0x23, geometryClock);
-            double z = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, targetId + ":offset_z", 0.0D, offsetSpan, -0.85D, 0.85D, 0x35, geometryClock);
+            double offsetSpan = (0.025D + geometryIntensity * 0.58D) * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 4.40D : 1.0D);
+            double offsetClamp = stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 3.25D : 1.35D;
+            double x = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, targetId + ":offset_x", 0.0D, offsetSpan, -offsetClamp, offsetClamp, 0x11, geometryClock);
+            double y = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, targetId + ":offset_y", 0.0D, offsetSpan, -offsetClamp, offsetClamp, 0x23, geometryClock);
+            double z = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, targetId + ":offset_z", 0.0D, offsetSpan, -offsetClamp, offsetClamp, 0x35, geometryClock);
             poseStack.translate(x, y, z);
 
-            float scaleSpan = 0.12F + geometryIntensity * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 2.75F : 1.18F);
+            float scaleSpan = 0.12F + geometryIntensity * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 7.20F : 2.35F);
             float xScale = scaleMutation(stack, CorruptionSurface.MODEL_GEOMETRY, targetId + ":scale_x", scaleSpan, 0x58, geometryClock);
             float yScale = scaleMutation(stack, CorruptionSurface.MODEL_GEOMETRY, targetId + ":scale_y", scaleSpan, 0x59, geometryClock);
             float zScale = scaleMutation(stack, CorruptionSurface.MODEL_GEOMETRY, targetId + ":scale_z", scaleSpan, 0x5A, geometryClock);
@@ -218,7 +259,7 @@ public final class ModelRenderCorruptionHooks {
     }
 
     private static float scaleMutation(CorruptionEffectStack stack, CorruptionSurface surface, String targetId, float span, int salt, long clock) {
-        float scale = CorruptionValueMutator.mutateScalar(stack, surface, targetId, 1.0F, span, -2.50F, 3.25F, salt, clock);
+        float scale = CorruptionValueMutator.mutateScalar(stack, surface, targetId, 1.0F, span, -6.50F, 9.50F, salt, clock);
         if (Math.abs(scale) < 0.05F) {
             return Math.copySign(0.05F, scale == 0.0F ? 1.0F : scale);
         }

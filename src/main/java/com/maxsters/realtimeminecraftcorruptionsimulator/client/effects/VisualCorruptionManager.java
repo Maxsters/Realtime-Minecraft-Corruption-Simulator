@@ -6,8 +6,6 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurfa
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
 import com.mojang.blaze3d.shaders.FogShape;
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.color.block.BlockColor;
 import net.minecraft.client.color.block.BlockColors;
@@ -26,14 +24,10 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.client.renderer.PanoramaRenderer;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraftforge.client.event.ComputeFovModifierEvent;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.RenderHighlightEvent;
 import net.minecraftforge.client.event.RegisterColorHandlersEvent;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.client.event.ViewportEvent;
@@ -42,8 +36,6 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import net.minecraftforge.registries.ForgeRegistries;
-import org.joml.Matrix3f;
-import org.joml.Matrix4f;
 
 import java.lang.reflect.Field;
 import java.util.HashMap;
@@ -259,62 +251,6 @@ public final class VisualCorruptionManager {
     }
 
     @SubscribeEvent
-    public static void onRenderBlockHighlight(RenderHighlightEvent.Block event) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
-        if (!stack.activeOrExtreme(CorruptionSurface.BLOCK_COLLISION)
-                && !stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
-            return;
-        }
-
-        Minecraft minecraft = Minecraft.getInstance();
-        Level level = minecraft.level;
-        if (level == null || minecraft.player == null) {
-            return;
-        }
-
-        BlockHitResult hit = event.getTarget();
-        BlockPos pos = hit.getBlockPos();
-        BlockState state = level.getBlockState(pos);
-        if (state.isAir()) {
-            return;
-        }
-
-        String targetId = "block_outline:" + blockTargetId(state) + ":" + hit.getDirection().getName();
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.BLOCK_COLLISION) ? 1.0F : stack.intensity(CorruptionSurface.BLOCK_COLLISION),
-                (stack.extreme(CorruptionSurface.WORLD_RENDER) ? 1.0F : stack.intensity(CorruptionSurface.WORLD_RENDER)) * 0.74F
-        ), 0.0F, 1.0F);
-        if (intensity <= 0.01F) {
-            return;
-        }
-
-        if (!stack.extreme(CorruptionSurface.BLOCK_COLLISION)
-                && stack.unit(CorruptionSurface.BLOCK_COLLISION, targetId + ":drop", stack.bucket(CorruptionSurface.BLOCK_COLLISION, targetId, 0x44524F50, 64)) < intensity * 0.12F) {
-            event.setCanceled(true);
-            return;
-        }
-
-        VoxelShape shape = state.getShape(level, pos);
-        if (shape.isEmpty()) {
-            return;
-        }
-
-        event.setCanceled(true);
-        VertexConsumer consumer = event.getMultiBufferSource().getBuffer(RenderType.lines());
-        long seed = stack.stableLong(CorruptionSurface.BLOCK_COLLISION, targetId, 0x4F55544C)
-                ^ stack.bucket(CorruptionSurface.BLOCK_COLLISION, targetId, 0x4F42554B, 96);
-        int color = CorruptionValueMutator.mutateColor(stack, CorruptionSurface.BLOCK_COLLISION, targetId, 0x74FFE0, 0x4F, seed);
-        float red = ((color >> 16) & 0xFF) / 255.0F;
-        float green = ((color >> 8) & 0xFF) / 255.0F;
-        float blue = (color & 0xFF) / 255.0F;
-        float alpha = Mth.clamp(0.28F + intensity * 0.58F + stack.instability() * 0.20F, 0.18F, 1.0F);
-        double baseX = pos.getX() - event.getCamera().getPosition().x;
-        double baseY = pos.getY() - event.getCamera().getPosition().y;
-        double baseZ = pos.getZ() - event.getCamera().getPosition().z;
-        renderCorruptedOutlineEdges(event.getPoseStack(), consumer, shape, baseX, baseY, baseZ, red, green, blue, alpha, stack, targetId, intensity, seed);
-    }
-
-    @SubscribeEvent
     public static void onTitleRenderPre(ScreenEvent.Render.Pre event) {
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
         if (!stack.active(CorruptionSurface.TITLE_RENDER) || !(event.getScreen() instanceof TitleScreen titleScreen)) {
@@ -497,97 +433,6 @@ public final class VisualCorruptionManager {
         }
         pendingWorldRefresh = false;
         pendingWorldRefreshDelay = -1;
-    }
-
-    private static void renderCorruptedOutlineEdges(
-            PoseStack poseStack,
-            VertexConsumer consumer,
-            VoxelShape shape,
-            double baseX,
-            double baseY,
-            double baseZ,
-            float red,
-            float green,
-            float blue,
-            float alpha,
-            CorruptionEffectStack stack,
-            String targetId,
-            float intensity,
-            long seed
-    ) {
-        int[] edgeIndex = {0};
-        int extraPasses = Math.round(intensity * (stack.extreme(CorruptionSurface.BLOCK_COLLISION) ? 5.0F : 3.0F));
-        shape.forAllEdges((x1, y1, z1, x2, y2, z2) -> {
-            int edge = edgeIndex[0]++;
-            long edgeSeed = seed ^ edge * 0x9E3779B97F4A7C15L;
-            float dropChance = Mth.clamp(0.04F + intensity * 0.42F + stack.instability() * 0.10F, 0.0F, 0.86F);
-            if (unit(edgeSeed ^ 0x44524F50L) < dropChance) {
-                return;
-            }
-
-            int passes = 1 + (unit(edgeSeed ^ 0x50415353L) < intensity * 0.68F ? extraPasses : Math.max(0, extraPasses / 2));
-            for (int pass = 0; pass < passes; pass++) {
-                long passSeed = edgeSeed ^ pass * 0x632BE59BD9B4E019L;
-                if (pass > 0 && unit(passSeed ^ 0x534B4950L) < intensity * 0.24F) {
-                    continue;
-                }
-
-                double scale = outlineScale(passSeed, intensity, pass, passes);
-                double sx1 = (x1 - 0.5D) * scale + 0.5D;
-                double sy1 = (y1 - 0.5D) * scale + 0.5D;
-                double sz1 = (z1 - 0.5D) * scale + 0.5D;
-                double sx2 = (x2 - 0.5D) * scale + 0.5D;
-                double sy2 = (y2 - 0.5D) * scale + 0.5D;
-                double sz2 = (z2 - 0.5D) * scale + 0.5D;
-
-                float colorShift = (float) unit(passSeed ^ 0x434F4C52L);
-                float lineRed = Mth.clamp(red + (colorShift - 0.5F) * intensity * 1.40F, 0.0F, 1.0F);
-                float lineGreen = Mth.clamp(green + ((float) unit(passSeed ^ 0x47524545L) - 0.5F) * intensity * 1.20F, 0.0F, 1.0F);
-                float lineBlue = Mth.clamp(blue + ((float) unit(passSeed ^ 0x424C5545L) - 0.5F) * intensity * 1.20F, 0.0F, 1.0F);
-                float lineAlpha = alpha * Mth.clamp(1.0F - pass * 0.14F + ((float) unit(passSeed ^ 0x414C5048L) - 0.5F) * intensity * 0.50F, 0.12F, 1.0F);
-                emitOutlineLine(poseStack, consumer, baseX + sx1, baseY + sy1, baseZ + sz1, baseX + sx2, baseY + sy2, baseZ + sz2, lineRed, lineGreen, lineBlue, lineAlpha);
-            }
-        });
-    }
-
-    private static double outlineScale(long seed, float intensity, int pass, int passes) {
-        double base = 1.0D + (unit(seed ^ 0x5343414CL) * 2.0D - 1.0D) * (0.12D + intensity * 1.18D);
-        double passSpread = passes <= 1 ? 0.0D : (pass - (passes - 1) * 0.5D) * (0.025D + intensity * 0.085D);
-        if (unit(seed ^ 0x534E4150L) < intensity * 0.18D) {
-            base = Math.rint(base / 0.25D) * 0.25D;
-        }
-        return Mth.clamp(base + passSpread, 0.08D, 3.25D);
-    }
-
-    private static void emitOutlineLine(
-            PoseStack poseStack,
-            VertexConsumer consumer,
-            double x1,
-            double y1,
-            double z1,
-            double x2,
-            double y2,
-            double z2,
-            float red,
-            float green,
-            float blue,
-            float alpha
-    ) {
-        PoseStack.Pose pose = poseStack.last();
-        Matrix4f matrix = pose.pose();
-        Matrix3f normalMatrix = pose.normal();
-        float nx = (float) (x2 - x1);
-        float ny = (float) (y2 - y1);
-        float nz = (float) (z2 - z1);
-        float length = Mth.sqrt(nx * nx + ny * ny + nz * nz);
-        if (length <= 1.0E-4F) {
-            return;
-        }
-        nx /= length;
-        ny /= length;
-        nz /= length;
-        consumer.vertex(matrix, (float) x1, (float) y1, (float) z1).color(red, green, blue, alpha).normal(normalMatrix, nx, ny, nz).endVertex();
-        consumer.vertex(matrix, (float) x2, (float) y2, (float) z2).color(red, green, blue, alpha).normal(normalMatrix, nx, ny, nz).endVertex();
     }
 
     private static String worldRenderSignature(CorruptionEffectStack stack) {

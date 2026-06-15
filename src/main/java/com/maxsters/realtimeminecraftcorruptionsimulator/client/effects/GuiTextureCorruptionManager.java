@@ -108,6 +108,9 @@ public final class GuiTextureCorruptionManager {
 
     @SubscribeEvent
     public static void onKeyPressed(ScreenEvent.KeyPressed.Pre event) {
+        if (CorruptionOverlayManager.isSeedEditing()) {
+            return;
+        }
         if (event.getKeyCode() == GLFW.GLFW_KEY_ESCAPE) {
             return;
         }
@@ -118,6 +121,9 @@ public final class GuiTextureCorruptionManager {
 
     @SubscribeEvent
     public static void onCharacterTyped(ScreenEvent.CharacterTyped.Pre event) {
+        if (CorruptionOverlayManager.isSeedEditing()) {
+            return;
+        }
         if (breakInput(event.getScreen(), "char_typed", event.getCodePoint() ^ (event.getModifiers() << 12))) {
             event.setCanceled(true);
         }
@@ -181,26 +187,8 @@ public final class GuiTextureCorruptionManager {
 
         widget.active = original.active();
         widget.visible = original.visible();
-        if (stack.extreme(CorruptionSurface.GUI_SURFACE) || CorruptionValueMutator.decision(stack, CorruptionSurface.GUI_SURFACE, targetId + ":pos", index ^ 0x61, 0.58F)) {
-            float xSpan = preserveWorldAccess ? screenWidth * (0.08F + intensity * 0.34F) : screenWidth * (0.24F + intensity * 0.74F);
-            float ySpan = preserveWorldAccess ? screenHeight * (0.06F + intensity * 0.28F) : screenHeight * (0.18F + intensity * 0.64F);
-            float minX = preserveWorldAccess ? -screenWidth * 0.22F : -screenWidth;
-            float maxX = preserveWorldAccess ? screenWidth * 1.22F - widget.getWidth() : screenWidth * 2.0F;
-            float minY = preserveWorldAccess ? -screenHeight * 0.16F : -screenHeight;
-            float maxY = preserveWorldAccess ? screenHeight * 1.16F - widget.getHeight() : screenHeight * 2.0F;
-            int x = stack.extreme(CorruptionSurface.GUI_SURFACE)
-                    ? Math.round(clampFloat(original.x() + signed(stack.stableLong(CorruptionSurface.GUI_SURFACE, targetId + ":x", 0x13), xSpan), minX, maxX))
-                    : Math.round(CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.GUI_SURFACE, targetId + ":x", original.x(), xSpan, minX, maxX, 0x13, clock));
-            int y = stack.extreme(CorruptionSurface.GUI_SURFACE)
-                    ? Math.round(clampFloat(original.y() + signed(stack.stableLong(CorruptionSurface.GUI_SURFACE, targetId + ":y", 0x29), ySpan), minY, maxY))
-                    : Math.round(CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.GUI_SURFACE, targetId + ":y", original.y(), ySpan, minY, maxY, 0x29, clock));
-            widget.setX(x);
-            widget.setY(y);
-            changed = true;
-        } else {
-            widget.setX(original.x());
-            widget.setY(original.y());
-        }
+        widget.setX(original.x());
+        widget.setY(original.y());
         if (!preserveWorldAccess && (stack.extreme(CorruptionSurface.GUI_SURFACE) || CorruptionValueMutator.decision(stack, CorruptionSurface.GUI_SURFACE, targetId + ":width", index ^ 0x72, 0.48F))) {
             int width = stack.extreme(CorruptionSurface.GUI_SURFACE)
                     ? Math.round(clampFloat(original.width() + signed(stack.stableLong(CorruptionSurface.GUI_SURFACE, targetId + ":w", 0x3A), screenWidth * (0.18F + intensity * 0.58F)), 1.0F, screenWidth * 2.0F))

@@ -45,6 +45,7 @@ public final class TextureMutationManager {
     private static final int MAX_GLOBAL_TEXTURE_MUTATIONS_PER_TICK = 18;
     private static final int MAX_ATLAS_TEXTURE_MUTATIONS_PER_ATLAS = 8192;
     private static final int MAX_ATLAS_TEXTURE_MUTATIONS_PER_TICK = 96;
+    private static final int MAX_TEXTURE_PIXELS_TO_MUTATE = 4_194_304;
     private static final Set<ResourceLocation> MUTATED_GUI_TEXTURES = new HashSet<>();
     private static final Set<ResourceLocation> MUTATED_GLOBAL_TEXTURES = new HashSet<>();
     private static final Set<AtlasSpriteKey> MUTATED_ATLAS_TEXTURES = new HashSet<>();
@@ -208,38 +209,13 @@ public final class TextureMutationManager {
     }
 
     private static void handleAtlasTextureMutations(CorruptionEffectStack stack) {
-        if (!shouldMutateGlobalTextures(stack)) {
-            pendingAtlasTextureScan = null;
-            if (!MUTATED_ATLAS_TEXTURES.isEmpty()) {
-                restoreAtlasTextures();
-            }
-            appliedAtlasTextureSignature = "";
-            atlasTextureScanRequested = false;
-            return;
+        pendingAtlasTextureScan = null;
+        atlasTextureScanRequested = false;
+        appliedAtlasTextureSignature = atlasTextureSignature(stack);
+        if (!MUTATED_ATLAS_TEXTURES.isEmpty()) {
+            MUTATED_ATLAS_TEXTURES.clear();
+            ATLAS_ORIGINALS.clear();
         }
-
-        if (KNOWN_ATLASES.isEmpty()) {
-            return;
-        }
-
-        String signature = atlasTextureSignature(stack);
-        if (pendingAtlasTextureScan != null) {
-            if (signature.equals(pendingAtlasTextureScan.signature)) {
-                processPendingAtlasTextureMutations();
-                return;
-            }
-            pendingAtlasTextureScan = null;
-        }
-        if (!atlasTextureScanRequested) {
-            if (signature.equals(appliedAtlasTextureSignature)) {
-                return;
-            }
-            return;
-        }
-
-        List<TextureAtlas> atlases = new ArrayList<>(KNOWN_ATLASES);
-        pendingAtlasTextureScan = new PendingAtlasTextureScan(signature, stack, atlases);
-        processPendingAtlasTextureMutations();
     }
 
     private static boolean shouldMutateGuiTextures(CorruptionEffectStack stack) {
@@ -554,7 +530,10 @@ public final class TextureMutationManager {
     private static boolean replaceTexture(Minecraft minecraft, ResourceLocation textureId, Resource resource, CorruptionEffectStack stack, float intensity, int ordinal, boolean mutate, List<ResourceLocation> donorTextureIds, String label) {
         NativeImage image = null;
         try (InputStream input = resource.open()) {
-            image = NativeImage.read(input);
+            image = NativeImage.read(NativeImage.Format.RGBA, input);
+            if (!isMutablePixelImage(image)) {
+                return false;
+            }
             if (mutate) {
                 mutateTexture(textureId, image, minecraft.getResourceManager(), donorTextureIds, stack, intensity, ordinal);
             }
@@ -576,11 +555,11 @@ public final class TextureMutationManager {
     }
 
     private static void mutateTexturePixels(ResourceLocation textureId, NativeImage image, ResourceManager resourceManager, List<ResourceLocation> donorTextureIds, PixelBank donorPixels, CorruptionEffectStack stack, CorruptionSurface surface, String targetPrefix, float intensity, int ordinal, int salt) {
-        int width = image.getWidth();
-        int height = image.getHeight();
-        if (width <= 0 || height <= 0) {
+        if (!isMutablePixelImage(image)) {
             return;
         }
+        int width = image.getWidth();
+        int height = image.getHeight();
         float effectiveIntensity = textureSpecificIntensity(textureId, intensity);
 
         int totalPixels = width * height;
@@ -636,7 +615,7 @@ public final class TextureMutationManager {
             NativeImage[] mipLevels = contents.byMipLevel;
             if (mipLevels == null || mipLevels.length == 0) {
                 NativeImage image = contents.getOriginalImage();
-                if (image != null) {
+                if (isMutablePixelImage(image)) {
                     PixelBank donor = atlasDonorPixels(atlas, spriteId, donorSpriteIds, 0, stack, ordinal, 0x4154);
                     mutateTexturePixels(spriteId, image, null, List.of(), donor, stack, CorruptionSurface.TEXTURE_MEMORY, "atlas_sprite:", intensity, ordinal, 0x4154);
                     mutated = true;
@@ -644,7 +623,7 @@ public final class TextureMutationManager {
             } else {
                 for (int mip = 0; mip < mipLevels.length; mip++) {
                     NativeImage image = mipLevels[mip];
-                    if (image == null) {
+                    if (!isMutablePixelImage(image)) {
                         continue;
                     }
                     PixelBank donor = atlasDonorPixels(atlas, spriteId, donorSpriteIds, mip, stack, ordinal, 0x4154 ^ mip);
@@ -772,6 +751,17 @@ public final class TextureMutationManager {
             return clampFloat(intensity * 1.28F + 0.03F, 0.0F, 1.0F);
         }
         return clampFloat(intensity, 0.0F, 1.0F);
+    }
+
+    private static boolean isMutablePixelImage(NativeImage image) {
+        if (image == null || image.format() != NativeImage.Format.RGBA) {
+            return false;
+        }
+        int width = image.getWidth();
+        int height = image.getHeight();
+        return width > 0
+                && height > 0
+                && (long) width * (long) height <= MAX_TEXTURE_PIXELS_TO_MUTATE;
     }
 
     private static void stretchTextureBands(int[] source, int[] pixels, int width, int height, long seed, float intensity) {
@@ -920,7 +910,7 @@ public final class TextureMutationManager {
 
     private record PixelBank(int[] pixels, int width, int height) {
         private PixelBank {
-            if (pixels == null || width <= 0 || height <= 0 || pixels.length < width * height) {
+            if (pixels == null || width <= 0 || height <= 0 || (long) width * (long) height > MAX_TEXTURE_PIXELS_TO_MUTATE || pixels.length < width * height) {
                 throw new IllegalArgumentException("invalid pixel bank");
             }
         }
@@ -955,7 +945,7 @@ public final class TextureMutationManager {
             int[][] pixels = new int[images.length][];
             for (int index = 0; index < images.length; index++) {
                 NativeImage image = images[index];
-                if (image == null || image.getWidth() <= 0 || image.getHeight() <= 0) {
+                if (!isMutablePixelImage(image)) {
                     widths[index] = 0;
                     heights[index] = 0;
                     pixels[index] = new int[0];
@@ -991,7 +981,7 @@ public final class TextureMutationManager {
             int count = Math.min(images.length, pixels.length);
             for (int index = 0; index < count; index++) {
                 NativeImage image = images[index];
-                if (image == null || image.getWidth() != widths[index] || image.getHeight() != heights[index]) {
+                if (!isMutablePixelImage(image) || image.getWidth() != widths[index] || image.getHeight() != heights[index]) {
                     continue;
                 }
                 for (int y = 0; y < heights[index]; y++) {

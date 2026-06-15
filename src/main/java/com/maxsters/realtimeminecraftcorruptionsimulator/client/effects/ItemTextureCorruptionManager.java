@@ -1,6 +1,7 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client.effects;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.BlockRenderCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionProfileManager;
@@ -120,7 +121,8 @@ public final class ItemTextureCorruptionManager {
         }
 
         CorruptedItemBakedModel wrapper = runtimeBlockWrapper(model, state);
-        return wrapper == null ? quads : wrapper.transform(quads, stack);
+        List<BakedQuad> transformed = wrapper == null ? quads : wrapper.transform(quads, stack);
+        return BlockRenderCorruptionHooks.corruptBlockFaces(state, side, transformed);
     }
 
     public static BakedQuad corruptRenderedBlockQuad(@Nullable BlockState state, BakedQuad quad) {
@@ -636,19 +638,31 @@ public final class ItemTextureCorruptionManager {
 
             long seed = stack.stableLong(CorruptionSurface.MODEL_GEOMETRY, targetId, bucket ^ effectHash);
             float modelScale = blockModel ? 1.0F : 0.64F;
-            float extremeBoost = stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 1.55F : 1.0F;
-            float offsetSpan = (0.035F + intensity * 0.42F) * modelScale * extremeBoost;
-            float scaleSpan = (0.10F + intensity * 1.35F) * extremeBoost;
-            float shearSpan = (0.02F + intensity * 0.36F) * modelScale * extremeBoost;
+            float extremeBoost = stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 3.85F : 1.0F;
+            float offsetSpan = (0.035F + intensity * 0.72F) * modelScale * extremeBoost;
+            float scaleSpan = (0.12F + intensity * (blockModel ? 3.75F : 2.15F)) * extremeBoost;
+            float shearSpan = (0.02F + intensity * 0.68F) * modelScale * extremeBoost;
             float xOffset = signedHash(seed ^ 0x584F46465345544CL, offsetSpan);
             float yOffset = signedHash(seed ^ 0x594F46465345544CL, offsetSpan);
             float zOffset = signedHash(seed ^ 0x5A4F46465345544CL, offsetSpan);
             float xScale = geometryScale(seed ^ 0x585343414C45L, scaleSpan);
             float yScale = geometryScale(seed ^ 0x595343414C45L, scaleSpan);
             float zScale = geometryScale(seed ^ 0x5A5343414C45L, scaleSpan);
+            if (blockModel && unitHash(seed ^ 0x57494445424C4BL) < 0.18F + intensity * 0.52F) {
+                int wideAxis = Math.floorMod((int) (seed >>> 37), 3);
+                float wideScale = 2.0F + unitHash(seed ^ 0x574944455343L) * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 10.0F : 5.0F);
+                if (wideAxis == 0) {
+                    xScale = Math.copySign(wideScale, xScale);
+                } else if (wideAxis == 1) {
+                    yScale = Math.copySign(wideScale, yScale);
+                } else {
+                    zScale = Math.copySign(wideScale, zScale);
+                }
+            }
             float xyShear = signedHash(seed ^ 0x58595348454152L, shearSpan);
             float yzShear = signedHash(seed ^ 0x595A5348454152L, shearSpan);
             float zxShear = signedHash(seed ^ 0x5A585348454152L, shearSpan);
+            float vertexWarpSpan = (0.04F + intensity * (blockModel ? 0.54F : 0.32F)) * modelScale * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 2.8F : 1.0F);
 
             for (int vertex = 0; vertex + 2 < vertices.length; vertex += 8) {
                 int ordinal = vertex / 8;
@@ -657,14 +671,14 @@ public final class ItemTextureCorruptionManager {
                 float y = Float.intBitsToFloat(vertices[vertex + 1]) - centerY;
                 float z = Float.intBitsToFloat(vertices[vertex + 2]) - centerZ;
                 float vertexWarp = (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) || unitHash(vertexSeed) < intensity * 0.42F)
-                        ? signedHash(vertexSeed ^ 0x56455254L, 0.04F + intensity * 0.22F) * modelScale
+                        ? signedHash(vertexSeed ^ 0x56455254L, vertexWarpSpan)
                         : 0.0F;
                 float warpedX = centerX + x * xScale + y * xyShear + vertexWarp + xOffset;
                 float warpedY = centerY + y * yScale + z * yzShear + signedHash(vertexSeed ^ 0x594A4954544552L, Math.abs(vertexWarp)) + yOffset;
                 float warpedZ = centerZ + z * zScale + x * zxShear + signedHash(vertexSeed ^ 0x5A4A4954544552L, Math.abs(vertexWarp)) + zOffset;
-                vertices[vertex] = Float.floatToRawIntBits(clampFloat(warpedX, -2.5F, 3.5F));
-                vertices[vertex + 1] = Float.floatToRawIntBits(clampFloat(warpedY, -2.5F, 3.5F));
-                vertices[vertex + 2] = Float.floatToRawIntBits(clampFloat(warpedZ, -2.5F, 3.5F));
+                vertices[vertex] = Float.floatToRawIntBits(clampFloat(warpedX, -12.0F, 13.0F));
+                vertices[vertex + 1] = Float.floatToRawIntBits(clampFloat(warpedY, -12.0F, 13.0F));
+                vertices[vertex + 2] = Float.floatToRawIntBits(clampFloat(warpedZ, -12.0F, 13.0F));
             }
 
             return new BakedQuad(vertices, quad.getTintIndex(), quad.getDirection(), quad.getSprite(), quad.isShade());

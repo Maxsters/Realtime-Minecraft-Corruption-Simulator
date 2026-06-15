@@ -4,11 +4,16 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.CloudRende
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.BreakingTextureCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.LightingCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.SkyRenderCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.WeatherRenderCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.WorldRenderCorruptionHooks;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -62,6 +67,51 @@ public abstract class LevelRendererMixin {
     )
     private Object rmc$corruptDestroyTextureStage(List<?> list, int index) {
         return BreakingTextureCorruptionHooks.getDestroyTexture(list, index);
+    }
+
+    @Inject(
+            method = {
+                    "renderChunkLayer(Lnet/minecraft/client/renderer/RenderType;Lcom/mojang/blaze3d/vertex/PoseStack;DDDLorg/joml/Matrix4f;)V",
+                    "m_172993_(Lnet/minecraft/client/renderer/RenderType;Lcom/mojang/blaze3d/vertex/PoseStack;DDDLorg/joml/Matrix4f;)V"
+            },
+            at = @At("HEAD"),
+            cancellable = true,
+            remap = false,
+            require = 0
+    )
+    private void rmc$corruptChunkLayer(RenderType renderType, PoseStack poseStack, double cameraX, double cameraY, double cameraZ, Matrix4f projectionMatrix, CallbackInfo callback) {
+        if (WorldRenderCorruptionHooks.shouldSkipChunkLayer(renderType)) {
+            callback.cancel();
+        }
+    }
+
+    @Inject(
+            method = {
+                    "renderSnowAndRain(Lnet/minecraft/client/renderer/LightTexture;FDDD)V",
+                    "m_109703_(Lnet/minecraft/client/renderer/LightTexture;FDDD)V"
+            },
+            at = @At("HEAD"),
+            cancellable = true,
+            remap = false,
+            require = 0
+    )
+    private void rmc$corruptWeatherOverlay(LightTexture lightTexture, float partialTick, double cameraX, double cameraY, double cameraZ, CallbackInfo callback) {
+        if (WeatherRenderCorruptionHooks.shouldSkipWeatherOverlay(net.minecraft.client.Minecraft.getInstance().level, partialTick)) {
+            callback.cancel();
+        }
+    }
+
+    @Redirect(
+            method = {
+                    "renderSnowAndRain(Lnet/minecraft/client/renderer/LightTexture;FDDD)V",
+                    "m_109703_(Lnet/minecraft/client/renderer/LightTexture;FDDD)V"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/multiplayer/ClientLevel;getRainLevel(F)F", remap = false),
+            remap = false,
+            require = 0
+    )
+    private float rmc$corruptRainLevel(ClientLevel level, float partialTick) {
+        return WeatherRenderCorruptionHooks.mutateRainLevel(level, level.getRainLevel(partialTick), partialTick);
     }
 
     @Inject(
