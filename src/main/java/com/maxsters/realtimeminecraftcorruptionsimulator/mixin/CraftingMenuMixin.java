@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(CraftingMenu.class)
+@SuppressWarnings("target")
 public abstract class CraftingMenuMixin {
     @Inject(
             method = {

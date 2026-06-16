@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Boat.class)
+@SuppressWarnings("target")
 public abstract class BoatFluidStateMixin {
     @Inject(
             method = {

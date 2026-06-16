@@ -120,7 +120,6 @@ public final class LiquidRenderCorruptionHooks {
             double baseY = Math.floor(y);
             double baseZ = Math.floor(z);
             double localX = x - baseX;
-            double localY = y - baseY;
             double localZ = z - baseZ;
             double centerX = baseX + 0.5D;
             double centerY = baseY + 0.5D;

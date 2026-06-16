@@ -51,18 +51,59 @@ public final class BlockEntityRenderCorruptionHooks {
         poseStack.pushPose();
         BlockPos pos = blockEntity.getBlockPos();
         Vec3 cameraPos = camera == null ? Vec3.ZERO : camera.getPosition();
-        double cameraFollow = unit(seed ^ 0x43414D46L) < 0.20F + intensity * 0.46F
-                ? 0.35D + unit(seed ^ 0x464F4C4CL) * intensity * 1.45D
+        int mode = Math.floorMod((int) (seed >>> 28), 8);
+        float phase = (blockEntity.hasLevel() ? blockEntity.getLevel().getGameTime() : 0L) + partialTick + unit(seed ^ 0x50484153L) * 80.0F;
+        double orbit = Math.sin(phase * (0.035F + intensity * (0.08F + unit(seed ^ 0x53504544L) * 0.55F)));
+        double counterOrbit = Math.cos(phase * (0.025F + intensity * (0.08F + unit(seed ^ 0x43535044L) * 0.38F)));
+        double cameraFollow = mode == 0 && unit(seed ^ 0x43414D46L) < 0.08F + intensity * 0.20F
+                ? 0.08D + unit(seed ^ 0x464F4C4CL) * intensity * 0.58D
                 : 0.0D;
-        double x = signed(seed ^ 0x584F4646L, 0.18D + intensity * 3.2D) + (cameraPos.x - pos.getX()) * cameraFollow;
-        double y = signed(seed ^ 0x594F4646L, 0.16D + intensity * 2.6D) + (cameraPos.y - pos.getY()) * cameraFollow;
-        double z = signed(seed ^ 0x5A4F4646L, 0.18D + intensity * 3.2D) + (cameraPos.z - pos.getZ()) * cameraFollow;
+        double x = signed(seed ^ 0x584F4646L, 0.12D + intensity * 2.6D) + (cameraPos.x - pos.getX()) * cameraFollow;
+        double y = signed(seed ^ 0x594F4646L, 0.10D + intensity * 2.2D) + (cameraPos.y - pos.getY()) * cameraFollow;
+        double z = signed(seed ^ 0x5A4F4646L, 0.12D + intensity * 2.6D) + (cameraPos.z - pos.getZ()) * cameraFollow;
+        if (mode == 1 || mode == 5) {
+            x += orbit * intensity * (0.75D + unit(seed ^ 0x4F524258L) * 5.2D);
+            z += counterOrbit * intensity * (0.75D + unit(seed ^ 0x4F52425AL) * 5.2D);
+        } else if (mode == 2) {
+            y += orbit * intensity * (0.45D + unit(seed ^ 0x424F554EL) * 4.4D);
+        } else if (mode == 3) {
+            x = Math.rint(x * (1.0D + intensity * 2.5D)) / Math.max(0.25D, 1.0D + intensity * 2.5D);
+            z = Math.rint(z * (1.0D + intensity * 2.5D)) / Math.max(0.25D, 1.0D + intensity * 2.5D);
+        } else if (mode == 6) {
+            x += signed(seed ^ (long) Math.floor(phase * (0.5F + intensity * 8.0F)), intensity * 2.0D);
+            y += signed(seed ^ 0x4A495459L ^ (long) Math.floor(phase * (0.4F + intensity * 6.0F)), intensity * 1.3D);
+        }
         poseStack.translate(Mth.clamp(x, -64.0D, 64.0D), Mth.clamp(y, -64.0D, 64.0D), Mth.clamp(z, -64.0D, 64.0D));
 
-        float phase = (blockEntity.hasLevel() ? blockEntity.getLevel().getGameTime() : 0L) + partialTick + unit(seed ^ 0x50484153L) * 80.0F;
-        float spin = (float) Math.sin(phase * (0.06F + intensity * 0.42F)) * (10.0F + intensity * 150.0F);
-        poseStack.mulPose(Axis.YP.rotationDegrees((float) (spin + signed(seed ^ 0x59524F54L, 80.0D * intensity))));
-        poseStack.mulPose(Axis.XP.rotationDegrees((float) signed(seed ^ 0x58524F54L, 70.0D * intensity)));
+        float spin = (float) Math.sin(phase * (0.05F + intensity * (0.14F + unit(seed ^ 0x5350494EL) * 0.72F))) * (8.0F + intensity * 220.0F);
+        float xRot = (float) signed(seed ^ 0x58524F54L, 90.0D * intensity);
+        float yRot = (float) signed(seed ^ 0x59524F54L, 110.0D * intensity);
+        float zRot = (float) signed(seed ^ 0x5A524F54L, 100.0D * intensity);
+        switch (mode) {
+            case 0 -> poseStack.mulPose(Axis.YP.rotationDegrees(spin + yRot));
+            case 1 -> {
+                poseStack.mulPose(Axis.XP.rotationDegrees(spin * 0.65F + xRot));
+                poseStack.mulPose(Axis.ZP.rotationDegrees((float) (counterOrbit * intensity * 180.0D) + zRot));
+            }
+            case 2 -> {
+                poseStack.mulPose(Axis.ZP.rotationDegrees(spin + zRot));
+                poseStack.mulPose(Axis.YP.rotationDegrees(yRot * 0.35F));
+            }
+            case 3 -> {
+                poseStack.mulPose(Axis.XP.rotationDegrees(Math.round((spin + xRot) / 15.0F) * 15.0F));
+                poseStack.mulPose(Axis.YP.rotationDegrees(Math.round(yRot / 30.0F) * 30.0F));
+            }
+            case 4 -> {
+                poseStack.mulPose(Axis.XP.rotationDegrees(spin + xRot));
+                poseStack.mulPose(Axis.YP.rotationDegrees(-spin * 0.55F + yRot));
+                poseStack.mulPose(Axis.ZP.rotationDegrees(spin * 0.28F + zRot));
+            }
+            default -> {
+                poseStack.mulPose(Axis.YP.rotationDegrees(yRot));
+                poseStack.mulPose(Axis.XP.rotationDegrees((float) (spin * signed(seed ^ 0x5358504EL, 1.0D) + xRot)));
+                poseStack.mulPose(Axis.ZP.rotationDegrees((float) signed(seed ^ 0x535A504EL, 180.0D * intensity)));
+            }
+        }
         if (unit(seed ^ 0x5343414CL) < 0.14F + intensity * 0.42F) {
             float sx = scale(seed ^ 0x5853434CL, intensity, stack.extreme(CorruptionSurface.MODEL_GEOMETRY));
             float sy = scale(seed ^ 0x5953434CL, intensity, stack.extreme(CorruptionSurface.MODEL_GEOMETRY));

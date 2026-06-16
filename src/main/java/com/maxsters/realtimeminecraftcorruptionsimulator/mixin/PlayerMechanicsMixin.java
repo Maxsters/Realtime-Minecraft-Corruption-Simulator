@@ -13,6 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Player.class)
+@SuppressWarnings("target")
 public abstract class PlayerMechanicsMixin {
     @ModifyVariable(
             method = {

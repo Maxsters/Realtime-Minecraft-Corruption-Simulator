@@ -19,6 +19,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -54,6 +55,7 @@ import net.minecraftforge.event.entity.living.LivingEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.living.MobSpawnEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
@@ -548,6 +550,42 @@ public final class CorruptionMechanicsManager {
         return (float) Mth.clamp(original * multiplier, 0.05D, 72000.0D);
     }
 
+    public static int corruptAirSupplyChange(LivingEntity entity, int before, int after, boolean decreasing) {
+        if (entity == null || entity.level() == null || entity.isSpectator() || before == after) {
+            return after;
+        }
+        CorruptionEffectStack stack = activeStackFor(entity);
+        String targetId = "air_supply_speed:" + (decreasing ? "drain:" : "refill:") + entityTargetId(entity);
+        if (!surfaceActive(stack, CorruptionSurface.TICK_SPEED, MIN_DAY_TIME_INTENSITY)
+                && !targetActive(stack, CorruptionSurface.TICK_SPEED, targetId, MIN_DAY_TIME_INTENSITY)) {
+            return after;
+        }
+
+        float intensity = Mth.clamp(Math.max(
+                stack.extreme(CorruptionSurface.TICK_SPEED) ? 1.0F : stack.intensity(CorruptionSurface.TICK_SPEED),
+                stack.targetIntensity(CorruptionSurface.TICK_SPEED, targetId)
+        ), 0.0F, 1.0F);
+        double speed = gameSpeedMultiplier(stack, targetId);
+        long hash = stack.stableLong(CorruptionSurface.TICK_SPEED, targetId, entity.getId() ^ before ^ 0x414952);
+        if (unitHash(hash ^ 0x5354414CL) < 0.10F + intensity * 0.34F) {
+            int mode = Math.floorMod((int) (hash >>> 25), 5);
+            speed = switch (mode) {
+                case 0 -> 0.0D;
+                case 1 -> 12.0D + unitHash(hash ^ 0x46415354L) * 84.0D;
+                case 2 -> 0.03D + unitHash(hash ^ 0x534C4F57L) * 0.18D;
+                case 3 -> -1.0D * (0.25D + intensity * 5.0D);
+                default -> speed;
+            };
+        }
+
+        int delta = Math.abs(after - before);
+        int mutatedDelta = Math.max(0, (int) Math.round(delta * Math.abs(speed)));
+        if (speed < 0.0D) {
+            return Mth.clamp(before + (decreasing ? mutatedDelta : -mutatedDelta), -80, entity.getMaxAirSupply() + 120);
+        }
+        return Mth.clamp(before + (decreasing ? -mutatedDelta : mutatedDelta), -80, entity.getMaxAirSupply() + 120);
+    }
+
     public static float corruptJumpPower(LivingEntity entity, float original) {
         if (entity == null || entity.level() == null || entity.isSpectator()) {
             return original;
@@ -624,6 +662,81 @@ public final class CorruptionMechanicsManager {
         ), 0.0F, 1.0F);
         long hash = stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, targetId, player.getId() ^ target.getId() ^ 0x4154544B);
         return unitHash(hash ^ 0x43414E43L) < Mth.clamp(0.04F + intensity * 0.78F + stack.instability() * 0.10F, 0.0F, 0.96F);
+    }
+
+    public static boolean shouldCancelPlayerInteraction(Player player, String phase, BlockPos pos, Entity target, ItemStack itemStack) {
+        if (player == null || player.level() == null || player.isSpectator()) {
+            return false;
+        }
+        CorruptionEffectStack stack = activeStackFor(player);
+        String itemId = "empty";
+        if (itemStack != null && !itemStack.isEmpty()) {
+            ResourceLocation location = ForgeRegistries.ITEMS.getKey(itemStack.getItem());
+            itemId = location == null ? itemStack.getItem().toString() : location.toString();
+        }
+        String targetPart = target == null ? "world" : entityTargetId(target);
+        String targetId = "interaction_failure:" + phase + ":" + targetPart + ":" + itemId;
+        if (!surfaceActive(stack, CorruptionSurface.INTERACTION_ROUTING, MIN_PLAYER_MECHANICS_INTENSITY)
+                && !targetActive(stack, CorruptionSurface.INTERACTION_ROUTING, targetId, MIN_PLAYER_MECHANICS_INTENSITY)) {
+            return false;
+        }
+
+        float intensity = Mth.clamp(Math.max(
+                stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING),
+                stack.targetIntensity(CorruptionSurface.INTERACTION_ROUTING, targetId)
+        ), 0.0F, 1.0F);
+        int salt = player.getId() ^ phase.hashCode() ^ itemId.hashCode();
+        if (pos != null) {
+            salt ^= pos.hashCode();
+        }
+        if (target != null) {
+            salt ^= target.getId() * 31;
+        }
+        long hash = stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, targetId, salt);
+        float chance = stack.extreme(CorruptionSurface.INTERACTION_ROUTING)
+                ? 0.94F
+                : Mth.clamp(0.035F + intensity * 0.78F + stack.instability() * 0.10F, 0.0F, 0.90F);
+        if (phase.contains("left_click") || phase.contains("break")) {
+            chance = Mth.clamp(chance + 0.06F + intensity * 0.12F, 0.0F, 0.96F);
+        }
+        return stack.unit(CorruptionSurface.INTERACTION_ROUTING, targetId + ":cancel", (int) (hash ^ 0x43414E43L)) < chance;
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+        cancelPlayerInteraction(event, "left_click_block", event.getPos(), null);
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        cancelPlayerInteraction(event, "right_click_block", event.getPos(), null);
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
+        cancelPlayerInteraction(event, "right_click_item", event.getPos(), null);
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
+        cancelPlayerInteraction(event, "entity_interact", event.getPos(), event.getTarget());
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onEntityInteractSpecific(PlayerInteractEvent.EntityInteractSpecific event) {
+        cancelPlayerInteraction(event, "entity_interact_specific", event.getPos(), event.getTarget());
+    }
+
+    private static void cancelPlayerInteraction(PlayerInteractEvent event, String phase, BlockPos pos, Entity target) {
+        if (event == null) {
+            return;
+        }
+        Player player = event.getEntity();
+        if (!shouldCancelPlayerInteraction(player, phase, pos, target, event.getItemStack())) {
+            return;
+        }
+        event.setCancellationResult(InteractionResult.FAIL);
+        event.setCanceled(true);
     }
 
     public static boolean shouldDisableEntityTargeting(Entity entity, String phase) {
@@ -968,6 +1081,7 @@ public final class CorruptionMechanicsManager {
         event.setAmount(amount);
     }
 
+    @SuppressWarnings("deprecation")
     private static void mutateLiquidMechanics(ServerPlayer player, CorruptionEffectStack stack) {
         boolean actualWater = isTouchingFluid(player, FluidTags.WATER);
         boolean actualLava = isTouchingFluid(player, FluidTags.LAVA);

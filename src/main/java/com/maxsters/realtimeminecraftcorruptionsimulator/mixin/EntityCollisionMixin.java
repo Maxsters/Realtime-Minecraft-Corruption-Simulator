@@ -13,6 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Entity.class)
+@SuppressWarnings("target")
 public abstract class EntityCollisionMixin {
     @Unique
     private boolean rmc$restoreNoPhysicsAfterMove;

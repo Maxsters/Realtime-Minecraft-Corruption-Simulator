@@ -80,22 +80,19 @@ public final class FontRenderCorruptionHooks {
 
     private static FontMutation mutation() {
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
-        if (!stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY) && !stack.activeOrExtreme(CorruptionSurface.GUI_SURFACE)) {
+        if (!stack.activeOrExtreme(CorruptionSurface.GUI_SURFACE)) {
             return INACTIVE;
         }
 
-        float texture = stack.extreme(CorruptionSurface.TEXTURE_MEMORY) ? 1.0F : stack.intensity(CorruptionSurface.TEXTURE_MEMORY);
         float gui = stack.extreme(CorruptionSurface.GUI_SURFACE) ? 1.0F : stack.intensity(CorruptionSurface.GUI_SURFACE) * 0.92F;
-        float levelFloor = Mth.clamp(stack.level() / 100.0F * 0.72F, 0.0F, 1.0F);
-        float intensity = Mth.clamp(Math.max(levelFloor, Math.max(texture, gui)), 0.0F, 1.0F);
+        float intensity = Mth.clamp(gui, 0.0F, 1.0F);
         if (intensity <= 0.025F) {
             return INACTIVE;
         }
         float progression = progressiveStrength(intensity);
 
-        long bucket = stack.bucket(CorruptionSurface.TEXTURE_MEMORY, "font_render_attributes", 0x46524E44, 96);
-        long seed = stack.stableLong(CorruptionSurface.TEXTURE_MEMORY, "font_render_attributes", (int) bucket)
-                ^ stack.stableLong(CorruptionSurface.GUI_SURFACE, "font_render_attributes", (int) (bucket * 31L + 0x475549L))
+        long bucket = stack.bucket(CorruptionSurface.GUI_SURFACE, "font_render_attributes", 0x46524E44, 96);
+        long seed = stack.stableLong(CorruptionSurface.GUI_SURFACE, "font_render_attributes", (int) bucket)
                 ^ 0x464F4E5452454E44L;
         int mode = Math.floorMod((int) (seed >>> 28), 8);
         float xScale = 1.0F;

@@ -1,6 +1,7 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client.effects;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.LightingCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
@@ -52,6 +53,7 @@ public final class VisualCorruptionManager {
     private static int pendingWorldRefreshDelay = -1;
     private static int pendingWorldRefreshPasses;
     private static boolean pendingWorldRefresh;
+    private static boolean lightingCorruptionWasActive;
 
     private VisualCorruptionManager() {
     }
@@ -97,12 +99,20 @@ public final class VisualCorruptionManager {
         if (!worldRenderSignature(previousStack).equals(worldRenderSignature(currentStack))) {
             requestWorldRenderRefresh();
         }
+        if (LightingCorruptionHooks.lightingCorruptionActive(previousStack)
+                || LightingCorruptionHooks.lightingCorruptionActive(currentStack)) {
+            requestLightTextureRefresh();
+        }
     }
 
     public static void requestWorldRenderRefresh() {
         pendingWorldRefreshDelay = pendingWorldRefreshDelay < 0 ? 2 : Math.min(pendingWorldRefreshDelay, 2);
         pendingWorldRefreshPasses = Math.max(pendingWorldRefreshPasses, 6);
         pendingWorldRefresh = true;
+    }
+
+    public static void requestLightTextureRefresh() {
+        LightingCorruptionHooks.requestLightTextureRefresh();
     }
 
     @SubscribeEvent
@@ -247,6 +257,7 @@ public final class VisualCorruptionManager {
             return;
         }
 
+        tickLightingCorruptionState();
         tickPendingWorldRefresh();
     }
 
@@ -435,6 +446,16 @@ public final class VisualCorruptionManager {
         pendingWorldRefreshDelay = -1;
     }
 
+    private static void tickLightingCorruptionState() {
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
+        boolean active = LightingCorruptionHooks.lightingCorruptionActive(stack);
+        if (lightingCorruptionWasActive && !active) {
+            requestLightTextureRefresh();
+            requestWorldRenderRefresh();
+        }
+        lightingCorruptionWasActive = active;
+    }
+
     private static String worldRenderSignature(CorruptionEffectStack stack) {
         return stack.level()
                 + ":" + stack.fixedSeed()
@@ -511,19 +532,6 @@ public final class VisualCorruptionManager {
         double sprint = player.isSprinting() ? 0.22D : 0.0D;
         double fall = player.onGround() ? 0.0D : 0.16D;
         return Mth.clamp(horizontal * 8.0D + vertical + sprint + fall, 0.0D, 1.0D);
-    }
-
-    private static double signed(long value, double amplitude) {
-        return (unit(value) * 2.0D - 1.0D) * amplitude;
-    }
-
-    private static double unit(long value) {
-        value ^= value >>> 33;
-        value *= 0xff51afd7ed558ccdL;
-        value ^= value >>> 33;
-        value *= 0xc4ceb9fe1a85ec53L;
-        value ^= value >>> 33;
-        return ((value >>> 40) & 0xFF_FFFFL) / 16_777_215.0D;
     }
 
     private static double clampDouble(double value, double min, double max) {

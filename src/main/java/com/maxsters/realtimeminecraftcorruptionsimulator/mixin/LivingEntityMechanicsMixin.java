@@ -11,6 +11,7 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(LivingEntity.class)
+@SuppressWarnings("target")
 public abstract class LivingEntityMechanicsMixin {
     @Inject(
             method = {
@@ -25,6 +26,36 @@ public abstract class LivingEntityMechanicsMixin {
     @Dynamic("Targets both mapped dev names and SRG runtime aliases for LivingEntity#getJumpPower.")
     private void rmc$corruptJumpPower(CallbackInfoReturnable<Float> callback) {
         callback.setReturnValue(CorruptionMechanicsManager.corruptJumpPower((LivingEntity) (Object) this, callback.getReturnValue()));
+    }
+
+    @Inject(
+            method = {
+                    "decreaseAirSupply(I)I",
+                    "m_21303_(I)I"
+            },
+            at = @At("RETURN"),
+            cancellable = true,
+            remap = false,
+            require = 0
+    )
+    @Dynamic("Targets both mapped dev names and SRG runtime aliases for LivingEntity#decreaseAirSupply.")
+    private void rmc$corruptAirDecrease(int airSupply, CallbackInfoReturnable<Integer> callback) {
+        callback.setReturnValue(CorruptionMechanicsManager.corruptAirSupplyChange((LivingEntity) (Object) this, airSupply, callback.getReturnValue(), true));
+    }
+
+    @Inject(
+            method = {
+                    "increaseAirSupply(I)I",
+                    "m_21307_(I)I"
+            },
+            at = @At("RETURN"),
+            cancellable = true,
+            remap = false,
+            require = 0
+    )
+    @Dynamic("Targets both mapped dev names and SRG runtime aliases for LivingEntity#increaseAirSupply.")
+    private void rmc$corruptAirIncrease(int airSupply, CallbackInfoReturnable<Integer> callback) {
+        callback.setReturnValue(CorruptionMechanicsManager.corruptAirSupplyChange((LivingEntity) (Object) this, airSupply, callback.getReturnValue(), false));
     }
 
     @ModifyVariable(

@@ -16,6 +16,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.lang.reflect.Field;
 
 @Mixin(BlockEntityRenderDispatcher.class)
+@SuppressWarnings("target")
 public abstract class BlockEntityRenderDispatcherMixin {
     private static final ThreadLocal<Boolean> RMC$BLOCK_ENTITY_POSE_APPLIED = ThreadLocal.withInitial(() -> false);
 

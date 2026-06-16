@@ -28,6 +28,8 @@
     "client.BoatRendererMixin",
     "client.EntityRenderDispatcherMixin",
     "client.FontStringRenderOutputMixin",
+    "client.GameRendererMixin",
+    "client.ItemEntityRendererMixin",
     "client.LevelRendererMixin",
     "client.LightTextureMixin",
     "client.LiquidBlockRendererMixin",
@@ -36,6 +38,7 @@
     "client.ModelPartMixin",
     "client.OptionInstanceMixin",
     "client.ParticleMixin",
+    "client.ScreenMixin",
     "client.SheetedDecalTextureGeneratorMixin",
     "client.SimpleBakedModelMixin",
     "client.TerrainParticleMixin"

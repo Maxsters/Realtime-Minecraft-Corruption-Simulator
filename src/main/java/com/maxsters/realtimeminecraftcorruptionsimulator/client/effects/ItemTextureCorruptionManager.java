@@ -101,7 +101,7 @@ public final class ItemTextureCorruptionManager {
     }
 
     public static List<BakedQuad> corruptBlockRenderQuads(BakedModel model, @Nullable BlockState state, @Nullable Direction side, RandomSource random) {
-        List<BakedQuad> quads = model.getQuads(state, side, random);
+        List<BakedQuad> quads = model.getQuads(state, side, random, ModelData.EMPTY, null);
         return corruptReturnedBlockQuads(model, state, side, quads);
     }
 
@@ -361,10 +361,6 @@ public final class ItemTextureCorruptionManager {
         @Override
         public List<RenderType> getRenderTypes(ItemStack stack, boolean fabulous) {
             return delegate.getRenderTypes(stack, fabulous);
-        }
-
-        private List<BakedQuad> transform(List<BakedQuad> quads) {
-            return transform(quads, ClientCorruptionEffects.current());
         }
 
         private List<BakedQuad> transform(List<BakedQuad> quads, CorruptionEffectStack stack) {

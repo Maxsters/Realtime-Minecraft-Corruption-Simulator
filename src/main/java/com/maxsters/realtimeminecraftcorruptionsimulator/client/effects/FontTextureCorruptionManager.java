@@ -394,8 +394,7 @@ public final class FontTextureCorruptionManager {
     }
 
     private static boolean fontMutationActive(CorruptionEffectStack stack) {
-        return stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)
-                || stack.activeOrExtreme(CorruptionSurface.GUI_SURFACE);
+        return stack.activeOrExtreme(CorruptionSurface.GUI_SURFACE);
     }
 
     private static boolean isMutableFontSet(ResourceLocation fontId, FontSet fontSet) {
@@ -431,18 +430,15 @@ public final class FontTextureCorruptionManager {
                 + ":" + stack.previousLevel()
                 + ":" + stack.delta()
                 + ":" + stack.fixedSeed()
-                + ":" + stack.bucket(CorruptionSurface.TEXTURE_MEMORY, 0x464F4E54, 64)
                 + ":" + stack.bucket(CorruptionSurface.GUI_SURFACE, 0x475549, 64);
     }
 
     private static float fontIntensity(CorruptionEffectStack stack, String targetId) {
-        if (stack.extreme(CorruptionSurface.TEXTURE_MEMORY) || stack.extreme(CorruptionSurface.GUI_SURFACE)) {
+        if (stack.extreme(CorruptionSurface.GUI_SURFACE)) {
             return 1.0F;
         }
-        float levelFloor = clampFloat(stack.level() / 100.0F * 0.94F, 0.0F, 1.0F);
-        float texture = Math.max(stack.targetIntensity(CorruptionSurface.TEXTURE_MEMORY, targetId), stack.intensity(CorruptionSurface.TEXTURE_MEMORY));
         float gui = Math.max(stack.targetIntensity(CorruptionSurface.GUI_SURFACE, targetId), stack.intensity(CorruptionSurface.GUI_SURFACE) * 0.92F);
-        return clampFloat(Math.max(levelFloor, Math.max(texture, gui)), 0.0F, 1.0F);
+        return clampFloat(gui, 0.0F, 1.0F);
     }
 
     private static void reportFontMutation() {
@@ -678,7 +674,7 @@ public final class FontTextureCorruptionManager {
             }
 
             long seed = stack.stableLong(CorruptionSurface.GUI_SURFACE, targetId + ":stretch_render:" + signature, 0x53545246) ^ FONT_MUTATION_SEED;
-            float warpChance = stack.extreme(CorruptionSurface.TEXTURE_MEMORY) || stack.extreme(CorruptionSurface.GUI_SURFACE)
+            float warpChance = stack.extreme(CorruptionSurface.GUI_SURFACE)
                     ? 0.72F
                     : clampFloat(0.075F + intensity * 0.42F, 0.0F, 0.60F);
             if (unit(seed ^ 0x474C595048474154L) > warpChance) {

@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import java.lang.reflect.Field;
 
 @Mixin(targets = "net.minecraft.client.gui.Font$StringRenderOutput")
+@SuppressWarnings("target")
 public abstract class FontStringRenderOutputMixin {
     @Unique
     private static Field rmc$dropShadowField;

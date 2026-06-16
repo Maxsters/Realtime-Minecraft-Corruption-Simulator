@@ -1,5 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.AnimationSpeedCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.ParticleCorruptionHooks;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.SingleQuadParticle;
@@ -15,6 +16,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 @Mixin(Particle.class)
+@SuppressWarnings("target")
 public abstract class ParticleMixin {
     @Unique
     private static final int RMC$X = 0;
@@ -52,11 +54,13 @@ public abstract class ParticleMixin {
     private static final int RMC$HAS_PHYSICS = 16;
     @Unique
     private static final int RMC$SPEED_UP_WHEN_BLOCKED = 17;
+    @Unique
+    private static final int RMC$AGE = 18;
 
     @Unique
-    private static final Field[] RMC$PARTICLE_FIELDS = new Field[18];
+    private static final Field[] RMC$PARTICLE_FIELDS = new Field[19];
     @Unique
-    private static final boolean[] RMC$PARTICLE_FIELDS_CHECKED = new boolean[18];
+    private static final boolean[] RMC$PARTICLE_FIELDS_CHECKED = new boolean[19];
     @Unique
     private static Field rmc$quadSizeField;
     @Unique
@@ -94,6 +98,29 @@ public abstract class ParticleMixin {
             return;
         }
         rmc$applyParticleState(particle, state, mutated);
+    }
+
+    @Inject(
+            method = {
+                    "tick()V",
+                    "m_5989_()V"
+            },
+            at = @At("RETURN"),
+            remap = false,
+            require = 0
+    )
+    @Dynamic("Targets both mapped dev names and SRG runtime aliases for Particle#tick.")
+    private void rmc$corruptParticleAnimationAge(CallbackInfo callback) {
+        Particle particle = (Particle) (Object) this;
+        Integer age = rmc$intField(particle, RMC$AGE, "age", "f_107224_");
+        Integer lifetime = rmc$intField(particle, RMC$LIFETIME, "lifetime", "f_107225_");
+        if (age == null || lifetime == null) {
+            return;
+        }
+        int mutated = AnimationSpeedCorruptionHooks.mutateParticleAge(particle, age, lifetime);
+        if (mutated != age) {
+            rmc$setIntField(particle, RMC$AGE, "age", "f_107224_", mutated);
+        }
     }
 
     @Unique
@@ -252,6 +279,18 @@ public abstract class ParticleMixin {
         }
         try {
             field.setFloat(particle, value);
+        } catch (IllegalAccessException | RuntimeException ignored) {
+        }
+    }
+
+    @Unique
+    private static void rmc$setIntField(Particle particle, int index, String mappedName, String srgName, int value) {
+        Field field = rmc$particleField(index, mappedName, srgName);
+        if (field == null) {
+            return;
+        }
+        try {
+            field.setInt(particle, value);
         } catch (IllegalAccessException | RuntimeException ignored) {
         }
     }

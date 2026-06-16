@@ -25,6 +25,7 @@ public final class CorruptionOverlayLayout {
     private static final int DEFAULT_Y = 12;
     private static final int DEFAULT_WIDTH = 392;
     private static final int DEFAULT_HEIGHT = 270;
+    private static final int MINIMIZED_WIDTH = 324;
 
     private int x = DEFAULT_X;
     private int y = DEFAULT_Y;
@@ -91,7 +92,7 @@ public final class CorruptionOverlayLayout {
             return 28;
         }
         if (mode == Mode.MINIMIZED) {
-            return Math.min(Math.max(180, width), Math.max(120, screenWidth - 8));
+            return Math.min(MINIMIZED_WIDTH, Math.max(120, screenWidth - 8));
         }
         return Math.min(width, Math.max(120, screenWidth - 8));
     }

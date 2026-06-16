@@ -21,6 +21,7 @@ import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -28,6 +29,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.util.List;
 
 @Mixin(LevelRenderer.class)
+@SuppressWarnings("target")
 public abstract class LevelRendererMixin {
     @Inject(
             method = {
@@ -96,9 +98,69 @@ public abstract class LevelRendererMixin {
             require = 0
     )
     private void rmc$corruptWeatherOverlay(LightTexture lightTexture, float partialTick, double cameraX, double cameraY, double cameraZ, CallbackInfo callback) {
+        WeatherRenderCorruptionHooks.beginWeather(net.minecraft.client.Minecraft.getInstance().level, partialTick, cameraX, cameraY, cameraZ);
         if (WeatherRenderCorruptionHooks.shouldSkipWeatherOverlay(net.minecraft.client.Minecraft.getInstance().level, partialTick)) {
+            WeatherRenderCorruptionHooks.endWeather();
             callback.cancel();
         }
+    }
+
+    @Inject(
+            method = {
+                    "renderSnowAndRain(Lnet/minecraft/client/renderer/LightTexture;FDDD)V",
+                    "m_109703_(Lnet/minecraft/client/renderer/LightTexture;FDDD)V"
+            },
+            at = @At("RETURN"),
+            remap = false,
+            require = 0
+    )
+    private void rmc$endWeatherOverlay(LightTexture lightTexture, float partialTick, double cameraX, double cameraY, double cameraZ, CallbackInfo callback) {
+        WeatherRenderCorruptionHooks.endWeather();
+    }
+
+    @ModifyVariable(
+            method = {
+                    "renderSnowAndRain(Lnet/minecraft/client/renderer/LightTexture;FDDD)V",
+                    "m_109703_(Lnet/minecraft/client/renderer/LightTexture;FDDD)V"
+            },
+            at = @At("HEAD"),
+            argsOnly = true,
+            ordinal = 0,
+            remap = false,
+            require = 0
+    )
+    private double rmc$corruptWeatherCameraX(double cameraX, LightTexture lightTexture, float partialTick) {
+        return WeatherRenderCorruptionHooks.mutateWeatherCameraX(cameraX, partialTick);
+    }
+
+    @ModifyVariable(
+            method = {
+                    "renderSnowAndRain(Lnet/minecraft/client/renderer/LightTexture;FDDD)V",
+                    "m_109703_(Lnet/minecraft/client/renderer/LightTexture;FDDD)V"
+            },
+            at = @At("HEAD"),
+            argsOnly = true,
+            ordinal = 1,
+            remap = false,
+            require = 0
+    )
+    private double rmc$corruptWeatherCameraY(double cameraY, LightTexture lightTexture, float partialTick) {
+        return WeatherRenderCorruptionHooks.mutateWeatherCameraY(cameraY, partialTick);
+    }
+
+    @ModifyVariable(
+            method = {
+                    "renderSnowAndRain(Lnet/minecraft/client/renderer/LightTexture;FDDD)V",
+                    "m_109703_(Lnet/minecraft/client/renderer/LightTexture;FDDD)V"
+            },
+            at = @At("HEAD"),
+            argsOnly = true,
+            ordinal = 2,
+            remap = false,
+            require = 0
+    )
+    private double rmc$corruptWeatherCameraZ(double cameraZ, LightTexture lightTexture, float partialTick) {
+        return WeatherRenderCorruptionHooks.mutateWeatherCameraZ(cameraZ, partialTick);
     }
 
     @Redirect(
@@ -112,6 +174,58 @@ public abstract class LevelRendererMixin {
     )
     private float rmc$corruptRainLevel(ClientLevel level, float partialTick) {
         return WeatherRenderCorruptionHooks.mutateRainLevel(level, level.getRainLevel(partialTick), partialTick);
+    }
+
+    @Redirect(
+            method = {
+                    "renderSnowAndRain(Lnet/minecraft/client/renderer/LightTexture;FDDD)V",
+                    "m_109703_(Lnet/minecraft/client/renderer/LightTexture;FDDD)V"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/BufferBuilder;vertex(DDD)Lcom/mojang/blaze3d/vertex/VertexConsumer;", remap = false),
+            remap = false,
+            require = 0
+    )
+    private VertexConsumer rmc$corruptWeatherVertex(BufferBuilder builder, double x, double y, double z) {
+        return WeatherRenderCorruptionHooks.vertex(builder, x, y, z);
+    }
+
+    @Redirect(
+            method = {
+                    "renderSnowAndRain(Lnet/minecraft/client/renderer/LightTexture;FDDD)V",
+                    "m_109703_(Lnet/minecraft/client/renderer/LightTexture;FDDD)V"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/BufferBuilder;m_5483_(DDD)Lcom/mojang/blaze3d/vertex/VertexConsumer;", remap = false),
+            remap = false,
+            require = 0
+    )
+    private VertexConsumer rmc$corruptWeatherVertexSrg(BufferBuilder builder, double x, double y, double z) {
+        return WeatherRenderCorruptionHooks.vertex(builder, x, y, z);
+    }
+
+    @Redirect(
+            method = {
+                    "renderSnowAndRain(Lnet/minecraft/client/renderer/LightTexture;FDDD)V",
+                    "m_109703_(Lnet/minecraft/client/renderer/LightTexture;FDDD)V"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/VertexConsumer;uv(FF)Lcom/mojang/blaze3d/vertex/VertexConsumer;", remap = false),
+            remap = false,
+            require = 0
+    )
+    private VertexConsumer rmc$corruptWeatherUv(VertexConsumer consumer, float u, float v) {
+        return WeatherRenderCorruptionHooks.uv(consumer, u, v);
+    }
+
+    @Redirect(
+            method = {
+                    "renderSnowAndRain(Lnet/minecraft/client/renderer/LightTexture;FDDD)V",
+                    "m_109703_(Lnet/minecraft/client/renderer/LightTexture;FDDD)V"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/VertexConsumer;m_7421_(FF)Lcom/mojang/blaze3d/vertex/VertexConsumer;", remap = false),
+            remap = false,
+            require = 0
+    )
+    private VertexConsumer rmc$corruptWeatherUvSrg(VertexConsumer consumer, float u, float v) {
+        return WeatherRenderCorruptionHooks.uv(consumer, u, v);
     }
 
     @Inject(

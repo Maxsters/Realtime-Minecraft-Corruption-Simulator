@@ -181,7 +181,6 @@ public final class GuiTextureCorruptionManager {
 
         long clock = screen.getClass().getName().hashCode() * 31L + stack.level() * 17L + stack.layerCount();
         int screenWidth = Math.max(1, screen.width);
-        int screenHeight = Math.max(1, screen.height);
         boolean changed = false;
         boolean preserveWorldAccess = ClientCorruptionProtection.isLifecycleAccessScreen(screen);
 

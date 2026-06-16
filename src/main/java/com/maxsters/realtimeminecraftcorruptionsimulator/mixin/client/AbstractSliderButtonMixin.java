@@ -15,6 +15,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 @Mixin(AbstractSliderButton.class)
+@SuppressWarnings("target")
 public abstract class AbstractSliderButtonMixin {
     @Unique
     private static Field rmc$valueField;

@@ -1,13 +1,17 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client.overlay;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.calibration.StabilityDebtCalculator;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.CorruptionAchievementManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.logs.CorruptionLogManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionTarget;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraftforge.client.model.data.ModelData;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,16 +23,25 @@ public final class CorruptionOverlayPanel {
     public static final int COLLAPSED_SIZE = 28;
     public static final int APPLY_BUTTON_WIDTH = 74;
     public static final int APPLY_BUTTON_HEIGHT = 16;
-    private static final int TAB_WIDTH = 72;
+    private static final int TAB_WIDTH = 64;
     private static final int TAB_HEIGHT = 16;
     private static final int SEED_BUTTON_WIDTH = 42;
     private static final int SEED_RANDOM_BUTTON_WIDTH = 56;
     private static final int SEED_BUTTON_GAP = 4;
-    private static final int TARGET_BULK_BUTTON_WIDTH = 72;
+    private static final int FUN_INPUT_WIDTH = 74;
+    private static final int TARGET_BULK_BUTTON_WIDTH = 58;
     private static final int TOGGLE_ROW_HEIGHT = 28;
     private static final int WARNING_HEIGHT = 28;
     private static final int WARNING_GAP = 8;
     private static final int RESIZE_HANDLE_SIZE = 10;
+    private static final int ACHIEVEMENT_ROW_HEIGHT = 34;
+    private static final int ACHIEVEMENT_ROW_GAP = 3;
+    private static final int ACHIEVEMENT_NOTE_HEIGHT = 40;
+    private static final int ACHIEVEMENT_RESET_BUTTON_WIDTH = 72;
+    private static final int ACHIEVEMENT_PIN_BUTTON_WIDTH = 28;
+    private static final int PINNED_ROW_WIDTH = 176;
+    private static final int PINNED_ROW_HEIGHT = 30;
+    private static final int PINNED_ROW_GAP = 4;
     public static final int MAX_AUTO_INTERVAL_TICKS = 144_000;
     public static final int MIN_AUTO_AMOUNT = -100;
     public static final int MAX_AUTO_AMOUNT = 100;
@@ -68,6 +81,16 @@ public final class CorruptionOverlayPanel {
     public static Rect funTabBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
         Rect settings = settingsTabBounds(layout, screenWidth, screenHeight);
         return new Rect(settings.x() + settings.width() + 6, settings.y(), TAB_WIDTH, TAB_HEIGHT);
+    }
+
+    public static Rect achievementsTabBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect fun = funTabBounds(layout, screenWidth, screenHeight);
+        return new Rect(fun.x() + fun.width() + 6, fun.y(), TAB_WIDTH, TAB_HEIGHT);
+    }
+
+    public static Rect hudTabBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect achievements = achievementsTabBounds(layout, screenWidth, screenHeight);
+        return new Rect(achievements.x() + achievements.width() + 6, achievements.y(), TAB_WIDTH, TAB_HEIGHT);
     }
 
     public static Rect sliderBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
@@ -114,10 +137,15 @@ public final class CorruptionOverlayPanel {
         return new Rect(apply.x() + apply.width() + SEED_BUTTON_GAP, apply.y(), seedRandomButtonWidth(panel), 16);
     }
 
-    public static Rect targetBulkButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+    public static Rect enableAllTargetsButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
         Rect area = settingsListArea(layout, screenWidth, screenHeight);
         int width = Math.min(TARGET_BULK_BUTTON_WIDTH, Math.max(48, area.width() / 2));
-        return new Rect(area.x() + area.width() - width, area.y() - 2, width, 14);
+        return new Rect(area.x() + area.width() - width * 2 - 4, area.y() - 2, width, 14);
+    }
+
+    public static Rect disableAllTargetsButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect enable = enableAllTargetsButtonBounds(layout, screenWidth, screenHeight);
+        return new Rect(enable.x() + enable.width() + 4, enable.y(), enable.width(), enable.height());
     }
 
     public static List<TargetHitBox> targetHitBoxes(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
@@ -145,12 +173,78 @@ public final class CorruptionOverlayPanel {
 
     public static Rect funIntervalSliderBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
         Rect area = funIntervalArea(layout, screenWidth, screenHeight);
-        return new Rect(area.x(), area.y() + 24, area.width(), 12);
+        int width = Math.max(50, area.width() - FUN_INPUT_WIDTH - 8);
+        return new Rect(area.x(), area.y() + 24, width, 12);
+    }
+
+    public static Rect funIntervalInputBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect slider = funIntervalSliderBounds(layout, screenWidth, screenHeight);
+        return new Rect(slider.x() + slider.width() + 8, slider.y() - 6, FUN_INPUT_WIDTH, 18);
     }
 
     public static Rect funAmountSliderBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
         Rect area = funAmountArea(layout, screenWidth, screenHeight);
-        return new Rect(area.x(), area.y() + 24, area.width(), 12);
+        int width = Math.max(50, area.width() - FUN_INPUT_WIDTH - 8);
+        return new Rect(area.x(), area.y() + 24, width, 12);
+    }
+
+    public static Rect funAmountInputBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect slider = funAmountSliderBounds(layout, screenWidth, screenHeight);
+        return new Rect(slider.x() + slider.width() + 8, slider.y() - 6, FUN_INPUT_WIDTH, 18);
+    }
+
+    public static Rect achievementResetButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect area = achievementsArea(layout, screenWidth, screenHeight);
+        return new Rect(area.x() + area.width() - ACHIEVEMENT_RESET_BUTTON_WIDTH, area.y() - 2, ACHIEVEMENT_RESET_BUTTON_WIDTH, 14);
+    }
+
+    public static Rect achievementsListBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect area = achievementsArea(layout, screenWidth, screenHeight);
+        int top = area.y() + ACHIEVEMENT_NOTE_HEIGHT;
+        return new Rect(area.x(), top, area.width(), Math.max(1, area.y() + area.height() - top));
+    }
+
+    public static int achievementsMaxScroll(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect list = achievementsListBounds(layout, screenWidth, screenHeight);
+        int count = CorruptionAchievementManager.achievements().size();
+        int contentHeight = Math.max(0, count * (ACHIEVEMENT_ROW_HEIGHT + ACHIEVEMENT_ROW_GAP) - ACHIEVEMENT_ROW_GAP);
+        return Math.max(0, contentHeight - list.height());
+    }
+
+    public static List<AchievementHitBox> achievementHitBoxes(CorruptionOverlayLayout layout, int screenWidth, int screenHeight, int scroll) {
+        List<AchievementHitBox> hitBoxes = new ArrayList<>();
+        Rect area = achievementsArea(layout, screenWidth, screenHeight);
+        Rect list = achievementsListBounds(layout, screenWidth, screenHeight);
+        int maxScroll = achievementsMaxScroll(layout, screenWidth, screenHeight);
+        int clampedScroll = Math.max(0, Math.min(maxScroll, scroll));
+        int rowWidth = Math.max(24, area.width() - (maxScroll > 0 ? 6 : 0));
+        int y = list.y() - clampedScroll;
+        int bottom = list.y() + list.height();
+        for (CorruptionAchievementManager.Achievement achievement : CorruptionAchievementManager.achievements()) {
+            Rect row = new Rect(area.x(), y, rowWidth, ACHIEVEMENT_ROW_HEIGHT);
+            if (y + ACHIEVEMENT_ROW_HEIGHT >= list.y() && y <= bottom) {
+                Rect pin = new Rect(row.x() + row.width() - ACHIEVEMENT_PIN_BUTTON_WIDTH, row.y(), ACHIEVEMENT_PIN_BUTTON_WIDTH, 14);
+                hitBoxes.add(new AchievementHitBox(achievement, row, pin));
+            }
+            y += ACHIEVEMENT_ROW_HEIGHT + ACHIEVEMENT_ROW_GAP;
+        }
+        return hitBoxes;
+    }
+
+    public static Rect hudCornerButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight, CorruptionAchievementManager.HudCorner corner) {
+        Rect area = hudSettingsArea(layout, screenWidth, screenHeight);
+        int gap = 6;
+        int width = Math.max(70, (area.width() - gap) / 2);
+        int height = 18;
+        int column = switch (corner) {
+            case TOP_LEFT, BOTTOM_LEFT -> 0;
+            case TOP_RIGHT, BOTTOM_RIGHT -> 1;
+        };
+        int row = switch (corner) {
+            case TOP_LEFT, TOP_RIGHT -> 0;
+            case BOTTOM_LEFT, BOTTOM_RIGHT -> 1;
+        };
+        return new Rect(area.x() + column * (width + gap), area.y() + 22 + row * (height + gap), width, height);
     }
 
     public static Rect horizontalResizeBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
@@ -168,7 +262,7 @@ public final class CorruptionOverlayPanel {
         return new Rect(panel.x() + panel.width() - RESIZE_HANDLE_SIZE, panel.y() + panel.height() - RESIZE_HANDLE_SIZE, RESIZE_HANDLE_SIZE, RESIZE_HANDLE_SIZE);
     }
 
-    public static void renderOpen(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingLevel, int pendingAutoIntervalTicks, int pendingAutoAmount, Page page, boolean seedEditing, String seedEditText, int mouseX, int mouseY) {
+    public static void renderOpen(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingLevel, int pendingAutoIntervalTicks, int pendingAutoAmount, Page page, boolean seedEditing, String seedEditText, boolean funIntervalEditing, String funIntervalEditText, boolean funAmountEditing, String funAmountEditText, int achievementsScroll, int achievementResetPresses, CorruptionAchievementManager.HudCorner pinnedCorner, int mouseX, int mouseY) {
         Rect panel = panelBounds(layout, graphics.guiWidth(), graphics.guiHeight());
         fillPanel(graphics, panel);
         renderHeader(graphics, font, layout, snapshot, panel, mouseX, mouseY, false);
@@ -176,7 +270,11 @@ public final class CorruptionOverlayPanel {
         if (page == Page.SETTINGS) {
             renderSettings(graphics, font, layout, snapshot, seedEditing, seedEditText, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         } else if (page == Page.FUN) {
-            renderFun(graphics, font, layout, snapshot, pendingAutoIntervalTicks, pendingAutoAmount, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
+            renderFun(graphics, font, layout, snapshot, pendingAutoIntervalTicks, pendingAutoAmount, funIntervalEditing, funIntervalEditText, funAmountEditing, funAmountEditText, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
+        } else if (page == Page.ACHIEVEMENTS) {
+            renderAchievements(graphics, font, layout, achievementsScroll, achievementResetPresses, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
+        } else if (page == Page.HUD) {
+            renderHudSettings(graphics, font, layout, pinnedCorner, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         } else {
             renderControl(graphics, font, layout, snapshot, pendingLevel, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         }
@@ -189,7 +287,7 @@ public final class CorruptionOverlayPanel {
         renderHeader(graphics, font, layout, snapshot, panel, mouseX, mouseY, true);
         int y = panel.y() + 21;
         int maxWidth = panel.width() - 16;
-        String summary = "corruption " + snapshot.getCorruptionLevel() + "%  seed " + snapshot.getCorruptionSeedLabel();
+        String summary = snapshot.getCorruptionLevel() + "%  seed " + snapshot.getCorruptionSeedLabel();
         drawClipped(graphics, font, summary, panel.x() + 8, y, maxWidth, 0xFFD4DEE1);
     }
 
@@ -227,6 +325,8 @@ public final class CorruptionOverlayPanel {
         drawTab(graphics, font, controlTabBounds(layout, screenWidth, screenHeight), "Control", page == Page.CONTROL, mouseX, mouseY);
         drawTab(graphics, font, settingsTabBounds(layout, screenWidth, screenHeight), "Settings", page == Page.SETTINGS, mouseX, mouseY);
         drawTab(graphics, font, funTabBounds(layout, screenWidth, screenHeight), "Fun", page == Page.FUN, mouseX, mouseY);
+        drawTab(graphics, font, achievementsTabBounds(layout, screenWidth, screenHeight), "Awards", page == Page.ACHIEVEMENTS, mouseX, mouseY);
+        drawTab(graphics, font, hudTabBounds(layout, screenWidth, screenHeight), "HUD", page == Page.HUD, mouseX, mouseY);
     }
 
     private static void renderControl(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingLevel, int mouseX, int mouseY, int screenWidth, int screenHeight) {
@@ -319,10 +419,13 @@ public final class CorruptionOverlayPanel {
         drawButton(graphics, font, random, "Random", true, random.contains(mouseX, mouseY));
 
         Rect area = settingsListArea(layout, screenWidth, screenHeight);
-        Rect bulk = targetBulkButtonBounds(layout, screenWidth, screenHeight);
+        Rect enableAll = enableAllTargetsButtonBounds(layout, screenWidth, screenHeight);
+        Rect disableAll = disableAllTargetsButtonBounds(layout, screenWidth, screenHeight);
         boolean allTargetsEnabled = countEnabledTargets(snapshot.getEnabledTargetsMask()) == CorruptionTarget.values().length;
-        drawSectionTitle(graphics, font, "Target Areas", area.x(), area.y(), Math.max(30, bulk.x() - area.x() - 4));
-        drawButton(graphics, font, bulk, allTargetsEnabled ? "Disable all" : "Enable all", true, bulk.contains(mouseX, mouseY));
+        boolean noTargetsEnabled = countEnabledTargets(snapshot.getEnabledTargetsMask()) == 0;
+        drawSectionTitle(graphics, font, "Target Areas", area.x(), area.y(), Math.max(30, enableAll.x() - area.x() - 4));
+        drawButton(graphics, font, enableAll, "Enable", !allTargetsEnabled, !allTargetsEnabled && enableAll.contains(mouseX, mouseY));
+        drawButton(graphics, font, disableAll, "Disable", !noTargetsEnabled, !noTargetsEnabled && disableAll.contains(mouseX, mouseY));
         CorruptionTarget[] targets = CorruptionTarget.values();
         int columns = targetColumnCount(area);
         int columnGap = columns > 1 ? 8 : 0;
@@ -360,17 +463,21 @@ public final class CorruptionOverlayPanel {
         }
     }
 
-    private static void renderFun(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingAutoIntervalTicks, int pendingAutoAmount, int mouseX, int mouseY, int screenWidth, int screenHeight) {
+    private static void renderFun(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingAutoIntervalTicks, int pendingAutoAmount, boolean intervalEditing, String intervalEditText, boolean amountEditing, String amountEditText, int mouseX, int mouseY, int screenWidth, int screenHeight) {
         Rect intervalArea = funIntervalArea(layout, screenWidth, screenHeight);
         drawSectionTitle(graphics, font, "Auto Increase Interval", intervalArea.x(), intervalArea.y(), intervalArea.width());
         Rect intervalSlider = funIntervalSliderBounds(layout, screenWidth, screenHeight);
+        Rect intervalInput = funIntervalInputBounds(layout, screenWidth, screenHeight);
         drawValueSlider(graphics, font, intervalSlider, intervalRatio(pendingAutoIntervalTicks), intervalLabel(pendingAutoIntervalTicks), mouseX, mouseY);
-        drawClipped(graphics, font, "Off to 2h between automatic level changes.", intervalArea.x(), intervalSlider.y() + 18, intervalArea.width(), 0xFF9AA8AD);
+        drawTextField(graphics, font, intervalInput, intervalEditing ? intervalEditText : intervalLabel(pendingAutoIntervalTicks), intervalEditing);
+        drawClipped(graphics, font, "Off, seconds, or values like 30s, 5m, 2h.", intervalArea.x(), intervalSlider.y() + 18, intervalArea.width(), 0xFF9AA8AD);
 
         Rect amountArea = funAmountArea(layout, screenWidth, screenHeight);
         drawSectionTitle(graphics, font, "Increase Amount", amountArea.x(), amountArea.y(), amountArea.width());
         Rect amountSlider = funAmountSliderBounds(layout, screenWidth, screenHeight);
+        Rect amountInput = funAmountInputBounds(layout, screenWidth, screenHeight);
         drawValueSlider(graphics, font, amountSlider, amountRatio(pendingAutoAmount), signedPercentLabel(pendingAutoAmount), mouseX, mouseY);
+        drawTextField(graphics, font, amountInput, amountEditing ? amountEditText : signedPercentLabel(pendingAutoAmount), amountEditing);
         drawClipped(graphics, font, "-100% to +100% per automatic step.", amountArea.x(), amountSlider.y() + 18, amountArea.width(), 0xFF9AA8AD);
 
         Rect status = funStatusArea(layout, screenWidth, screenHeight);
@@ -382,6 +489,132 @@ public final class CorruptionOverlayPanel {
         drawWrapped(graphics, font, "Settings are server-owned and broadcast to connected players.", status.x(), status.y() + 22, status.width(), 2, 0xFF9AA8AD);
     }
 
+    private static void renderAchievements(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, int scroll, int resetPresses, int mouseX, int mouseY, int screenWidth, int screenHeight) {
+        Rect area = achievementsArea(layout, screenWidth, screenHeight);
+        Rect resetButton = achievementResetButtonBounds(layout, screenWidth, screenHeight);
+        drawSectionTitle(graphics, font, "Achievements", area.x(), area.y(), Math.max(40, resetButton.x() - area.x() - 5));
+        int remainingResetPresses = Math.max(1, 3 - resetPresses);
+        String resetLabel = resetPresses <= 0 ? "Reset" : "Reset " + remainingResetPresses;
+        drawButton(graphics, font, resetButton, resetLabel, true, resetButton.contains(mouseX, mouseY));
+        drawWrapped(graphics, font, "All achievements require Survival with cheats disabled. Disqualified worlds show red.", area.x(), area.y() + 14, area.width(), 2, 0xFF9AA8AD);
+
+        Rect list = achievementsListBounds(layout, screenWidth, screenHeight);
+        int maxScroll = achievementsMaxScroll(layout, screenWidth, screenHeight);
+        int clampedScroll = Math.max(0, Math.min(maxScroll, scroll));
+        int bottom = list.y() + list.height();
+
+        graphics.enableScissor(list.x(), list.y(), list.x() + list.width(), bottom);
+        for (AchievementHitBox hitBox : achievementHitBoxes(layout, screenWidth, screenHeight, clampedScroll)) {
+            CorruptionAchievementManager.Achievement achievement = hitBox.achievement();
+            Rect row = hitBox.row();
+            Rect pin = hitBox.pin();
+            int rowBottom = row.y() + ACHIEVEMENT_ROW_HEIGHT;
+            boolean unlocked = CorruptionAchievementManager.isUnlocked(achievement);
+            boolean disqualified = CorruptionAchievementManager.isDisqualified(achievement);
+            boolean pinned = CorruptionAchievementManager.isPinned(achievement);
+            if (rowBottom >= list.y() && row.y() <= bottom && list.contains(mouseX, mouseY) && row.contains(mouseX, mouseY)) {
+                graphics.fill(row.x(), row.y(), row.x() + row.width(), row.y() + row.height(), 0x332A3940);
+            }
+            if (rowBottom >= list.y() && row.y() <= bottom) {
+                int iconColor = unlocked ? 0xFF83A3AC : disqualified ? 0xFF7A2F35 : 0xFF344047;
+                graphics.fill(row.x(), row.y(), row.x() + 20, row.y() + 20, 0xFF101719);
+                graphics.fill(row.x() + 1, row.y() + 1, row.x() + 19, row.y() + 19, iconColor);
+                TextureAtlasSprite sprite = achievementIconSprite(achievement);
+                graphics.blit(row.x() + 2, row.y() + 2, 0, 16, 16, sprite);
+                if (!unlocked) {
+                    graphics.fill(row.x() + 2, row.y() + 2, row.x() + 18, row.y() + 18, disqualified ? 0xAA3C0808 : 0x99000000);
+                }
+                int titleColor = unlocked ? 0xFFEAF4F7 : disqualified ? 0xFFD99A9A : 0xFF9AA8AD;
+                int detailColor = unlocked ? 0xFFB8C8CD : disqualified ? 0xFF9D6262 : 0xFF667277;
+                int textWidth = Math.max(20, pin.x() - row.x() - 29);
+                drawClipped(graphics, font, achievement.title(), row.x() + 25, row.y() + 1, textWidth, titleColor);
+                drawClipped(graphics, font, achievement.description(), row.x() + 25, row.y() + 11, textWidth, detailColor);
+                drawClipped(graphics, font, CorruptionAchievementManager.statusText(achievement), row.x() + 25, row.y() + 21, textWidth, unlocked ? 0xFF8FD6A2 : disqualified ? 0xFFE07878 : 0xFF7BAAB3);
+                drawButton(graphics, font, pin, pinned ? "On" : "Pin", true, pin.contains(mouseX, mouseY));
+                if (!unlocked) {
+                    int progressWidth = Math.max(1, pin.x() - row.x() - 25);
+                    int fill = Math.round(progressWidth * CorruptionAchievementManager.progressRatio(achievement));
+                    graphics.fill(row.x() + 25, row.y() + 31, row.x() + 25 + progressWidth, row.y() + 33, 0xFF263136);
+                    graphics.fill(row.x() + 25, row.y() + 31, row.x() + 25 + fill, row.y() + 33, disqualified ? 0xFF8A3338 : 0xFF5CA7B2);
+                }
+            }
+        }
+        graphics.disableScissor();
+
+        if (maxScroll > 0) {
+            int trackX = area.x() + area.width() - 3;
+            int trackHeight = Math.max(6, list.height());
+            int thumbHeight = Math.max(8, trackHeight * list.height() / (list.height() + maxScroll));
+            int thumbY = list.y() + (trackHeight - thumbHeight) * clampedScroll / maxScroll;
+            graphics.fill(trackX, list.y(), trackX + 2, list.y() + trackHeight, 0xFF263136);
+            graphics.fill(trackX, thumbY, trackX + 2, thumbY + thumbHeight, 0xFF83A3AC);
+        }
+    }
+
+    private static void renderHudSettings(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionAchievementManager.HudCorner pinnedCorner, int mouseX, int mouseY, int screenWidth, int screenHeight) {
+        Rect area = hudSettingsArea(layout, screenWidth, screenHeight);
+        drawSectionTitle(graphics, font, "Pinned Awards HUD", area.x(), area.y(), area.width());
+        drawWrapped(graphics, font, "Pinned achievements stay stacked vertically in the selected corner.", area.x(), area.y() + 14, area.width(), 2, 0xFF9AA8AD);
+        for (CorruptionAchievementManager.HudCorner corner : CorruptionAchievementManager.HudCorner.values()) {
+            Rect button = hudCornerButtonBounds(layout, screenWidth, screenHeight, corner);
+            boolean selected = corner == pinnedCorner;
+            drawButton(graphics, font, button, (selected ? "* " : "") + corner.label(), true, button.contains(mouseX, mouseY));
+            if (selected) {
+                graphics.fill(button.x(), button.y() + button.height() - 2, button.x() + button.width(), button.y() + button.height(), 0xFF8FD6A2);
+            }
+        }
+    }
+
+    public static void renderPinnedAchievements(GuiGraphics graphics, Font font, List<CorruptionAchievementManager.Achievement> achievements, CorruptionAchievementManager.HudCorner corner) {
+        if (achievements == null || achievements.isEmpty()) {
+            return;
+        }
+        int screenWidth = graphics.guiWidth();
+        int screenHeight = graphics.guiHeight();
+        int totalHeight = achievements.size() * PINNED_ROW_HEIGHT + Math.max(0, achievements.size() - 1) * PINNED_ROW_GAP;
+        int margin = 8;
+        int x = switch (corner) {
+            case TOP_LEFT, BOTTOM_LEFT -> margin;
+            case TOP_RIGHT, BOTTOM_RIGHT -> screenWidth - PINNED_ROW_WIDTH - margin;
+        };
+        int y = switch (corner) {
+            case TOP_LEFT, TOP_RIGHT -> margin;
+            case BOTTOM_LEFT, BOTTOM_RIGHT -> screenHeight - totalHeight - margin;
+        };
+        x = Math.max(margin, Math.min(screenWidth - PINNED_ROW_WIDTH - margin, x));
+        y = Math.max(margin, Math.min(screenHeight - totalHeight - margin, y));
+
+        for (CorruptionAchievementManager.Achievement achievement : achievements) {
+            renderPinnedAchievement(graphics, font, achievement, x, y);
+            y += PINNED_ROW_HEIGHT + PINNED_ROW_GAP;
+        }
+    }
+
+    private static void renderPinnedAchievement(GuiGraphics graphics, Font font, CorruptionAchievementManager.Achievement achievement, int x, int y) {
+        boolean unlocked = CorruptionAchievementManager.isUnlocked(achievement);
+        int fillColor = unlocked ? 0xDD17251D : 0xDD101719;
+        int edgeColor = unlocked ? 0xFF6FA67D : 0xFF52636A;
+        graphics.fill(x, y, x + PINNED_ROW_WIDTH, y + PINNED_ROW_HEIGHT, fillColor);
+        graphics.fill(x, y, x + PINNED_ROW_WIDTH, y + 1, edgeColor);
+        graphics.fill(x, y + PINNED_ROW_HEIGHT - 1, x + PINNED_ROW_WIDTH, y + PINNED_ROW_HEIGHT, edgeColor);
+        graphics.fill(x, y, x + 1, y + PINNED_ROW_HEIGHT, edgeColor);
+        graphics.fill(x + PINNED_ROW_WIDTH - 1, y, x + PINNED_ROW_WIDTH, y + PINNED_ROW_HEIGHT, edgeColor);
+
+        graphics.fill(x + 4, y + 4, x + 24, y + 24, 0xFF101719);
+        graphics.fill(x + 5, y + 5, x + 23, y + 23, unlocked ? 0xFF83A3AC : 0xFF344047);
+        TextureAtlasSprite sprite = achievementIconSprite(achievement);
+        graphics.blit(x + 6, y + 6, 0, 16, 16, sprite);
+
+        int textX = x + 29;
+        int textWidth = PINNED_ROW_WIDTH - 34;
+        drawClipped(graphics, font, achievement.title(), textX, y + 4, textWidth, unlocked ? 0xFFEAF4F7 : 0xFFC8D4D8);
+        drawClipped(graphics, font, unlocked ? "Unlocked" : CorruptionAchievementManager.progressLabel(achievement), textX, y + 14, textWidth, unlocked ? 0xFF8FD6A2 : 0xFF7BAAB3);
+        int barWidth = Math.max(1, textWidth);
+        int barFill = Math.round(barWidth * CorruptionAchievementManager.progressRatio(achievement));
+        graphics.fill(textX, y + 25, textX + barWidth, y + 27, 0xFF263136);
+        graphics.fill(textX, y + 25, textX + barFill, y + 27, unlocked ? 0xFF8FD6A2 : 0xFF5CA7B2);
+    }
+
     private static Rect statusArea(CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingLevel, int screenWidth, int screenHeight) {
         Rect panel = panelBounds(layout, screenWidth, screenHeight);
         int delta = Math.abs(pendingLevel - snapshot.getCorruptionLevel());
@@ -389,6 +622,13 @@ public final class CorruptionOverlayPanel {
         int top = panel.y() + 142 + warningOffset;
         int bottom = panel.y() + panel.height() - 10;
         return new Rect(panel.x() + 12, top, panel.width() - 24, Math.max(30, bottom - top));
+    }
+
+    private static TextureAtlasSprite achievementIconSprite(CorruptionAchievementManager.Achievement achievement) {
+        return Minecraft.getInstance()
+                .getBlockRenderer()
+                .getBlockModel(achievement.icon().defaultBlockState())
+                .getParticleIcon(ModelData.EMPTY);
     }
 
     private static Rect settingsListArea(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
@@ -412,6 +652,18 @@ public final class CorruptionOverlayPanel {
         Rect panel = panelBounds(layout, screenWidth, screenHeight);
         int top = panel.y() + 194;
         return new Rect(panel.x() + 12, top, panel.width() - 24, Math.max(32, panel.y() + panel.height() - top - 10));
+    }
+
+    private static Rect achievementsArea(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect panel = panelBounds(layout, screenWidth, screenHeight);
+        int top = panel.y() + 58;
+        return new Rect(panel.x() + 12, top, panel.width() - 24, Math.max(30, panel.y() + panel.height() - top - 10));
+    }
+
+    private static Rect hudSettingsArea(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect panel = panelBounds(layout, screenWidth, screenHeight);
+        int top = panel.y() + 60;
+        return new Rect(panel.x() + 12, top, panel.width() - 24, Math.max(80, panel.y() + panel.height() - top - 10));
     }
 
     private static int targetColumnCount(Rect area) {
@@ -593,7 +845,9 @@ public final class CorruptionOverlayPanel {
     public enum Page {
         CONTROL,
         SETTINGS,
-        FUN
+        FUN,
+        ACHIEVEMENTS,
+        HUD
     }
 
     public record Rect(int x, int y, int width, int height) {
@@ -603,5 +857,8 @@ public final class CorruptionOverlayPanel {
     }
 
     public record TargetHitBox(CorruptionTarget target, Rect rect) {
+    }
+
+    public record AchievementHitBox(CorruptionAchievementManager.Achievement achievement, Rect row, Rect pin) {
     }
 }

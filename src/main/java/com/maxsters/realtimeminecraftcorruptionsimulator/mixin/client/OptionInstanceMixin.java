@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 @Mixin(OptionInstance.class)
+@SuppressWarnings("target")
 public abstract class OptionInstanceMixin<T> {
     @Unique
     private static Field rmc$valueField;

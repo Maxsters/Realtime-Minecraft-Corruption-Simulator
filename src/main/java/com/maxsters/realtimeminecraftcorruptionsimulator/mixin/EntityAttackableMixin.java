@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Entity.class)
+@SuppressWarnings("target")
 public abstract class EntityAttackableMixin {
     @Inject(
             method = {

@@ -783,6 +783,7 @@ public final class WorldgenCorruptionHooks {
         return wrapped > period ? period * 2.0D - wrapped : wrapped;
     }
 
+    @SuppressWarnings("unused")
     private static double coordinateRipple(long seed, int x, int y, int z, float strength) {
         double fx = 0.010D + strength * 0.075D + unit(seed ^ 0x46524551L) * 0.040D;
         double fz = 0.012D + strength * 0.070D + unit(seed ^ 0x464F4C44L) * 0.044D;
@@ -792,6 +793,7 @@ public final class WorldgenCorruptionHooks {
                 + Math.sin((y + signedUnit(seed >>> 13) * 29.0D) * fy);
     }
 
+    @SuppressWarnings("unused")
     private static double fractalNoise2D(double x, double z, long seed, double scale, int octaves) {
         double value = 0.0D;
         double amplitude = 1.0D;
@@ -820,6 +822,7 @@ public final class WorldgenCorruptionHooks {
         return lerp(lerp(a, b, tx), lerp(c, d, tx), tz);
     }
 
+    @SuppressWarnings("unused")
     private static double smoothNoise3D(double x, double y, double z, long seed, double scale) {
         double sx = x * scale + signedUnit(seed) * 256.0D;
         double sy = y * scale + signedUnit(seed >>> 19) * 256.0D;

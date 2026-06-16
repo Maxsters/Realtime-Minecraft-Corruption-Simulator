@@ -18,6 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.lang.reflect.Field;
 
 @Mixin(PathNavigation.class)
+@SuppressWarnings("target")
 public abstract class PathNavigationMixin {
     @Unique
     private static Field rmc$mobField;

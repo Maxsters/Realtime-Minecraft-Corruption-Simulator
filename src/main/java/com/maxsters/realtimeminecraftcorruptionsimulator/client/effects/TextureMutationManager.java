@@ -2,6 +2,7 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.effects;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.CorruptionAchievementManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
@@ -15,7 +16,6 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
-import net.minecraft.util.FastColor;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraftforge.client.event.TextureStitchEvent;
@@ -56,9 +56,11 @@ public final class TextureMutationManager {
     private static PendingAtlasTextureScan pendingAtlasTextureScan;
     private static boolean startupTextureScanRequested;
     private static boolean startupGlobalTextureScanRequested;
+    @SuppressWarnings("unused")
     private static boolean atlasTextureScanRequested;
     private static String appliedGuiTextureSignature = "";
     private static String appliedGlobalTextureSignature = "";
+    @SuppressWarnings("unused")
     private static String appliedAtlasTextureSignature = "";
     private static long lastTextureScanAttemptMs;
     private static long lastGlobalTextureScanAttemptMs;
@@ -235,8 +237,6 @@ public final class TextureMutationManager {
                 + ":"
                 + stack.bucket(CorruptionSurface.GUI_SURFACE, 0x475549, 64)
                 + ":"
-                + stack.bucket(CorruptionSurface.TEXTURE_MEMORY, 0x4D454D, 64)
-                + ":"
                 + stack.stableLong(CorruptionSurface.GUI_SURFACE, 0x545854);
     }
 
@@ -303,7 +303,7 @@ public final class TextureMutationManager {
             if (resource == null || intensity <= 0.035F) {
                 continue;
             }
-            if (replaceTexture(minecraft, textureId, resource, scan.stack, intensity, scan.ordinal, true, scan.donorTextureIds, "GUI")) {
+            if (replaceTexture(minecraft, textureId, resource, scan.stack, CorruptionSurface.GUI_SURFACE, "gui_texture:", intensity, scan.ordinal, true, scan.donorTextureIds, "GUI")) {
                 MUTATED_GUI_TEXTURES.add(textureId);
                 scan.staleTextureIds.remove(textureId);
                 scan.mutatedCount++;
@@ -339,7 +339,7 @@ public final class TextureMutationManager {
             if (resource == null || intensity <= 0.035F) {
                 continue;
             }
-            if (replaceTexture(minecraft, textureId, resource, scan.stack, intensity, scan.ordinal, true, scan.donorTextureIds, "global")) {
+            if (replaceTexture(minecraft, textureId, resource, scan.stack, CorruptionSurface.TEXTURE_MEMORY, "texture_resource:", intensity, scan.ordinal, true, scan.donorTextureIds, "global")) {
                 MUTATED_GLOBAL_TEXTURES.add(textureId);
                 scan.staleTextureIds.remove(textureId);
                 scan.mutatedCount++;
@@ -357,6 +357,7 @@ public final class TextureMutationManager {
         }
     }
 
+    @SuppressWarnings("unused")
     private static void processPendingAtlasTextureMutations() {
         PendingAtlasTextureScan scan = pendingAtlasTextureScan;
         if (scan == null) {
@@ -396,6 +397,10 @@ public final class TextureMutationManager {
             if (ClientCorruptionProtection.isProtectedResource(spriteId)) {
                 continue;
             }
+            if (CorruptionAchievementManager.isAchievementIconSprite(spriteId)) {
+                restoreAtlasSprite(atlas, spriteId);
+                continue;
+            }
 
             TextureAtlasSprite sprite = atlas.getSprite(spriteId);
             ItemTextureCorruptionManager.rememberAtlasSprite(sprite);
@@ -425,23 +430,20 @@ public final class TextureMutationManager {
         }
 
         String targetId = "gui_texture:" + textureId;
-        float base = Math.max(stack.intensity(CorruptionSurface.GUI_SURFACE), stack.intensity(CorruptionSurface.TEXTURE_MEMORY) * 0.72F);
+        float base = stack.intensity(CorruptionSurface.GUI_SURFACE);
         float target = stack.targetIntensity(CorruptionSurface.GUI_SURFACE, targetId);
         float drift = 0.72F + stack.unit(CorruptionSurface.GUI_SURFACE, targetId, ordinal ^ 0x5445) * 0.28F;
         return clampFloat(Math.max(base * 0.58F, target) * drift + stack.instability() * 0.05F, 0.0F, 1.0F);
     }
 
     private static float globalTextureIntensity(CorruptionEffectStack stack, ResourceLocation textureId, int ordinal) {
-        if (stack.extreme(CorruptionSurface.TEXTURE_MEMORY) || stack.extreme(CorruptionSurface.WORLD_RENDER)) {
+        if (stack.extreme(CorruptionSurface.TEXTURE_MEMORY)) {
             return 1.0F;
         }
 
         String targetId = "texture_resource:" + textureId;
-        float base = Math.max(stack.intensity(CorruptionSurface.TEXTURE_MEMORY), stack.intensity(CorruptionSurface.WORLD_RENDER) * 0.76F);
-        float target = Math.max(
-                stack.targetIntensity(CorruptionSurface.TEXTURE_MEMORY, targetId),
-                stack.targetIntensity(CorruptionSurface.WORLD_RENDER, targetId) * 0.84F
-        );
+        float base = stack.intensity(CorruptionSurface.TEXTURE_MEMORY);
+        float target = stack.targetIntensity(CorruptionSurface.TEXTURE_MEMORY, targetId);
         float drift = 0.68F + stack.unit(CorruptionSurface.TEXTURE_MEMORY, targetId, ordinal ^ 0x414C) * 0.32F;
         return clampFloat(Math.max(base * 0.52F, target) * drift + stack.instability() * 0.06F, 0.0F, 1.0F);
     }
@@ -470,7 +472,7 @@ public final class TextureMutationManager {
         List<ResourceLocation> textureIds = new ArrayList<>(textureIdsToRestore);
         for (ResourceLocation textureId : textureIds) {
             Optional<Resource> resource = resourceManager.getResource(textureId);
-            resource.ifPresent(value -> replaceTexture(minecraft, textureId, value, CorruptionEffectStack.local(0), 0.0F, 0, false, List.of(), "GUI"));
+            resource.ifPresent(value -> replaceTexture(minecraft, textureId, value, CorruptionEffectStack.local(0), CorruptionSurface.GUI_SURFACE, "gui_texture:", 0.0F, 0, false, List.of(), "GUI"));
             MUTATED_GUI_TEXTURES.remove(textureId);
         }
     }
@@ -484,11 +486,12 @@ public final class TextureMutationManager {
         List<ResourceLocation> textureIds = new ArrayList<>(textureIdsToRestore);
         for (ResourceLocation textureId : textureIds) {
             Optional<Resource> resource = resourceManager.getResource(textureId);
-            resource.ifPresent(value -> replaceTexture(minecraft, textureId, value, CorruptionEffectStack.local(0), 0.0F, 0, false, List.of(), "global"));
+            resource.ifPresent(value -> replaceTexture(minecraft, textureId, value, CorruptionEffectStack.local(0), CorruptionSurface.TEXTURE_MEMORY, "texture_resource:", 0.0F, 0, false, List.of(), "global"));
             MUTATED_GLOBAL_TEXTURES.remove(textureId);
         }
     }
 
+    @SuppressWarnings("unused")
     private static void restoreAtlasTextures() {
         for (TextureAtlas atlas : new ArrayList<>(KNOWN_ATLASES)) {
             if (atlas == null) {
@@ -527,7 +530,7 @@ public final class TextureMutationManager {
         }
     }
 
-    private static boolean replaceTexture(Minecraft minecraft, ResourceLocation textureId, Resource resource, CorruptionEffectStack stack, float intensity, int ordinal, boolean mutate, List<ResourceLocation> donorTextureIds, String label) {
+    private static boolean replaceTexture(Minecraft minecraft, ResourceLocation textureId, Resource resource, CorruptionEffectStack stack, CorruptionSurface surface, String targetPrefix, float intensity, int ordinal, boolean mutate, List<ResourceLocation> donorTextureIds, String label) {
         NativeImage image = null;
         try (InputStream input = resource.open()) {
             image = NativeImage.read(NativeImage.Format.RGBA, input);
@@ -535,7 +538,7 @@ public final class TextureMutationManager {
                 return false;
             }
             if (mutate) {
-                mutateTexture(textureId, image, minecraft.getResourceManager(), donorTextureIds, stack, intensity, ordinal);
+                mutateTexturePixels(textureId, image, minecraft.getResourceManager(), donorTextureIds, null, stack, surface, targetPrefix, intensity, ordinal, 0);
             }
             minecraft.getTextureManager().register(textureId, new DynamicTexture(image));
             image = null;
@@ -548,10 +551,6 @@ public final class TextureMutationManager {
                 image.close();
             }
         }
-    }
-
-    private static void mutateTexture(ResourceLocation textureId, NativeImage image, ResourceManager resourceManager, List<ResourceLocation> donorTextureIds, CorruptionEffectStack stack, float intensity, int ordinal) {
-        mutateTexturePixels(textureId, image, resourceManager, donorTextureIds, null, stack, CorruptionSurface.GUI_SURFACE, "gui_texture:", intensity, ordinal, 0);
     }
 
     private static void mutateTexturePixels(ResourceLocation textureId, NativeImage image, ResourceManager resourceManager, List<ResourceLocation> donorTextureIds, PixelBank donorPixels, CorruptionEffectStack stack, CorruptionSurface surface, String targetPrefix, float intensity, int ordinal, int salt) {
@@ -582,7 +581,6 @@ public final class TextureMutationManager {
         leakTextureMaps(source, donorPixels, pixels, width, height, seed, effectiveIntensity);
         if (surface == CorruptionSurface.GUI_SURFACE) {
             stretchTextureBands(source, pixels, width, height, seed, effectiveIntensity);
-            shearTextureChannels(pixels, width, height, seed, effectiveIntensity);
         }
 
         for (int y = 0; y < height; y++) {
@@ -595,6 +593,10 @@ public final class TextureMutationManager {
 
     private static boolean mutateAtlasSprite(TextureAtlas atlas, TextureAtlasSprite sprite, ResourceLocation spriteId, List<ResourceLocation> donorSpriteIds, CorruptionEffectStack stack, float intensity, int ordinal) {
         if (atlas == null || sprite == null || sprite.contents() == null) {
+            return false;
+        }
+        if (CorruptionAchievementManager.isAchievementIconSprite(spriteId)) {
+            restoreAtlasSprite(atlas, spriteId);
             return false;
         }
 
@@ -682,7 +684,7 @@ public final class TextureMutationManager {
         if (!path.startsWith(ALL_TEXTURE_PREFIX + "/") || !path.endsWith(".png")) {
             return false;
         }
-        if (path.startsWith(GUI_TEXTURE_PREFIX + "/") || path.startsWith("textures/atlas/")) {
+        if (path.startsWith(GUI_TEXTURE_PREFIX + "/") || path.startsWith("textures/font/") || path.startsWith("textures/atlas/")) {
             return false;
         }
         return !isAtlasBackedTexturePath(path);
@@ -728,9 +730,6 @@ public final class TextureMutationManager {
         }
         if (path.startsWith("textures/misc/") || path.startsWith("textures/effect/")) {
             return 1;
-        }
-        if (path.startsWith("textures/font/")) {
-            return 2;
         }
         if (path.startsWith("textures/entity/") || path.startsWith("textures/models/") || path.startsWith("textures/painting/")) {
             return 3;
@@ -845,43 +844,9 @@ public final class TextureMutationManager {
         }
     }
 
-    private static void shearTextureChannels(int[] pixels, int width, int height, long seed, float intensity) {
-        int[] warped = pixels.clone();
-        int maxX = Math.max(1, Math.round(width * (0.010F + intensity * 0.10F)));
-        int maxY = Math.max(1, Math.round(height * (0.010F + intensity * 0.08F)));
-        int redX = signedInt(seed >>> 7, maxX);
-        int greenY = signedInt(seed >>> 19, maxY);
-        int blueX = signedInt(seed >>> 31, maxX);
-        int blueY = signedInt(seed >>> 43, maxY);
-        float blend = Math.min(0.58F, 0.10F + intensity * 0.36F);
-
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                int index = y * width + x;
-                int original = warped[index];
-                int redSample = warped[y * width + Math.floorMod(x + redX, width)];
-                int greenSample = warped[clampInt(y + greenY, 0, height - 1) * width + x];
-                int blueSample = warped[clampInt(y + blueY, 0, height - 1) * width + Math.floorMod(x + blueX, width)];
-                int alpha = FastColor.ABGR32.alpha(original);
-                int red = blendByte(FastColor.ABGR32.red(original), FastColor.ABGR32.red(redSample), blend);
-                int green = blendByte(FastColor.ABGR32.green(original), FastColor.ABGR32.green(greenSample), blend);
-                int blue = blendByte(FastColor.ABGR32.blue(original), FastColor.ABGR32.blue(blueSample), blend);
-                pixels[index] = FastColor.ABGR32.color(alpha, blue, green, red);
-            }
-        }
-    }
-
-    private static int blendByte(int from, int to, float amount) {
-        return clampByte(Math.round(from + (to - from) * clampFloat(amount, 0.0F, 1.0F)));
-    }
-
     private static int signedInt(long value, int amplitude) {
         int span = Math.max(1, amplitude);
         return Math.floorMod((int) mixLong(value), span * 2 + 1) - span;
-    }
-
-    private static int clampByte(int value) {
-        return clampInt(value, 0, 255);
     }
 
     private static int clampInt(int value, int min, int max) {

@@ -16,7 +16,25 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 
 @OnlyIn(Dist.CLIENT)
 public final class LightingCorruptionHooks {
+    private static int pendingLightTextureRefreshPasses;
+
     private LightingCorruptionHooks() {
+    }
+
+    public static void requestLightTextureRefresh() {
+        pendingLightTextureRefreshPasses = Math.max(pendingLightTextureRefreshPasses, 8);
+    }
+
+    public static boolean consumeLightTextureRefreshRequest() {
+        if (pendingLightTextureRefreshPasses <= 0) {
+            return false;
+        }
+        pendingLightTextureRefreshPasses--;
+        return true;
+    }
+
+    public static boolean lightingCorruptionActive(CorruptionEffectStack stack) {
+        return lightingIntensity(stack) > 0.01F;
     }
 
     public static boolean mutateAmbientOcclusionSwitch(boolean vanilla) {

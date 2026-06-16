@@ -16,6 +16,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.util.List;
 
 @Mixin(SimpleBakedModel.class)
+@SuppressWarnings("target")
 public abstract class SimpleBakedModelMixin {
     @Inject(
             method = {
