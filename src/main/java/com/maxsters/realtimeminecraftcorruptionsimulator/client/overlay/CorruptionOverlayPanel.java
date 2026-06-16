@@ -21,7 +21,10 @@ public final class CorruptionOverlayPanel {
     public static final int APPLY_BUTTON_HEIGHT = 16;
     private static final int TAB_WIDTH = 72;
     private static final int TAB_HEIGHT = 16;
-    private static final int SEED_BUTTON_WIDTH = 64;
+    private static final int SEED_BUTTON_WIDTH = 42;
+    private static final int SEED_RANDOM_BUTTON_WIDTH = 56;
+    private static final int SEED_BUTTON_GAP = 4;
+    private static final int TARGET_BULK_BUTTON_WIDTH = 72;
     private static final int TOGGLE_ROW_HEIGHT = 28;
     private static final int WARNING_HEIGHT = 28;
     private static final int WARNING_GAP = 8;
@@ -81,18 +84,40 @@ public final class CorruptionOverlayPanel {
     public static Rect seedFieldBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
         Rect panel = panelBounds(layout, screenWidth, screenHeight);
         int y = panel.y() + 60;
-        int width = Math.max(88, panel.width() - 24 - SEED_BUTTON_WIDTH * 2 - 12);
+        int buttonWidth = seedButtonWidth(panel);
+        int randomWidth = seedRandomButtonWidth(panel);
+        int width = Math.max(64, panel.width() - 24 - buttonWidth * 3 - randomWidth - SEED_BUTTON_GAP * 4);
         return new Rect(panel.x() + 12, y, width, 16);
     }
 
-    public static Rect seedApplyButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+    public static Rect seedCopyButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
         Rect field = seedFieldBounds(layout, screenWidth, screenHeight);
-        return new Rect(field.x() + field.width() + 6, field.y(), SEED_BUTTON_WIDTH, 16);
+        Rect panel = panelBounds(layout, screenWidth, screenHeight);
+        return new Rect(field.x() + field.width() + SEED_BUTTON_GAP, field.y(), seedButtonWidth(panel), 16);
+    }
+
+    public static Rect seedPasteButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect copy = seedCopyButtonBounds(layout, screenWidth, screenHeight);
+        Rect panel = panelBounds(layout, screenWidth, screenHeight);
+        return new Rect(copy.x() + copy.width() + SEED_BUTTON_GAP, copy.y(), seedButtonWidth(panel), 16);
+    }
+
+    public static Rect seedApplyButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect paste = seedPasteButtonBounds(layout, screenWidth, screenHeight);
+        Rect panel = panelBounds(layout, screenWidth, screenHeight);
+        return new Rect(paste.x() + paste.width() + SEED_BUTTON_GAP, paste.y(), seedButtonWidth(panel), 16);
     }
 
     public static Rect randomSeedButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
         Rect apply = seedApplyButtonBounds(layout, screenWidth, screenHeight);
-        return new Rect(apply.x() + apply.width() + 6, apply.y(), SEED_BUTTON_WIDTH, 16);
+        Rect panel = panelBounds(layout, screenWidth, screenHeight);
+        return new Rect(apply.x() + apply.width() + SEED_BUTTON_GAP, apply.y(), seedRandomButtonWidth(panel), 16);
+    }
+
+    public static Rect targetBulkButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect area = settingsListArea(layout, screenWidth, screenHeight);
+        int width = Math.min(TARGET_BULK_BUTTON_WIDTH, Math.max(48, area.width() / 2));
+        return new Rect(area.x() + area.width() - width, area.y() - 2, width, 14);
     }
 
     public static List<TargetHitBox> targetHitBoxes(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
@@ -282,15 +307,22 @@ public final class CorruptionOverlayPanel {
 
     private static void renderSettings(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, boolean seedEditing, String seedEditText, int mouseX, int mouseY, int screenWidth, int screenHeight) {
         Rect field = seedFieldBounds(layout, screenWidth, screenHeight);
+        Rect copy = seedCopyButtonBounds(layout, screenWidth, screenHeight);
+        Rect paste = seedPasteButtonBounds(layout, screenWidth, screenHeight);
         Rect apply = seedApplyButtonBounds(layout, screenWidth, screenHeight);
         Rect random = randomSeedButtonBounds(layout, screenWidth, screenHeight);
         drawSectionTitle(graphics, font, "Seed", field.x(), field.y() - 14, Math.max(40, random.x() + random.width() - field.x()));
         drawTextField(graphics, font, field, seedEditing ? seedEditText : snapshot.getCorruptionSeedLabel(), seedEditing);
+        drawButton(graphics, font, copy, "Copy", true, copy.contains(mouseX, mouseY));
+        drawButton(graphics, font, paste, "Paste", true, paste.contains(mouseX, mouseY));
         drawButton(graphics, font, apply, "Set", seedEditing, seedEditing && apply.contains(mouseX, mouseY));
         drawButton(graphics, font, random, "Random", true, random.contains(mouseX, mouseY));
 
         Rect area = settingsListArea(layout, screenWidth, screenHeight);
-        drawSectionTitle(graphics, font, "Target Areas", area.x(), area.y(), area.width());
+        Rect bulk = targetBulkButtonBounds(layout, screenWidth, screenHeight);
+        boolean allTargetsEnabled = countEnabledTargets(snapshot.getEnabledTargetsMask()) == CorruptionTarget.values().length;
+        drawSectionTitle(graphics, font, "Target Areas", area.x(), area.y(), Math.max(30, bulk.x() - area.x() - 4));
+        drawButton(graphics, font, bulk, allTargetsEnabled ? "Disable all" : "Enable all", true, bulk.contains(mouseX, mouseY));
         CorruptionTarget[] targets = CorruptionTarget.values();
         int columns = targetColumnCount(area);
         int columnGap = columns > 1 ? 8 : 0;
@@ -396,6 +428,14 @@ public final class CorruptionOverlayPanel {
             return TOGGLE_ROW_HEIGHT;
         }
         return 18;
+    }
+
+    private static int seedButtonWidth(Rect panel) {
+        return panel.width() < 320 ? 36 : SEED_BUTTON_WIDTH;
+    }
+
+    private static int seedRandomButtonWidth(Rect panel) {
+        return panel.width() < 320 ? 46 : SEED_RANDOM_BUTTON_WIDTH;
     }
 
     private static void fillPanel(GuiGraphics graphics, Rect rect) {

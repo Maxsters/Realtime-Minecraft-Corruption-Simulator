@@ -6,17 +6,19 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.font.glyphs.BakedGlyph;
 import org.joml.Matrix4f;
-import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
+import java.lang.reflect.Field;
+
 @Mixin(targets = "net.minecraft.client.gui.Font$StringRenderOutput")
 public abstract class FontStringRenderOutputMixin {
-    @Shadow(remap = false, aliases = "f_92939_")
-    @Final
-    private boolean dropShadow;
+    @Unique
+    private static Field rmc$dropShadowField;
+    @Unique
+    private static boolean rmc$dropShadowFieldChecked;
 
     @Redirect(
             method = "accept(ILnet/minecraft/network/chat/Style;I)Z",
@@ -85,7 +87,7 @@ public abstract class FontStringRenderOutputMixin {
                                              float blue,
                                              float alpha,
                                              int light) {
-        FontRenderCorruptionHooks.renderGlyph(glyph, bold, italic, boldOffset, x, y, matrix, consumer, red, green, blue, alpha, light, dropShadow);
+        FontRenderCorruptionHooks.renderGlyph(glyph, bold, italic, boldOffset, x, y, matrix, consumer, red, green, blue, alpha, light, rmc$dropShadow());
     }
 
     @Redirect(
@@ -118,5 +120,43 @@ public abstract class FontStringRenderOutputMixin {
 
     private float rmc$corruptCharacterAdvance(GlyphInfo glyph, boolean bold) {
         return FontRenderCorruptionHooks.mutateAdvance(glyph.getAdvance(bold));
+    }
+
+    @Unique
+    private boolean rmc$dropShadow() {
+        Field field = rmc$dropShadowField((Object) this);
+        if (field == null) {
+            return false;
+        }
+        try {
+            return field.getBoolean(this);
+        } catch (IllegalAccessException | RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    @Unique
+    private static Field rmc$dropShadowField(Object owner) {
+        if (owner == null) {
+            return null;
+        }
+        if (rmc$dropShadowField != null) {
+            return rmc$dropShadowField;
+        }
+        if (rmc$dropShadowFieldChecked) {
+            return null;
+        }
+        rmc$dropShadowFieldChecked = true;
+        Class<?> type = owner.getClass();
+        for (String name : new String[]{"dropShadow", "f_92939_"}) {
+            try {
+                Field field = type.getDeclaredField(name);
+                field.setAccessible(true);
+                rmc$dropShadowField = field;
+                return field;
+            } catch (NoSuchFieldException | RuntimeException ignored) {
+            }
+        }
+        return null;
     }
 }

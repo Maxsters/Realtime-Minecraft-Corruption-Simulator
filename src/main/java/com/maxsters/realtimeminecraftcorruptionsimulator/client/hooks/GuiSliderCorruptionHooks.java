@@ -10,9 +10,14 @@ import net.minecraft.util.Mth;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
+import java.util.Collections;
+import java.util.Set;
+import java.util.WeakHashMap;
+
 @OnlyIn(Dist.CLIENT)
 public final class GuiSliderCorruptionHooks {
     private static final ThreadLocal<Boolean> APPLYING_IMPOSSIBLE_VALUE = ThreadLocal.withInitial(() -> false);
+    private static final Set<AbstractSliderButton> CORRUPTED_SLIDERS = Collections.newSetFromMap(new WeakHashMap<>());
 
     private GuiSliderCorruptionHooks() {
     }
@@ -55,6 +60,20 @@ public final class GuiSliderCorruptionHooks {
             default -> unit(hash ^ 0x455854L) < 0.5D ? -1.0D - span : 2.0D + span;
         };
         return Mth.clamp(corrupted, -3.0D, 4.0D);
+    }
+
+    public static void markSliderCorrupted(AbstractSliderButton button) {
+        if (button != null) {
+            CORRUPTED_SLIDERS.add(button);
+        }
+    }
+
+    public static boolean consumeSliderRepair(AbstractSliderButton button, double currentValue) {
+        if (button == null) {
+            return false;
+        }
+        boolean wasCorrupted = CORRUPTED_SLIDERS.remove(button);
+        return wasCorrupted || currentValue < 0.0D || currentValue > 1.0D || Double.isNaN(currentValue);
     }
 
     public static void beginImpossibleSliderValue() {

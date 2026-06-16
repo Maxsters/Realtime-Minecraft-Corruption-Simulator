@@ -8,17 +8,21 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import org.spongepowered.asm.mixin.Dynamic;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.lang.reflect.Field;
 
 @Mixin(BlockEntityRenderDispatcher.class)
 public abstract class BlockEntityRenderDispatcherMixin {
     private static final ThreadLocal<Boolean> RMC$BLOCK_ENTITY_POSE_APPLIED = ThreadLocal.withInitial(() -> false);
 
-    @Shadow(remap = false, aliases = "f_112249_")
-    private Camera camera;
+    @Unique
+    private static Field rmc$cameraField;
+    @Unique
+    private static boolean rmc$cameraFieldChecked;
 
     @Inject(
             method = {
@@ -31,7 +35,7 @@ public abstract class BlockEntityRenderDispatcherMixin {
     )
     @Dynamic("Targets both mapped dev names and SRG runtime aliases for BlockEntityRenderDispatcher#render.")
     private <E extends BlockEntity> void rmc$beginCorruptedBlockEntityRender(E blockEntity, float partialTick, PoseStack poseStack, MultiBufferSource bufferSource, CallbackInfo callback) {
-        RMC$BLOCK_ENTITY_POSE_APPLIED.set(BlockEntityRenderCorruptionHooks.beginRender(blockEntity, partialTick, poseStack, this.camera));
+        RMC$BLOCK_ENTITY_POSE_APPLIED.set(BlockEntityRenderCorruptionHooks.beginRender(blockEntity, partialTick, poseStack, rmc$camera((BlockEntityRenderDispatcher) (Object) this)));
     }
 
     @Inject(
@@ -47,5 +51,36 @@ public abstract class BlockEntityRenderDispatcherMixin {
     private <E extends BlockEntity> void rmc$endCorruptedBlockEntityRender(E blockEntity, float partialTick, PoseStack poseStack, MultiBufferSource bufferSource, CallbackInfo callback) {
         BlockEntityRenderCorruptionHooks.endRender(poseStack, RMC$BLOCK_ENTITY_POSE_APPLIED.get());
         RMC$BLOCK_ENTITY_POSE_APPLIED.remove();
+    }
+
+    @Unique
+    private static Camera rmc$camera(BlockEntityRenderDispatcher dispatcher) {
+        Field field = rmc$cameraField();
+        if (field == null) {
+            return null;
+        }
+        try {
+            Object value = field.get(dispatcher);
+            return value instanceof Camera camera ? camera : null;
+        } catch (IllegalAccessException | RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    @Unique
+    private static Field rmc$cameraField() {
+        if (!rmc$cameraFieldChecked) {
+            rmc$cameraFieldChecked = true;
+            for (String name : new String[]{"camera", "f_112249_"}) {
+                try {
+                    Field field = BlockEntityRenderDispatcher.class.getDeclaredField(name);
+                    field.setAccessible(true);
+                    rmc$cameraField = field;
+                    break;
+                } catch (NoSuchFieldException | RuntimeException ignored) {
+                }
+            }
+        }
+        return rmc$cameraField;
     }
 }

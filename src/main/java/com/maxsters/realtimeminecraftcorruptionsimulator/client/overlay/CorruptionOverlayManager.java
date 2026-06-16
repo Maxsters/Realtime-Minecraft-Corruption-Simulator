@@ -433,6 +433,16 @@ public final class CorruptionOverlayManager {
                     mouseAction = MouseAction.PANEL;
                     return true;
                 }
+                CorruptionOverlayPanel.Rect seedCopy = CorruptionOverlayPanel.seedCopyButtonBounds(LAYOUT, screenWidth, screenHeight);
+                if (seedCopy.contains(mouseX, mouseY)) {
+                    mouseAction = MouseAction.SEED_COPY;
+                    return true;
+                }
+                CorruptionOverlayPanel.Rect seedPaste = CorruptionOverlayPanel.seedPasteButtonBounds(LAYOUT, screenWidth, screenHeight);
+                if (seedPaste.contains(mouseX, mouseY)) {
+                    mouseAction = MouseAction.SEED_PASTE;
+                    return true;
+                }
                 CorruptionOverlayPanel.Rect seedApply = CorruptionOverlayPanel.seedApplyButtonBounds(LAYOUT, screenWidth, screenHeight);
                 if (seedApply.contains(mouseX, mouseY)) {
                     mouseAction = MouseAction.SEED_APPLY;
@@ -445,6 +455,11 @@ public final class CorruptionOverlayManager {
                 }
                 if (seedEditing) {
                     mouseAction = MouseAction.PANEL;
+                    return true;
+                }
+                CorruptionOverlayPanel.Rect targetBulk = CorruptionOverlayPanel.targetBulkButtonBounds(LAYOUT, screenWidth, screenHeight);
+                if (targetBulk.contains(mouseX, mouseY)) {
+                    mouseAction = MouseAction.TARGET_ALL_TOGGLE;
                     return true;
                 }
                 for (CorruptionOverlayPanel.TargetHitBox hitBox : CorruptionOverlayPanel.targetHitBoxes(LAYOUT, screenWidth, screenHeight)) {
@@ -514,6 +529,16 @@ public final class CorruptionOverlayManager {
             if (applyButton.contains(mouseX, mouseY) && pendingLevel != latestSnapshot.getCorruptionLevel()) {
                 applyCurrentSettings(pendingLevel, latestSnapshot.getFixedCorruptionSeed(), latestSnapshot.getCorruptionSeedLabel(), latestSnapshot.getEnabledTargetsMask(), latestSnapshot.getAutoIncreaseIntervalTicks(), latestSnapshot.getAutoIncreaseAmount());
             }
+        } else if (mouseAction == MouseAction.SEED_COPY) {
+            CorruptionOverlayPanel.Rect copyButton = CorruptionOverlayPanel.seedCopyButtonBounds(LAYOUT, screenWidth, screenHeight);
+            if (copyButton.contains(mouseX, mouseY)) {
+                copySeedToClipboard();
+            }
+        } else if (mouseAction == MouseAction.SEED_PASTE) {
+            CorruptionOverlayPanel.Rect pasteButton = CorruptionOverlayPanel.seedPasteButtonBounds(LAYOUT, screenWidth, screenHeight);
+            if (pasteButton.contains(mouseX, mouseY)) {
+                pasteSeedFromClipboard();
+            }
         } else if (mouseAction == MouseAction.SEED_APPLY) {
             CorruptionOverlayPanel.Rect applyButton = CorruptionOverlayPanel.seedApplyButtonBounds(LAYOUT, screenWidth, screenHeight);
             if (applyButton.contains(mouseX, mouseY)) {
@@ -532,6 +557,11 @@ public final class CorruptionOverlayManager {
                         break;
                     }
                 }
+            }
+        } else if (mouseAction == MouseAction.TARGET_ALL_TOGGLE) {
+            CorruptionOverlayPanel.Rect targetBulk = CorruptionOverlayPanel.targetBulkButtonBounds(LAYOUT, screenWidth, screenHeight);
+            if (targetBulk.contains(mouseX, mouseY)) {
+                toggleAllTargets();
             }
         } else if (mouseAction == MouseAction.FUN_INTERVAL) {
             updatePendingFunInterval(mouseX);
@@ -612,9 +642,32 @@ public final class CorruptionOverlayManager {
         applyCurrentSettings(latestSnapshot.getCorruptionLevel(), seed, label, latestSnapshot.getEnabledTargetsMask(), latestSnapshot.getAutoIncreaseIntervalTicks(), latestSnapshot.getAutoIncreaseAmount());
     }
 
+    private static void copySeedToClipboard() {
+        String text = seedEditing ? seedEditText : latestSnapshot.getCorruptionSeedLabel();
+        Minecraft.getInstance().keyboardHandler.setClipboard(sanitizeSeedText(text));
+    }
+
+    private static void pasteSeedFromClipboard() {
+        String pasted = sanitizeSeedText(Minecraft.getInstance().keyboardHandler.getClipboard());
+        if (pasted.isBlank()) {
+            return;
+        }
+        seedEditing = true;
+        interactionMode = true;
+        seedEditText = pasted;
+        releaseMouseForOverlay();
+        KeyMapping.releaseAll();
+    }
+
     private static void toggleTarget(CorruptionTarget target) {
         int mask = latestSnapshot.getEnabledTargetsMask() ^ target.mask();
         applyCurrentSettings(latestSnapshot.getCorruptionLevel(), latestSnapshot.getFixedCorruptionSeed(), latestSnapshot.getCorruptionSeedLabel(), mask, latestSnapshot.getAutoIncreaseIntervalTicks(), latestSnapshot.getAutoIncreaseAmount());
+    }
+
+    private static void toggleAllTargets() {
+        int enabled = latestSnapshot.getEnabledTargetsMask();
+        int nextMask = enabled == CorruptionTarget.ALL_MASK ? 0 : CorruptionTarget.ALL_MASK;
+        applyCurrentSettings(latestSnapshot.getCorruptionLevel(), latestSnapshot.getFixedCorruptionSeed(), latestSnapshot.getCorruptionSeedLabel(), nextMask, latestSnapshot.getAutoIncreaseIntervalTicks(), latestSnapshot.getAutoIncreaseAmount());
     }
 
     private static void beginSeedEditing() {
@@ -743,6 +796,10 @@ public final class CorruptionOverlayManager {
             seedEditText = sanitizeSeedText(Minecraft.getInstance().keyboardHandler.getClipboard());
             return true;
         }
+        if ((modifiers & GLFW.GLFW_MOD_CONTROL) != 0 && key == GLFW.GLFW_KEY_C) {
+            copySeedToClipboard();
+            return true;
+        }
         String character = keyToSeedCharacter(key, (modifiers & GLFW.GLFW_MOD_SHIFT) != 0);
         if (!character.isEmpty() && seedEditText.length() < 96) {
             seedEditText = sanitizeSeedText(seedEditText + character);
@@ -864,7 +921,10 @@ public final class CorruptionOverlayManager {
         APPLY,
         SEED_APPLY,
         SEED_RANDOM,
+        SEED_COPY,
+        SEED_PASTE,
         TARGET_TOGGLE,
+        TARGET_ALL_TOGGLE,
         FUN_INTERVAL,
         FUN_AMOUNT,
         RESIZE_HORIZONTAL,
