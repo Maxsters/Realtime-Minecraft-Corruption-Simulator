@@ -59,7 +59,11 @@ public final class CorruptionOverlayManager {
     private static PendingControl pendingControl = PendingControl.NONE;
     private static CorruptionOverlayPanel.Page currentPage = CorruptionOverlayPanel.Page.CONTROL;
     private static int pendingLevel = latestSnapshot.getCorruptionLevel();
-    private static int lastKnownActiveLevel = latestSnapshot.getCorruptionLevel();
+    private static long draftSeed = latestSnapshot.getFixedCorruptionSeed();
+    private static String draftSeedLabel = latestSnapshot.getCorruptionSeedLabel();
+    private static int draftTargetsMask = latestSnapshot.getEnabledTargetsMask();
+    private static int draftAutoIntervalTicks = latestSnapshot.getAutoIncreaseIntervalTicks();
+    private static int draftAutoAmount = latestSnapshot.getAutoIncreaseAmount();
     private static int achievementsScroll;
     private static CorruptionTarget pendingTarget;
     private static CorruptionAchievementManager.Achievement pendingAchievement;
@@ -94,10 +98,13 @@ public final class CorruptionOverlayManager {
     }
 
     public static void applySnapshot(CorruptionProfileSnapshot snapshot) {
+        boolean preserveDraft = hasPendingChanges() || isTextEditing() || mouseAction == MouseAction.SLIDER
+                || mouseAction == MouseAction.FUN_INTERVAL || mouseAction == MouseAction.FUN_AMOUNT;
         latestSnapshot = snapshot == null ? ClientCorruptionState.localSnapshot() : snapshot;
-        syncPendingLevelToActiveChange();
-        if (!seedEditing) {
-            seedEditText = latestSnapshot.getCorruptionSeedLabel();
+        if (!preserveDraft) {
+            syncDraftFromSnapshot();
+        } else if (!seedEditing && !hasDraftChanges()) {
+            seedEditText = draftSeedLabel;
         }
     }
 
@@ -136,7 +143,9 @@ public final class CorruptionOverlayManager {
                 resetClientWorldState();
             }
             latestSnapshot = ClientCorruptionState.localSnapshot();
-            syncPendingLevelToActiveChange();
+            if (!hasDraftChanges() && !isTextEditing()) {
+                syncDraftFromSnapshot();
+            }
             updateDragFromCurrentMouse();
             return;
         }
@@ -146,11 +155,9 @@ public final class CorruptionOverlayManager {
             currentWorldKey = worldKey;
             requestedThisWorld = false;
             autoOpenedThisWorld = false;
-            pendingLevel = latestSnapshot.getCorruptionLevel();
-            lastKnownActiveLevel = pendingLevel;
             seedEditing = false;
             funEditField = FunEditField.NONE;
-            seedEditText = latestSnapshot.getCorruptionSeedLabel();
+            syncDraftFromSnapshot();
         }
 
         if (!requestedThisWorld && minecraft.getConnection() != null) {
@@ -366,6 +373,7 @@ public final class CorruptionOverlayManager {
 
     private static void renderOverlay(GuiGraphics graphics, Minecraft minecraft, int mouseX, int mouseY) {
         CorruptionProfileSnapshot snapshot = renderSnapshot();
+        CorruptionProfileSnapshot draftSnapshot = draftSnapshot(snapshot);
         LAYOUT.clampToScreen(graphics.guiWidth(), graphics.guiHeight());
         graphics.flush();
         RenderSystem.disableDepthTest();
@@ -378,8 +386,9 @@ public final class CorruptionOverlayManager {
                 } else if (LAYOUT.mode() == CorruptionOverlayLayout.Mode.MINIMIZED) {
                     CorruptionOverlayPanel.renderMinimized(graphics, minecraft.font, LAYOUT, snapshot, mouseX, mouseY);
                 } else {
-                    int displayAutoInterval = mouseAction == MouseAction.FUN_INTERVAL ? pendingFunValue : snapshot.getAutoIncreaseIntervalTicks();
-                    int displayAutoAmount = mouseAction == MouseAction.FUN_AMOUNT ? pendingFunValue : snapshot.getAutoIncreaseAmount();
+                    int displayAutoInterval = mouseAction == MouseAction.FUN_INTERVAL ? pendingFunValue : draftAutoIntervalTicks;
+                    int displayAutoAmount = mouseAction == MouseAction.FUN_AMOUNT ? pendingFunValue : draftAutoAmount;
+                    boolean draftDirty = hasPendingChanges();
                     achievementsScroll = clampAchievementsScroll(graphics.guiWidth(), graphics.guiHeight());
                     expireAchievementResetPresses();
                     CorruptionOverlayPanel.renderOpen(
@@ -387,9 +396,11 @@ public final class CorruptionOverlayManager {
                             minecraft.font,
                             LAYOUT,
                             snapshot,
+                            draftSnapshot,
                             pendingLevel,
                             displayAutoInterval,
                             displayAutoAmount,
+                            draftDirty,
                             currentPage,
                             seedEditing,
                             seedEditText,
@@ -493,6 +504,19 @@ public final class CorruptionOverlayManager {
                 currentPage = CorruptionOverlayPanel.Page.HUD;
                 mouseAction = MouseAction.PANEL;
                 return true;
+            }
+
+            if (isProfileDraftPage(currentPage)) {
+                CorruptionOverlayPanel.Rect globalApply = CorruptionOverlayPanel.globalApplyButtonBounds(LAYOUT, currentPage, screenWidth, screenHeight);
+                if (globalApply.contains(mouseX, mouseY)) {
+                    mouseAction = MouseAction.APPLY;
+                    return true;
+                }
+                CorruptionOverlayPanel.Rect globalCancel = CorruptionOverlayPanel.globalCancelButtonBounds(LAYOUT, currentPage, screenWidth, screenHeight);
+                if (globalCancel.contains(mouseX, mouseY)) {
+                    mouseAction = MouseAction.CANCEL;
+                    return true;
+                }
             }
 
             if (currentPage == CorruptionOverlayPanel.Page.SETTINGS) {
@@ -601,12 +625,6 @@ public final class CorruptionOverlayManager {
                 }
             }
 
-            CorruptionOverlayPanel.Rect applyButton = CorruptionOverlayPanel.applyButtonBounds(LAYOUT, screenWidth, screenHeight);
-            if (currentPage == CorruptionOverlayPanel.Page.CONTROL && applyButton.contains(mouseX, mouseY)) {
-                mouseAction = MouseAction.APPLY;
-                return true;
-            }
-
             CorruptionOverlayPanel.Rect slider = CorruptionOverlayPanel.sliderBounds(LAYOUT, screenWidth, screenHeight);
             if (currentPage == CorruptionOverlayPanel.Page.CONTROL && slider.contains(mouseX, mouseY)) {
                 mouseAction = MouseAction.SLIDER;
@@ -694,9 +712,14 @@ public final class CorruptionOverlayManager {
         } else if (mouseAction == MouseAction.WINDOW || mouseAction == MouseAction.RESIZE_HORIZONTAL || mouseAction == MouseAction.RESIZE_VERTICAL || mouseAction == MouseAction.RESIZE_BOTH) {
             LAYOUT.save();
         } else if (mouseAction == MouseAction.APPLY) {
-            CorruptionOverlayPanel.Rect applyButton = CorruptionOverlayPanel.applyButtonBounds(LAYOUT, screenWidth, screenHeight);
-            if (applyButton.contains(mouseX, mouseY) && pendingLevel != latestSnapshot.getCorruptionLevel()) {
-                applyCurrentSettings(pendingLevel, latestSnapshot.getFixedCorruptionSeed(), latestSnapshot.getCorruptionSeedLabel(), latestSnapshot.getEnabledTargetsMask(), latestSnapshot.getAutoIncreaseIntervalTicks(), latestSnapshot.getAutoIncreaseAmount());
+            CorruptionOverlayPanel.Rect applyButton = CorruptionOverlayPanel.globalApplyButtonBounds(LAYOUT, currentPage, screenWidth, screenHeight);
+            if (applyButton.contains(mouseX, mouseY) && hasPendingChanges()) {
+                applyDraftSettings();
+            }
+        } else if (mouseAction == MouseAction.CANCEL) {
+            CorruptionOverlayPanel.Rect cancelButton = CorruptionOverlayPanel.globalCancelButtonBounds(LAYOUT, currentPage, screenWidth, screenHeight);
+            if (cancelButton.contains(mouseX, mouseY) && hasPendingChanges()) {
+                cancelDraftSettings();
             }
         } else if (mouseAction == MouseAction.SEED_COPY) {
             CorruptionOverlayPanel.Rect copyButton = CorruptionOverlayPanel.seedCopyButtonBounds(LAYOUT, screenWidth, screenHeight);
@@ -729,20 +752,20 @@ public final class CorruptionOverlayManager {
             }
         } else if (mouseAction == MouseAction.TARGET_ENABLE_ALL) {
             CorruptionOverlayPanel.Rect enableAll = CorruptionOverlayPanel.enableAllTargetsButtonBounds(LAYOUT, screenWidth, screenHeight);
-            if (enableAll.contains(mouseX, mouseY) && latestSnapshot.getEnabledTargetsMask() != CorruptionTarget.ALL_MASK) {
+            if (enableAll.contains(mouseX, mouseY) && draftTargetsMask != CorruptionTarget.ALL_MASK) {
                 setAllTargets(true);
             }
         } else if (mouseAction == MouseAction.TARGET_DISABLE_ALL) {
             CorruptionOverlayPanel.Rect disableAll = CorruptionOverlayPanel.disableAllTargetsButtonBounds(LAYOUT, screenWidth, screenHeight);
-            if (disableAll.contains(mouseX, mouseY) && latestSnapshot.getEnabledTargetsMask() != 0) {
+            if (disableAll.contains(mouseX, mouseY) && draftTargetsMask != 0) {
                 setAllTargets(false);
             }
         } else if (mouseAction == MouseAction.FUN_INTERVAL) {
             updatePendingFunInterval(mouseX);
-            applyCurrentSettings(latestSnapshot.getCorruptionLevel(), latestSnapshot.getFixedCorruptionSeed(), latestSnapshot.getCorruptionSeedLabel(), latestSnapshot.getEnabledTargetsMask(), pendingFunValue, latestSnapshot.getAutoIncreaseAmount());
+            draftAutoIntervalTicks = pendingFunValue;
         } else if (mouseAction == MouseAction.FUN_AMOUNT) {
             updatePendingFunAmount(mouseX);
-            applyCurrentSettings(latestSnapshot.getCorruptionLevel(), latestSnapshot.getFixedCorruptionSeed(), latestSnapshot.getCorruptionSeedLabel(), latestSnapshot.getEnabledTargetsMask(), latestSnapshot.getAutoIncreaseIntervalTicks(), pendingFunValue);
+            draftAutoAmount = pendingFunValue;
         } else if (mouseAction == MouseAction.ACHIEVEMENT_PIN) {
             if (pendingAchievement != null) {
                 for (CorruptionOverlayPanel.AchievementHitBox hitBox : CorruptionOverlayPanel.achievementHitBoxes(LAYOUT, screenWidth, screenHeight, achievementsScroll)) {
@@ -803,10 +826,28 @@ public final class CorruptionOverlayManager {
             ClientCorruptionState.reset();
             CorruptionProfileSnapshot current = ClientCorruptionState.snapshot();
             latestSnapshot = current;
-            pendingLevel = latestSnapshot.getCorruptionLevel();
-            lastKnownActiveLevel = pendingLevel;
+            syncDraftFromSnapshot();
             notifyLocalSettingsChanged(previous, current);
         }
+    }
+
+    private static void applyDraftSettings() {
+        if (seedEditing) {
+            submitSeedEdit();
+        }
+        if (funEditField != FunEditField.NONE) {
+            submitFunEdit();
+        }
+        if (!hasDraftChanges()) {
+            return;
+        }
+        applyCurrentSettings(pendingLevel, draftSeed, draftSeedLabel, draftTargetsMask, draftAutoIntervalTicks, draftAutoAmount);
+    }
+
+    private static void cancelDraftSettings() {
+        seedEditing = false;
+        funEditField = FunEditField.NONE;
+        syncDraftFromSnapshot();
     }
 
     private static void notifyLocalSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
@@ -827,20 +868,22 @@ public final class CorruptionOverlayManager {
         }
         long seed = seedFromText(label);
         seedEditing = false;
-        seedEditText = CorruptionSavedData.sanitizeSeedLabel(label, seed);
-        applyCurrentSettings(latestSnapshot.getCorruptionLevel(), seed, seedEditText, latestSnapshot.getEnabledTargetsMask(), latestSnapshot.getAutoIncreaseIntervalTicks(), latestSnapshot.getAutoIncreaseAmount());
+        draftSeed = seed;
+        draftSeedLabel = CorruptionSavedData.sanitizeSeedLabel(label, seed);
+        seedEditText = draftSeedLabel;
     }
 
     private static void randomizeSeed() {
         long seed = ThreadLocalRandom.current().nextLong();
         String label = CorruptionSavedData.seedLabel(seed);
         seedEditing = false;
-        seedEditText = label;
-        applyCurrentSettings(latestSnapshot.getCorruptionLevel(), seed, label, latestSnapshot.getEnabledTargetsMask(), latestSnapshot.getAutoIncreaseIntervalTicks(), latestSnapshot.getAutoIncreaseAmount());
+        draftSeed = seed;
+        draftSeedLabel = label;
+        seedEditText = draftSeedLabel;
     }
 
     private static void copySeedToClipboard() {
-        String text = seedEditing ? seedEditText : latestSnapshot.getCorruptionSeedLabel();
+        String text = seedEditing ? seedEditText : draftSeedLabel;
         Minecraft.getInstance().keyboardHandler.setClipboard(sanitizeSeedText(text));
     }
 
@@ -857,20 +900,18 @@ public final class CorruptionOverlayManager {
     }
 
     private static void toggleTarget(CorruptionTarget target) {
-        int mask = latestSnapshot.getEnabledTargetsMask() ^ target.mask();
-        applyCurrentSettings(latestSnapshot.getCorruptionLevel(), latestSnapshot.getFixedCorruptionSeed(), latestSnapshot.getCorruptionSeedLabel(), mask, latestSnapshot.getAutoIncreaseIntervalTicks(), latestSnapshot.getAutoIncreaseAmount());
+        draftTargetsMask = CorruptionTarget.normalizeMask(draftTargetsMask ^ target.mask());
     }
 
     private static void setAllTargets(boolean enabled) {
-        int nextMask = enabled ? CorruptionTarget.ALL_MASK : 0;
-        applyCurrentSettings(latestSnapshot.getCorruptionLevel(), latestSnapshot.getFixedCorruptionSeed(), latestSnapshot.getCorruptionSeedLabel(), nextMask, latestSnapshot.getAutoIncreaseIntervalTicks(), latestSnapshot.getAutoIncreaseAmount());
+        draftTargetsMask = enabled ? CorruptionTarget.ALL_MASK : 0;
     }
 
     private static void beginSeedEditing() {
         funEditField = FunEditField.NONE;
         seedEditing = true;
         interactionMode = true;
-        seedEditText = latestSnapshot.getCorruptionSeedLabel();
+        seedEditText = draftSeedLabel;
         releaseMouseForOverlay();
         KeyMapping.releaseAll();
     }
@@ -878,7 +919,7 @@ public final class CorruptionOverlayManager {
     private static void beginFunIntervalEditing() {
         seedEditing = false;
         funEditField = FunEditField.INTERVAL;
-        funIntervalEditText = formatIntervalEdit(latestSnapshot.getAutoIncreaseIntervalTicks());
+        funIntervalEditText = formatIntervalEdit(draftAutoIntervalTicks);
         interactionMode = true;
         releaseMouseForOverlay();
         KeyMapping.releaseAll();
@@ -887,7 +928,7 @@ public final class CorruptionOverlayManager {
     private static void beginFunAmountEditing() {
         seedEditing = false;
         funEditField = FunEditField.AMOUNT;
-        funAmountEditText = signedPercentLabel(latestSnapshot.getAutoIncreaseAmount());
+        funAmountEditText = signedPercentLabel(draftAutoAmount);
         interactionMode = true;
         releaseMouseForOverlay();
         KeyMapping.releaseAll();
@@ -987,14 +1028,6 @@ public final class CorruptionOverlayManager {
         pendingFunValue = CorruptionOverlayPanel.MIN_AUTO_AMOUNT + (int) Math.round(ratio * (CorruptionOverlayPanel.MAX_AUTO_AMOUNT - CorruptionOverlayPanel.MIN_AUTO_AMOUNT));
     }
 
-    private static void syncPendingLevelToActiveChange() {
-        int activeLevel = latestSnapshot.getCorruptionLevel();
-        if (activeLevel != lastKnownActiveLevel && mouseAction != MouseAction.SLIDER && mouseAction != MouseAction.APPLY) {
-            pendingLevel = activeLevel;
-            lastKnownActiveLevel = activeLevel;
-        }
-    }
-
     private static boolean handleTextEditKey(int key, int modifiers, int action, boolean captureUnhandled) {
         if (seedEditing) {
             return handleSeedEditKey(key, modifiers, action, captureUnhandled);
@@ -1015,7 +1048,7 @@ public final class CorruptionOverlayManager {
         }
         if (key == GLFW.GLFW_KEY_ESCAPE) {
             seedEditing = false;
-            seedEditText = latestSnapshot.getCorruptionSeedLabel();
+            seedEditText = draftSeedLabel;
             return true;
         }
         if (key == GLFW.GLFW_KEY_BACKSPACE) {
@@ -1100,13 +1133,13 @@ public final class CorruptionOverlayManager {
 
     private static void submitFunEdit() {
         if (funEditField == FunEditField.INTERVAL) {
-            int ticks = parseIntervalTicks(funIntervalEditText, latestSnapshot.getAutoIncreaseIntervalTicks());
+            int ticks = parseIntervalTicks(funIntervalEditText, draftAutoIntervalTicks);
             funEditField = FunEditField.NONE;
-            applyCurrentSettings(latestSnapshot.getCorruptionLevel(), latestSnapshot.getFixedCorruptionSeed(), latestSnapshot.getCorruptionSeedLabel(), latestSnapshot.getEnabledTargetsMask(), ticks, latestSnapshot.getAutoIncreaseAmount());
+            draftAutoIntervalTicks = ticks;
         } else if (funEditField == FunEditField.AMOUNT) {
-            int amount = parseAutoAmount(funAmountEditText, latestSnapshot.getAutoIncreaseAmount());
+            int amount = parseAutoAmount(funAmountEditText, draftAutoAmount);
             funEditField = FunEditField.NONE;
-            applyCurrentSettings(latestSnapshot.getCorruptionLevel(), latestSnapshot.getFixedCorruptionSeed(), latestSnapshot.getCorruptionSeedLabel(), latestSnapshot.getEnabledTargetsMask(), latestSnapshot.getAutoIncreaseIntervalTicks(), amount);
+            draftAutoAmount = amount;
         }
     }
 
@@ -1257,7 +1290,7 @@ public final class CorruptionOverlayManager {
     private static long seedFromText(String text) {
         String trimmed = sanitizeSeedText(text);
         if (trimmed.isBlank()) {
-            return latestSnapshot.getFixedCorruptionSeed();
+            return draftSeed;
         }
         try {
             if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
@@ -1291,6 +1324,71 @@ public final class CorruptionOverlayManager {
         return minecraft.level == null || minecraft.player == null ? ClientCorruptionState.localSnapshot() : latestSnapshot;
     }
 
+    private static CorruptionProfileSnapshot draftSnapshot(CorruptionProfileSnapshot base) {
+        CorruptionProfileSnapshot snapshot = base == null ? latestSnapshot : base;
+        return new CorruptionProfileSnapshot(
+                pendingLevel,
+                snapshot.getPreviousCorruptionLevel(),
+                snapshot.getCorruptionDelta(),
+                snapshot.getCalibrationConfidence(),
+                snapshot.getStabilityDebt(),
+                snapshot.getProfileCoherence(),
+                snapshot.getEmergenceScore(),
+                snapshot.getLastKnownSafeCorruptionLevel(),
+                snapshot.getActiveProfile(),
+                draftSeed,
+                draftSeedLabel,
+                draftTargetsMask,
+                draftAutoIntervalTicks,
+                draftAutoAmount
+        );
+    }
+
+    private static boolean hasDraftChanges() {
+        return pendingLevel != latestSnapshot.getCorruptionLevel()
+                || draftSeed != latestSnapshot.getFixedCorruptionSeed()
+                || !draftSeedLabel.equals(latestSnapshot.getCorruptionSeedLabel())
+                || draftTargetsMask != latestSnapshot.getEnabledTargetsMask()
+                || draftAutoIntervalTicks != latestSnapshot.getAutoIncreaseIntervalTicks()
+                || draftAutoAmount != latestSnapshot.getAutoIncreaseAmount();
+    }
+
+    private static boolean hasPendingChanges() {
+        return hasDraftChanges() || hasEditorChanges();
+    }
+
+    private static boolean hasEditorChanges() {
+        if (seedEditing) {
+            String label = sanitizeSeedText(seedEditText);
+            return !label.isBlank() && (!label.equals(draftSeedLabel) || seedFromText(label) != draftSeed);
+        }
+        if (funEditField == FunEditField.INTERVAL) {
+            return parseIntervalTicks(funIntervalEditText, draftAutoIntervalTicks) != draftAutoIntervalTicks;
+        }
+        if (funEditField == FunEditField.AMOUNT) {
+            return parseAutoAmount(funAmountEditText, draftAutoAmount) != draftAutoAmount;
+        }
+        return false;
+    }
+
+    private static void syncDraftFromSnapshot() {
+        pendingLevel = latestSnapshot.getCorruptionLevel();
+        draftSeed = latestSnapshot.getFixedCorruptionSeed();
+        draftSeedLabel = latestSnapshot.getCorruptionSeedLabel();
+        draftTargetsMask = latestSnapshot.getEnabledTargetsMask();
+        draftAutoIntervalTicks = latestSnapshot.getAutoIncreaseIntervalTicks();
+        draftAutoAmount = latestSnapshot.getAutoIncreaseAmount();
+        seedEditText = draftSeedLabel;
+        funIntervalEditText = formatIntervalEdit(draftAutoIntervalTicks);
+        funAmountEditText = signedPercentLabel(draftAutoAmount);
+    }
+
+    private static boolean isProfileDraftPage(CorruptionOverlayPanel.Page page) {
+        return page == CorruptionOverlayPanel.Page.CONTROL
+                || page == CorruptionOverlayPanel.Page.SETTINGS
+                || page == CorruptionOverlayPanel.Page.FUN;
+    }
+
     private static double scaledMouseX() {
         Minecraft minecraft = Minecraft.getInstance();
         return minecraft.mouseHandler.xpos() * minecraft.getWindow().getGuiScaledWidth() / minecraft.getWindow().getScreenWidth();
@@ -1317,9 +1415,7 @@ public final class CorruptionOverlayManager {
         funEditField = FunEditField.NONE;
         ClientCorruptionState.reset();
         latestSnapshot = ClientCorruptionState.localSnapshot();
-        pendingLevel = latestSnapshot.getCorruptionLevel();
-        lastKnownActiveLevel = pendingLevel;
-        seedEditText = latestSnapshot.getCorruptionSeedLabel();
+        syncDraftFromSnapshot();
     }
 
     private enum MouseAction {
@@ -1328,6 +1424,7 @@ public final class CorruptionOverlayManager {
         WINDOW,
         SLIDER,
         APPLY,
+        CANCEL,
         SEED_APPLY,
         SEED_RANDOM,
         SEED_COPY,

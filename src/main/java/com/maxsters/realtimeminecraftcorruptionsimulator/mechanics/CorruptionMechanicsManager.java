@@ -2,8 +2,6 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.mechanics;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.calibration.CorruptionCalibrationManager;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ClientCorruptionEffects;
-import com.maxsters.realtimeminecraftcorruptionsimulator.config.GlobalCorruptionSettings;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.ModNetwork;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
@@ -64,10 +62,13 @@ import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.Event;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.ForgeMod;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.HashSet;
@@ -77,6 +78,7 @@ import java.util.function.Supplier;
 
 @Mod.EventBusSubscriber(modid = RealtimeMinecraftCorruptionSimulator.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class CorruptionMechanicsManager {
+    private static final Supplier<CorruptionEffectStack> CLIENT_STACK_SUPPLIER = createClientStackSupplier();
     private static final UUID LEGACY_NON_PLAYER_SPEED_ID = UUID.fromString("0e627e2a-9d3a-4d9b-a4b8-a1830ed20401");
     private static final UUID LEGACY_PLAYER_MAX_HEALTH_ID = UUID.fromString("3ed6bc4d-1875-4b4a-9e4f-80f359996081");
     private static final EntityMechanic[] ENTITY_MECHANICS = new EntityMechanic[]{
@@ -155,6 +157,9 @@ public final class CorruptionMechanicsManager {
 
     public static void onGlobalSettingsApplied(MinecraftServer server) {
         serverMutationSuspended = false;
+        if (server != null) {
+            CorruptionRuntimeManager.copyGlobalSettingsToData(CorruptionSavedData.get(server));
+        }
         scheduleServerMutationWarmup(server, SERVER_SAVE_MUTATION_COOLDOWN_TICKS);
         resetAutoIncreaseTimer(server);
         clearServerStackCache();
@@ -329,6 +334,7 @@ public final class CorruptionMechanicsManager {
     @SubscribeEvent
     public static void onLevelLoad(LevelEvent.Load event) {
         if (event.getLevel() instanceof ServerLevel level) {
+            syncServerRuntime(level.getServer());
             scheduleServerMutationWarmup(level.getServer(), SERVER_LEVEL_LOAD_MUTATION_WARMUP_TICKS);
             clearServerStackCache();
             resetTerrainMutationBudget();
@@ -367,6 +373,7 @@ public final class CorruptionMechanicsManager {
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             serverMutationSuspended = false;
+            syncServerRuntime(player.getServer());
             scheduleServerMutationWarmup(player.getServer(), SERVER_JOIN_MUTATION_WARMUP_TICKS);
             clearServerStackCache();
         }
@@ -1293,7 +1300,6 @@ public final class CorruptionMechanicsManager {
         }
 
         CorruptionSavedData data = CorruptionSavedData.get(server);
-        CorruptionRuntimeManager.syncGlobalSettings(data);
         int intervalTicks = data.getAutoIncreaseIntervalTicks();
         int amount = data.getAutoIncreaseAmount();
         if (intervalTicks <= 0 || amount == 0) {
@@ -1317,8 +1323,8 @@ public final class CorruptionMechanicsManager {
             return;
         }
 
-        GlobalCorruptionSettings.applyAutoLevel(next);
         CorruptionCalibrationManager.applyCorruptionLevel(data, next);
+        CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
         clearServerStackCache();
         ModNetwork.broadcastState(server);
     }
@@ -1328,7 +1334,6 @@ public final class CorruptionMechanicsManager {
             return;
         }
         CorruptionSavedData data = CorruptionSavedData.get(server);
-        CorruptionRuntimeManager.syncGlobalSettings(data);
         data.setLastAutoIncreaseGameTime(Math.max(0L, server.overworld().getGameTime()));
     }
 
@@ -1683,7 +1688,7 @@ public final class CorruptionMechanicsManager {
         if (player instanceof ServerPlayer serverPlayer) {
             return serverStack(serverPlayer.serverLevel());
         }
-        return player.level().isClientSide ? ClientCorruptionEffects.current() : CorruptionEffectStack.local(GlobalCorruptionSettings.activeLevel(), GlobalCorruptionSettings.seed(), GlobalCorruptionSettings.enabledTargetsMask());
+        return player.level().isClientSide ? clientStack() : CorruptionEffectStack.local(0);
     }
 
     private static CorruptionEffectStack activeStackFor(Entity entity) {
@@ -1695,13 +1700,13 @@ public final class CorruptionMechanicsManager {
             return serverStack(serverLevel);
         }
         return level != null && level.isClientSide
-                ? ClientCorruptionEffects.current()
-                : CorruptionEffectStack.local(GlobalCorruptionSettings.activeLevel(), GlobalCorruptionSettings.seed(), GlobalCorruptionSettings.enabledTargetsMask());
+                ? clientStack()
+                : CorruptionEffectStack.local(0);
     }
 
     private static CorruptionEffectStack serverStack(LivingEntity entity) {
         if (!(entity.level() instanceof ServerLevel level) || level.getServer() == null) {
-            return CorruptionEffectStack.local(GlobalCorruptionSettings.activeLevel(), GlobalCorruptionSettings.seed(), GlobalCorruptionSettings.enabledTargetsMask());
+            return CorruptionEffectStack.local(0);
         }
         return serverStack(level);
     }
@@ -1710,13 +1715,13 @@ public final class CorruptionMechanicsManager {
         if (level instanceof ServerLevel serverLevel) {
             return serverStack(serverLevel);
         }
-        return CorruptionEffectStack.local(GlobalCorruptionSettings.activeLevel(), GlobalCorruptionSettings.seed(), GlobalCorruptionSettings.enabledTargetsMask());
+        return CorruptionEffectStack.local(0);
     }
 
     private static CorruptionEffectStack serverStack(ServerLevel level) {
         MinecraftServer server = level.getServer();
         if (server == null) {
-            return CorruptionEffectStack.local(GlobalCorruptionSettings.activeLevel(), GlobalCorruptionSettings.seed(), GlobalCorruptionSettings.enabledTargetsMask());
+            return CorruptionEffectStack.local(0);
         }
         if (shouldSuspendServerMutations(server)) {
             return CorruptionEffectStack.local(0);
@@ -2117,6 +2122,37 @@ public final class CorruptionMechanicsManager {
         }
         long resumeTick = server.getTickCount() + Math.max(1, ticks);
         serverMutationResumeTick = Math.max(serverMutationResumeTick, resumeTick);
+    }
+
+    private static void syncServerRuntime(MinecraftServer server) {
+        if (server == null || server.overworld() == null) {
+            return;
+        }
+        CorruptionRuntimeManager.applySavedDataToGlobalSettings(CorruptionSavedData.get(server));
+    }
+
+    private static CorruptionEffectStack clientStack() {
+        return CLIENT_STACK_SUPPLIER.get();
+    }
+
+    private static Supplier<CorruptionEffectStack> createClientStackSupplier() {
+        if (FMLEnvironment.dist != Dist.CLIENT) {
+            return () -> CorruptionEffectStack.local(0);
+        }
+        try {
+            Class<?> type = Class.forName("com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ClientCorruptionEffects");
+            Method method = type.getMethod("current");
+            return () -> {
+                try {
+                    Object value = method.invoke(null);
+                    return value instanceof CorruptionEffectStack stack ? stack : CorruptionEffectStack.local(0);
+                } catch (ReflectiveOperationException | LinkageError ignored) {
+                    return CorruptionEffectStack.local(0);
+                }
+            };
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return () -> CorruptionEffectStack.local(0);
+        }
     }
 
     private static synchronized CorruptionEffectStack cachedServerStack(MinecraftServer server) {

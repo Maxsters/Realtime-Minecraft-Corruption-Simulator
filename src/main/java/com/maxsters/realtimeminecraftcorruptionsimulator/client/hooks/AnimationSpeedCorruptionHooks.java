@@ -83,7 +83,8 @@ public final class AnimationSpeedCorruptionHooks {
             case 5 -> Math.round((float) Math.sin((gameTime() + age) * (0.18F + intensity * 0.90F)) * intensity * 10.0F);
             default -> (int) Math.round(Math.rint(signed(clock ^ 0x5155414EL, intensity * 6.0F)));
         };
-        return Mth.clamp(age + extra, 0, Math.max(0, lifetime - 1));
+        int mutatedAge = Mth.clamp(age + extra, 0, Math.max(0, lifetime - 1));
+        return Math.max(age, mutatedAge);
     }
 
     public static GuiTickMutation mutateGuiTimers(int tickCount, int overlayMessageTime, int titleTime) {

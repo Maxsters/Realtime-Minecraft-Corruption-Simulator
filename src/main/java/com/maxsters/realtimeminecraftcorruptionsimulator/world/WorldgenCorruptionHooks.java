@@ -21,6 +21,11 @@ import net.minecraftforge.registries.ForgeRegistries;
 
 public final class WorldgenCorruptionHooks {
     private static final ThreadLocal<Boolean> FEATURE_ORIGIN_REROUTE_ACTIVE = ThreadLocal.withInitial(() -> false);
+    private static final float FEATURE_SKIP_MIN_INTENSITY = 0.14F;
+    private static final float FEATURE_REROUTE_MIN_INTENSITY = 0.18F;
+    private static final float CLIMATE_SAMPLE_MIN_INTENSITY = 0.12F;
+    private static final float DENSITY_SAMPLE_MIN_STRENGTH = 0.12F;
+    private static final float DENSITY_COORDINATE_MIN_STRENGTH = 0.24F;
 
     private WorldgenCorruptionHooks() {
     }
@@ -34,7 +39,12 @@ public final class WorldgenCorruptionHooks {
     public static boolean shouldSkipBiomeDecoration(WorldGenLevel level, ChunkAccess chunk) {
         CorruptionEffectStack stack = stack();
         float intensity = worldgenIntensity(stack);
-        if (intensity <= 0.0F || chunk == null) {
+        if (intensity <= 0.0F || level == null || chunk == null) {
+            return false;
+        }
+
+        float chance = clamp01((intensity - 0.24F) * 0.32F + stack.instability() * 0.06F);
+        if (chance <= 0.0F) {
             return false;
         }
 
@@ -44,7 +54,6 @@ public final class WorldgenCorruptionHooks {
                 ^ pos.x * 0x9E3779B97F4A7C15L
                 ^ pos.z * 0xBF58476D1CE4E5B9L
                 ^ 0x42494F4D45504153L);
-        float chance = clamp01((intensity - 0.24F) * 0.32F + stack.instability() * 0.06F);
         return unit(hash) < chance;
     }
 
@@ -55,6 +64,11 @@ public final class WorldgenCorruptionHooks {
             return false;
         }
 
+        float chance = clamp01((intensity - 0.30F) * 0.26F + stack.instability() * 0.05F);
+        if (chance <= 0.0F) {
+            return false;
+        }
+
         ChunkPos pos = chunk.getPos();
         long hash = mix(stack.fixedSeed()
                 ^ pos.x * 0xD6E8FEB86659FD93L
@@ -62,7 +76,6 @@ public final class WorldgenCorruptionHooks {
                 ^ System.identityHashCode(state) * 0x632BE59BD9B4E019L
                 ^ System.identityHashCode(structureManager)
                 ^ 0x5354525543545552L);
-        float chance = clamp01((intensity - 0.30F) * 0.26F + stack.instability() * 0.05F);
         return unit(hash) < chance;
     }
 
@@ -72,7 +85,7 @@ public final class WorldgenCorruptionHooks {
         }
         CorruptionEffectStack stack = stack();
         float intensity = worldgenIntensity(stack);
-        if (intensity <= 0.0F || level == null || origin == null) {
+        if (intensity < FEATURE_SKIP_MIN_INTENSITY || feature == null || level == null || origin == null) {
             return false;
         }
 
@@ -106,7 +119,7 @@ public final class WorldgenCorruptionHooks {
 
         CorruptionEffectStack stack = stack();
         float intensity = worldgenIntensity(stack);
-        if (intensity <= 0.0F || feature == null || level == null || origin == null) {
+        if (intensity < FEATURE_REROUTE_MIN_INTENSITY || feature == null || level == null || origin == null) {
             return origin;
         }
 
@@ -206,8 +219,16 @@ public final class WorldgenCorruptionHooks {
         return new CorruptedDensityFunction(channel, function);
     }
 
-    public static boolean shouldUseFastDensityFill() {
-        return worldgenIntensity(stack()) <= 0.0F;
+    public static boolean shouldCorruptDensity(String channel) {
+        CorruptionEffectStack stack = stack();
+        float intensity = worldgenIntensity(stack);
+        return intensity > 0.0F && densityStrength(channel, intensity) >= DENSITY_SAMPLE_MIN_STRENGTH;
+    }
+
+    public static boolean shouldUseFastDensityFill(String channel) {
+        CorruptionEffectStack stack = stack();
+        float intensity = worldgenIntensity(stack);
+        return intensity <= 0.0F || densityStrength(channel, intensity) < DENSITY_COORDINATE_MIN_STRENGTH;
     }
 
     public static DensityCoordinates corruptDensityCoordinates(String channel, int x, int y, int z) {
@@ -217,8 +238,8 @@ public final class WorldgenCorruptionHooks {
             return new DensityCoordinates(x, y, z);
         }
 
-        float strength = clamp01(intensity * densityChannelWeight(channel));
-        if (strength <= 0.0F) {
+        float strength = densityStrength(channel, intensity);
+        if (strength < DENSITY_COORDINATE_MIN_STRENGTH) {
             return new DensityCoordinates(x, y, z);
         }
 
@@ -279,9 +300,8 @@ public final class WorldgenCorruptionHooks {
             return value;
         }
 
-        float channelWeight = densityChannelWeight(channel);
-        float strength = clamp01(intensity * channelWeight);
-        if (strength <= 0.0F) {
+        float strength = densityStrength(channel, intensity);
+        if (strength < DENSITY_SAMPLE_MIN_STRENGTH) {
             return value;
         }
 
@@ -328,7 +348,7 @@ public final class WorldgenCorruptionHooks {
             result += coarse * folded * amplitude * (0.18D + strength * 0.22D);
         }
 
-        result = applyDensityAddressFaults(channel, stack, result, value, x, y, z, strength, amplitude, minValue, maxValue, channelSeed);
+        result = applyDensityAddressFaults(channel, stack, result, value, x, y, z, strength, amplitude, channelSeed);
         if (terrainShape && y > 124 && result > value) {
             result = lerp(result, value, clamp01((y - 124) / 96.0F));
         }
@@ -338,18 +358,20 @@ public final class WorldgenCorruptionHooks {
 
     public static double densityMinValue(String channel, double value) {
         float intensity = worldgenIntensity(stack());
-        return value - densityAmplitude(channel, intensity, 0.0F) * 1.6D;
+        float strength = densityStrength(channel, intensity);
+        return strength < DENSITY_SAMPLE_MIN_STRENGTH ? value : value - densityAmplitude(channel, strength, 0.0F) * 1.6D;
     }
 
     public static double densityMaxValue(String channel, double value) {
         float intensity = worldgenIntensity(stack());
-        return value + densityAmplitude(channel, intensity, 0.0F) * 1.6D;
+        float strength = densityStrength(channel, intensity);
+        return strength < DENSITY_SAMPLE_MIN_STRENGTH ? value : value + densityAmplitude(channel, strength, 0.0F) * 1.6D;
     }
 
     public static Climate.TargetPoint corruptClimateSample(Climate.TargetPoint point, int quartX, int quartY, int quartZ) {
         CorruptionEffectStack stack = stack();
         float intensity = worldgenIntensity(stack);
-        if (point == null || intensity <= 0.0F) {
+        if (point == null || intensity < CLIMATE_SAMPLE_MIN_INTENSITY) {
             return point;
         }
 
@@ -414,13 +436,16 @@ public final class WorldgenCorruptionHooks {
         if (intensity <= 0.0F || original == null) {
             return original;
         }
+        float chance = clamp01(Math.max(0.0F, intensity - 0.18F) * 0.24F + stack.instability() * 0.03F);
+        if (chance <= 0.0F) {
+            return original;
+        }
         int cell = Math.max(2, Math.round(4.0F + (1.0F - intensity) * 10.0F + unit(stack.fixedSeed() ^ 0x5355524643454CL) * 8.0F));
         long seed = mix(stack.fixedSeed()
                 ^ floorToCell(x, cell) * 0x9E3779B97F4A7C15L
                 ^ floorToCell(y, 4) * 0x94D049BB133111EBL
                 ^ floorToCell(z, cell) * 0xBF58476D1CE4E5B9L
                 ^ 0x535552464D4154L);
-        float chance = clamp01(Math.max(0.0F, intensity - 0.18F) * 0.24F + stack.instability() * 0.03F);
         if (unit(seed ^ 0x53555246L) >= chance) {
             return original;
         }
@@ -680,6 +705,10 @@ public final class WorldgenCorruptionHooks {
         };
     }
 
+    private static float densityStrength(String channel, float intensity) {
+        return clamp01(intensity * densityChannelWeight(channel));
+    }
+
     private static double densityAmplitude(String channel, float strength, float instability) {
         double base = switch (channel) {
             case "continents" -> 1.35D;
@@ -694,7 +723,7 @@ public final class WorldgenCorruptionHooks {
         return base * (0.12D + strength * 1.08D + instability * 0.22D);
     }
 
-    private static double applyDensityAddressFaults(String channel, CorruptionEffectStack stack, double result, double original, int x, int y, int z, float strength, double amplitude, double minValue, double maxValue, long channelSeed) {
+    private static double applyDensityAddressFaults(String channel, CorruptionEffectStack stack, double result, double original, int x, int y, int z, float strength, double amplitude, long channelSeed) {
         double out = result;
         long addressSeed = mix(channelSeed ^ 0x41444452455353L);
         int cell = 2 << Math.floorMod((int) (addressSeed >>> 6), 6);
@@ -783,31 +812,6 @@ public final class WorldgenCorruptionHooks {
         return wrapped > period ? period * 2.0D - wrapped : wrapped;
     }
 
-    @SuppressWarnings("unused")
-    private static double coordinateRipple(long seed, int x, int y, int z, float strength) {
-        double fx = 0.010D + strength * 0.075D + unit(seed ^ 0x46524551L) * 0.040D;
-        double fz = 0.012D + strength * 0.070D + unit(seed ^ 0x464F4C44L) * 0.044D;
-        double fy = 0.006D + strength * 0.026D;
-        return Math.sin((x + signedUnit(seed) * 53.0D) * fx)
-                + Math.cos((z + signedUnit(seed >>> 7) * 47.0D) * fz)
-                + Math.sin((y + signedUnit(seed >>> 13) * 29.0D) * fy);
-    }
-
-    @SuppressWarnings("unused")
-    private static double fractalNoise2D(double x, double z, long seed, double scale, int octaves) {
-        double value = 0.0D;
-        double amplitude = 1.0D;
-        double total = 0.0D;
-        double frequency = scale;
-        for (int octave = 0; octave < octaves; octave++) {
-            value += smoothNoise2D(x, z, seed ^ octave * 0x9E3779B97F4A7C15L, frequency) * amplitude;
-            total += amplitude;
-            amplitude *= 0.52D;
-            frequency *= 2.17D + unit(seed ^ octave * 0x46524551L) * 0.42D;
-        }
-        return total <= 0.0D ? 0.0D : value / total;
-    }
-
     private static double smoothNoise2D(double x, double z, long seed, double scale) {
         double sx = x * scale + signedUnit(seed) * 512.0D;
         double sz = z * scale + signedUnit(seed >>> 11) * 512.0D;
@@ -822,30 +826,8 @@ public final class WorldgenCorruptionHooks {
         return lerp(lerp(a, b, tx), lerp(c, d, tx), tz);
     }
 
-    @SuppressWarnings("unused")
-    private static double smoothNoise3D(double x, double y, double z, long seed, double scale) {
-        double sx = x * scale + signedUnit(seed) * 256.0D;
-        double sy = y * scale + signedUnit(seed >>> 19) * 256.0D;
-        double sz = z * scale + signedUnit(seed >>> 37) * 256.0D;
-        int x0 = fastFloor(sx);
-        int y0 = fastFloor(sy);
-        int z0 = fastFloor(sz);
-        double tx = fade(sx - x0);
-        double ty = fade(sy - y0);
-        double tz = fade(sz - z0);
-        double x00 = lerp(lattice3D(x0, y0, z0, seed), lattice3D(x0 + 1, y0, z0, seed), tx);
-        double x10 = lerp(lattice3D(x0, y0 + 1, z0, seed), lattice3D(x0 + 1, y0 + 1, z0, seed), tx);
-        double x01 = lerp(lattice3D(x0, y0, z0 + 1, seed), lattice3D(x0 + 1, y0, z0 + 1, seed), tx);
-        double x11 = lerp(lattice3D(x0, y0 + 1, z0 + 1, seed), lattice3D(x0 + 1, y0 + 1, z0 + 1, seed), tx);
-        return lerp(lerp(x00, x10, ty), lerp(x01, x11, ty), tz);
-    }
-
     private static double lattice2D(int x, int z, long seed) {
         return signedUnit(seed ^ x * 0x9E3779B97F4A7C15L ^ z * 0xBF58476D1CE4E5B9L);
-    }
-
-    private static double lattice3D(int x, int y, int z, long seed) {
-        return signedUnit(seed ^ x * 0x9E3779B97F4A7C15L ^ y * 0x94D049BB133111EBL ^ z * 0xBF58476D1CE4E5B9L);
     }
 
     private static int fastFloor(double value) {

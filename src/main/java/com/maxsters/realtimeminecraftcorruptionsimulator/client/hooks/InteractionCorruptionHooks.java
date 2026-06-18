@@ -1,7 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ClientCorruptionEffects;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.CorruptionAchievementManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import net.minecraft.client.Minecraft;
@@ -50,7 +49,6 @@ public final class InteractionCorruptionHooks {
             return;
         }
 
-        CorruptionAchievementManager.recordHoverCorruption();
         Vec3 location = hitResult.getLocation();
         Vec3 view = player.getViewVector(partialTick);
         Direction direction = Direction.getNearest(view.x, view.y, view.z).getOpposite();

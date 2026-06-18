@@ -13,7 +13,42 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 
 @OnlyIn(Dist.CLIENT)
 public final class ParticleCorruptionHooks {
+    private static final int MIN_PARTICLE_BUDGET = 4_500;
+    private static final int MAX_PARTICLE_BUDGET = 8_500;
+    private static long budgetTick = Long.MIN_VALUE;
+    private static int particlesSeenThisTick;
+
     private ParticleCorruptionHooks() {
+    }
+
+    public static boolean shouldCullParticleForBudget(Particle particle) {
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
+        float intensity = intensity(stack, targetId(particle, "budget"));
+        if (intensity <= 0.01F) {
+            return false;
+        }
+
+        Minecraft minecraft = Minecraft.getInstance();
+        long time = minecraft.level == null ? 0L : minecraft.level.getGameTime();
+        if (time != budgetTick) {
+            budgetTick = time;
+            particlesSeenThisTick = 0;
+        }
+
+        int seen = ++particlesSeenThisTick;
+        int budget = particleBudget(intensity);
+        if (seen <= budget) {
+            return false;
+        }
+
+        float overflow = (seen - budget) / Math.max(1.0F, budget * 0.30F);
+        if (overflow >= 1.0F) {
+            return true;
+        }
+
+        int identity = particle == null ? 0 : System.identityHashCode(particle);
+        long sample = stack.stableLong(CorruptionSurface.WORLD_RENDER, "particle_budget", identity ^ seen ^ (int) time);
+        return unit(sample) < Mth.clamp(0.20F + overflow * 0.72F, 0.0F, 0.95F);
     }
 
     public static boolean shouldProcessParticle(Particle particle) {
@@ -274,6 +309,10 @@ public final class ParticleCorruptionHooks {
                     : safeOriginal + intensity * (extreme ? 4.0F : 1.8F) * (0.25F + unit(clock ^ 0x48554745L) * 0.75F);
         }
         return CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, targetId, scaled, safeOriginal * (extreme ? 5.0F : 2.5F), 0.001F, extreme ? 6.0F : 3.0F, targetId.hashCode(), clock);
+    }
+
+    private static int particleBudget(float intensity) {
+        return Math.round(Mth.lerp(Mth.clamp(intensity, 0.0F, 1.0F), MAX_PARTICLE_BUDGET, MIN_PARTICLE_BUDGET));
     }
 
     public record ParticleState(

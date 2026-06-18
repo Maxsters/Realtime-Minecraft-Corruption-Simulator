@@ -31,7 +31,7 @@ public final class RealtimeMinecraftCorruptionSimulator {
     @SubscribeEvent
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
-            ModNetwork.sendState(player);
+            ModNetwork.broadcastState(player.getServer());
         }
     }
 }

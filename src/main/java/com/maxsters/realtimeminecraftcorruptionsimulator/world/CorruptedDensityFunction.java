@@ -14,6 +14,9 @@ public final class CorruptedDensityFunction implements DensityFunction {
 
     @Override
     public double compute(FunctionContext context) {
+        if (!WorldgenCorruptionHooks.shouldCorruptDensity(channel)) {
+            return delegate.compute(context);
+        }
         WorldgenCorruptionHooks.DensityCoordinates coordinates = WorldgenCorruptionHooks.corruptDensityCoordinates(
                 channel,
                 context.blockX(),
@@ -36,7 +39,11 @@ public final class CorruptedDensityFunction implements DensityFunction {
 
     @Override
     public void fillArray(double[] values, ContextProvider contextProvider) {
-        if (WorldgenCorruptionHooks.shouldUseFastDensityFill()) {
+        if (!WorldgenCorruptionHooks.shouldCorruptDensity(channel)) {
+            delegate.fillArray(values, contextProvider);
+            return;
+        }
+        if (WorldgenCorruptionHooks.shouldUseFastDensityFill(channel)) {
             delegate.fillArray(values, contextProvider);
             for (int i = 0; i < values.length; i++) {
                 FunctionContext context = contextProvider.forIndex(i);

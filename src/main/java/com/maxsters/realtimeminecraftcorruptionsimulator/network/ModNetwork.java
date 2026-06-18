@@ -1,6 +1,7 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.network;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
+import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.AchievementEventPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.ApplyCorruptionSettingsPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.CorruptionStateSyncPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.OpenCorruptionToolPacket;
@@ -19,7 +20,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import java.util.Optional;
 
 public final class ModNetwork {
-    private static final String PROTOCOL_VERSION = "2";
+    private static final String PROTOCOL_VERSION = "4";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(RealtimeMinecraftCorruptionSimulator.MOD_ID, "main"),
@@ -42,6 +43,7 @@ public final class ModNetwork {
         CHANNEL.registerMessage(nextId(), ApplyCorruptionSettingsPacket.class, ApplyCorruptionSettingsPacket::encode, ApplyCorruptionSettingsPacket::decode, ApplyCorruptionSettingsPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(nextId(), CorruptionStateSyncPacket.class, CorruptionStateSyncPacket::encode, CorruptionStateSyncPacket::decode, CorruptionStateSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(nextId(), OpenCorruptionToolPacket.class, OpenCorruptionToolPacket::encode, OpenCorruptionToolPacket::decode, OpenCorruptionToolPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        CHANNEL.registerMessage(nextId(), AchievementEventPacket.class, AchievementEventPacket::encode, AchievementEventPacket::decode, AchievementEventPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         registered = true;
     }
 
@@ -55,8 +57,8 @@ public final class ModNetwork {
             return;
         }
         CorruptionSavedData data = CorruptionSavedData.get(player.getServer());
-        CorruptionRuntimeManager.syncGlobalSettings(data);
-        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new CorruptionStateSyncPacket(CorruptionProfileSnapshot.from(data)));
+        CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new CorruptionStateSyncPacket(CorruptionProfileSnapshot.from(data), serverCheatsExposed(player.getServer())));
     }
 
     public static void broadcastState(MinecraftServer server) {
@@ -64,8 +66,8 @@ public final class ModNetwork {
             return;
         }
         CorruptionSavedData data = CorruptionSavedData.get(server);
-        CorruptionRuntimeManager.syncGlobalSettings(data);
-        CorruptionStateSyncPacket packet = new CorruptionStateSyncPacket(CorruptionProfileSnapshot.from(data));
+        CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
+        CorruptionStateSyncPacket packet = new CorruptionStateSyncPacket(CorruptionProfileSnapshot.from(data), serverCheatsExposed(server));
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
         }
@@ -75,7 +77,26 @@ public final class ModNetwork {
         CHANNEL.sendToServer(packet);
     }
 
+    public static void sendAchievementEvent(ServerPlayer player, String eventId) {
+        if (player != null) {
+            CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new AchievementEventPacket(eventId));
+        }
+    }
+
     private static int nextId() {
         return packetId++;
+    }
+
+    private static boolean serverCheatsExposed(MinecraftServer server) {
+        if (server == null) {
+            return false;
+        }
+        try {
+            if (server.getWorldData() != null && server.getWorldData().getAllowCommands()) {
+                return true;
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return server.getPlayerList().getPlayers().stream().anyMatch(player -> player.hasPermissions(2));
     }
 }

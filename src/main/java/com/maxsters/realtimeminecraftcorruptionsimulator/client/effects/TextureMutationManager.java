@@ -2,17 +2,13 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.effects;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.CorruptionAchievementManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
-import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.TextureAtlas;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -27,7 +23,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -43,25 +38,15 @@ public final class TextureMutationManager {
     private static final int MAX_GUI_TEXTURE_MUTATIONS_PER_TICK = 24;
     private static final int MAX_GLOBAL_TEXTURES_PER_SCAN = 4096;
     private static final int MAX_GLOBAL_TEXTURE_MUTATIONS_PER_TICK = 18;
-    private static final int MAX_ATLAS_TEXTURE_MUTATIONS_PER_ATLAS = 8192;
-    private static final int MAX_ATLAS_TEXTURE_MUTATIONS_PER_TICK = 96;
     private static final int MAX_TEXTURE_PIXELS_TO_MUTATE = 4_194_304;
     private static final Set<ResourceLocation> MUTATED_GUI_TEXTURES = new HashSet<>();
     private static final Set<ResourceLocation> MUTATED_GLOBAL_TEXTURES = new HashSet<>();
-    private static final Set<AtlasSpriteKey> MUTATED_ATLAS_TEXTURES = new HashSet<>();
-    private static final Map<AtlasSpriteKey, AtlasSpriteSnapshot> ATLAS_ORIGINALS = new HashMap<>();
-    private static final List<TextureAtlas> KNOWN_ATLASES = new ArrayList<>();
     private static PendingGuiTextureScan pendingGuiTextureScan;
     private static PendingGlobalTextureScan pendingGlobalTextureScan;
-    private static PendingAtlasTextureScan pendingAtlasTextureScan;
     private static boolean startupTextureScanRequested;
     private static boolean startupGlobalTextureScanRequested;
-    @SuppressWarnings("unused")
-    private static boolean atlasTextureScanRequested;
     private static String appliedGuiTextureSignature = "";
     private static String appliedGlobalTextureSignature = "";
-    @SuppressWarnings("unused")
-    private static String appliedAtlasTextureSignature = "";
     private static long lastTextureScanAttemptMs;
     private static long lastGlobalTextureScanAttemptMs;
 
@@ -74,29 +59,13 @@ public final class TextureMutationManager {
             return;
         }
 
-        rememberAtlas(atlas);
         for (ResourceLocation spriteId : atlas.getTextureLocations()) {
             ItemTextureCorruptionManager.rememberAtlasSprite(atlas.getSprite(spriteId));
         }
-        appliedAtlasTextureSignature = "";
     }
 
     public static void requestGuiTextureScan() {
         startupTextureScanRequested = true;
-    }
-
-    private static void rememberAtlas(TextureAtlas atlas) {
-        for (int index = 0; index < KNOWN_ATLASES.size(); index++) {
-            TextureAtlas known = KNOWN_ATLASES.get(index);
-            if (known == atlas) {
-                return;
-            }
-            if (known.location().equals(atlas.location())) {
-                KNOWN_ATLASES.set(index, atlas);
-                return;
-            }
-        }
-        KNOWN_ATLASES.add(atlas);
     }
 
     public static void onSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
@@ -113,11 +82,6 @@ public final class TextureMutationManager {
         if (!globalTextureSignature(previousStack).equals(globalTextureSignature(currentStack))) {
             pendingGlobalTextureScan = null;
             startupGlobalTextureScanRequested = true;
-        }
-        if (!atlasTextureSignature(previousStack).equals(atlasTextureSignature(currentStack))) {
-            pendingAtlasTextureScan = null;
-            appliedAtlasTextureSignature = "";
-            atlasTextureScanRequested = true;
         }
     }
 
@@ -138,7 +102,6 @@ public final class TextureMutationManager {
         }
         handleGuiTextureMutations(minecraft, stack);
         handleGlobalTextureMutations(minecraft, stack);
-        handleAtlasTextureMutations(stack);
     }
 
     private static void handleGuiTextureMutations(Minecraft minecraft, CorruptionEffectStack stack) {
@@ -210,16 +173,6 @@ public final class TextureMutationManager {
         applyGlobalTextureMutations(minecraft, stack, signature);
     }
 
-    private static void handleAtlasTextureMutations(CorruptionEffectStack stack) {
-        pendingAtlasTextureScan = null;
-        atlasTextureScanRequested = false;
-        appliedAtlasTextureSignature = atlasTextureSignature(stack);
-        if (!MUTATED_ATLAS_TEXTURES.isEmpty()) {
-            MUTATED_ATLAS_TEXTURES.clear();
-            ATLAS_ORIGINALS.clear();
-        }
-    }
-
     private static boolean shouldMutateGuiTextures(CorruptionEffectStack stack) {
         return stack.activeOrExtreme(CorruptionSurface.GUI_SURFACE);
     }
@@ -229,7 +182,7 @@ public final class TextureMutationManager {
     }
 
     private static String textureSettingsSignature(CorruptionEffectStack stack) {
-        return guiTextureSignature(stack) + "|" + globalTextureSignature(stack) + "|" + atlasTextureSignature(stack);
+        return guiTextureSignature(stack) + "|" + globalTextureSignature(stack);
     }
 
     private static String guiTextureSignature(CorruptionEffectStack stack) {
@@ -246,14 +199,6 @@ public final class TextureMutationManager {
                 + stack.bucket(CorruptionSurface.TEXTURE_MEMORY, 0x474C4F42, 64)
                 + ":"
                 + stack.stableLong(CorruptionSurface.TEXTURE_MEMORY, 0x414C4C54);
-    }
-
-    private static String atlasTextureSignature(CorruptionEffectStack stack) {
-        return stack.level()
-                + ":"
-                + stack.bucket(CorruptionSurface.TEXTURE_MEMORY, 0x41544C41, 64)
-                + ":"
-                + stack.stableLong(CorruptionSurface.TEXTURE_MEMORY, 0x53544954);
     }
 
     private static void applyGuiTextureMutations(Minecraft minecraft, CorruptionEffectStack stack, String signature) {
@@ -357,73 +302,6 @@ public final class TextureMutationManager {
         }
     }
 
-    @SuppressWarnings("unused")
-    private static void processPendingAtlasTextureMutations() {
-        PendingAtlasTextureScan scan = pendingAtlasTextureScan;
-        if (scan == null) {
-            return;
-        }
-
-        int processedThisTick = 0;
-        while (scan.atlasOrdinal < scan.atlases.size() && processedThisTick < MAX_ATLAS_TEXTURE_MUTATIONS_PER_TICK) {
-            TextureAtlas atlas = scan.atlases.get(scan.atlasOrdinal);
-            if (atlas == null) {
-                scan.atlasOrdinal++;
-                scan.spriteIds = List.of();
-                scan.spriteOrdinal = 0;
-                scan.atlasSpriteOrdinal = 0;
-                continue;
-            }
-            if (scan.spriteIds.isEmpty()) {
-                scan.spriteIds = new ArrayList<>(atlas.getTextureLocations());
-                scan.spriteIds.sort(TextureMutationManager::compareAtlasSpritePriority);
-                scan.spriteOrdinal = 0;
-                scan.atlasSpriteOrdinal = 0;
-            }
-
-            if (scan.spriteOrdinal >= scan.spriteIds.size() || scan.atlasSpriteOrdinal >= MAX_ATLAS_TEXTURE_MUTATIONS_PER_ATLAS) {
-                scan.atlasOrdinal++;
-                scan.spriteIds = List.of();
-                scan.spriteOrdinal = 0;
-                scan.atlasSpriteOrdinal = 0;
-                continue;
-            }
-
-            ResourceLocation atlasId = atlas.location();
-            ResourceLocation spriteId = scan.spriteIds.get(scan.spriteOrdinal);
-            scan.spriteOrdinal++;
-            scan.atlasSpriteOrdinal++;
-            processedThisTick++;
-            if (ClientCorruptionProtection.isProtectedResource(spriteId)) {
-                continue;
-            }
-            if (CorruptionAchievementManager.isAchievementIconSprite(spriteId)) {
-                restoreAtlasSprite(atlas, spriteId);
-                continue;
-            }
-
-            TextureAtlasSprite sprite = atlas.getSprite(spriteId);
-            ItemTextureCorruptionManager.rememberAtlasSprite(sprite);
-            float intensity = atlasTextureIntensity(scan.stack, atlasId, spriteId, scan.atlasSpriteOrdinal);
-            if (intensity <= 0.035F) {
-                restoreAtlasSprite(atlas, spriteId);
-                continue;
-            }
-            if (mutateAtlasSprite(atlas, sprite, spriteId, scan.spriteIds, scan.stack, intensity, scan.atlasSpriteOrdinal)) {
-                scan.mutatedCount++;
-            }
-        }
-
-        if (scan.atlasOrdinal >= scan.atlases.size()) {
-            appliedAtlasTextureSignature = scan.signature;
-            atlasTextureScanRequested = false;
-            pendingAtlasTextureScan = null;
-            if (scan.mutatedCount > 0) {
-                RealtimeMinecraftCorruptionSimulator.LOGGER.debug("Mutated {} atlas texture sprites for corruption signature {}", scan.mutatedCount, scan.signature);
-            }
-        }
-    }
-
     private static float guiTextureIntensity(CorruptionEffectStack stack, ResourceLocation textureId, int ordinal) {
         if (stack.extreme(CorruptionSurface.GUI_SURFACE)) {
             return 1.0F;
@@ -446,21 +324,6 @@ public final class TextureMutationManager {
         float target = stack.targetIntensity(CorruptionSurface.TEXTURE_MEMORY, targetId);
         float drift = 0.68F + stack.unit(CorruptionSurface.TEXTURE_MEMORY, targetId, ordinal ^ 0x414C) * 0.32F;
         return clampFloat(Math.max(base * 0.52F, target) * drift + stack.instability() * 0.06F, 0.0F, 1.0F);
-    }
-
-    private static float atlasTextureIntensity(CorruptionEffectStack stack, ResourceLocation atlasId, ResourceLocation spriteId, int ordinal) {
-        if (stack.extreme(CorruptionSurface.TEXTURE_MEMORY) || stack.extreme(CorruptionSurface.MODEL_UV)) {
-            return 1.0F;
-        }
-
-        String targetId = "atlas_sprite:" + atlasId + ":" + spriteId;
-        float base = Math.max(stack.intensity(CorruptionSurface.TEXTURE_MEMORY), stack.intensity(CorruptionSurface.MODEL_UV) * 0.82F);
-        float target = Math.max(
-                stack.targetIntensity(CorruptionSurface.TEXTURE_MEMORY, targetId),
-                stack.targetIntensity(CorruptionSurface.MODEL_UV, targetId) * 0.86F
-        );
-        float drift = 0.72F + stack.unit(CorruptionSurface.TEXTURE_MEMORY, targetId, ordinal ^ 0x5350) * 0.28F;
-        return clampFloat(Math.max(base * 0.50F, target) * drift + stack.instability() * 0.06F, 0.0F, 1.0F);
     }
 
     private static void restoreGuiTextures(Minecraft minecraft) {
@@ -488,45 +351,6 @@ public final class TextureMutationManager {
             Optional<Resource> resource = resourceManager.getResource(textureId);
             resource.ifPresent(value -> replaceTexture(minecraft, textureId, value, CorruptionEffectStack.local(0), CorruptionSurface.TEXTURE_MEMORY, "texture_resource:", 0.0F, 0, false, List.of(), "global"));
             MUTATED_GLOBAL_TEXTURES.remove(textureId);
-        }
-    }
-
-    @SuppressWarnings("unused")
-    private static void restoreAtlasTextures() {
-        for (TextureAtlas atlas : new ArrayList<>(KNOWN_ATLASES)) {
-            if (atlas == null) {
-                continue;
-            }
-            for (ResourceLocation spriteId : new ArrayList<>(atlas.getTextureLocations())) {
-                restoreAtlasSprite(atlas, spriteId);
-            }
-        }
-    }
-
-    private static boolean restoreAtlasSprite(TextureAtlas atlas, ResourceLocation spriteId) {
-        if (atlas == null || spriteId == null) {
-            return false;
-        }
-        AtlasSpriteKey key = new AtlasSpriteKey(atlas.location(), spriteId);
-        if (!MUTATED_ATLAS_TEXTURES.contains(key)) {
-            return false;
-        }
-        TextureAtlasSprite sprite = atlas.getSprite(spriteId);
-        if (sprite == null || sprite.contents() == null) {
-            MUTATED_ATLAS_TEXTURES.remove(key);
-            return false;
-        }
-        AtlasSpriteSnapshot snapshot = ATLAS_ORIGINALS.get(key);
-        if (snapshot == null || !snapshot.restore(sprite.contents())) {
-            MUTATED_ATLAS_TEXTURES.remove(key);
-            return false;
-        }
-        try {
-            sprite.contents().uploadFirstFrame(sprite.getX(), sprite.getY());
-            MUTATED_ATLAS_TEXTURES.remove(key);
-            return true;
-        } catch (RuntimeException exception) {
-            return false;
         }
     }
 
@@ -591,91 +415,6 @@ public final class TextureMutationManager {
         }
     }
 
-    private static boolean mutateAtlasSprite(TextureAtlas atlas, TextureAtlasSprite sprite, ResourceLocation spriteId, List<ResourceLocation> donorSpriteIds, CorruptionEffectStack stack, float intensity, int ordinal) {
-        if (atlas == null || sprite == null || sprite.contents() == null) {
-            return false;
-        }
-        if (CorruptionAchievementManager.isAchievementIconSprite(spriteId)) {
-            restoreAtlasSprite(atlas, spriteId);
-            return false;
-        }
-
-        AtlasSpriteKey key = new AtlasSpriteKey(atlas.location(), spriteId);
-        SpriteContents contents = sprite.contents();
-        boolean mutated = false;
-        try {
-            AtlasSpriteSnapshot snapshot = ATLAS_ORIGINALS.get(key);
-            if (snapshot == null) {
-                snapshot = AtlasSpriteSnapshot.capture(contents);
-                if (snapshot == null) {
-                    return false;
-                }
-                ATLAS_ORIGINALS.put(key, snapshot);
-            }
-            snapshot.restore(contents);
-
-            NativeImage[] mipLevels = contents.byMipLevel;
-            if (mipLevels == null || mipLevels.length == 0) {
-                NativeImage image = contents.getOriginalImage();
-                if (isMutablePixelImage(image)) {
-                    PixelBank donor = atlasDonorPixels(atlas, spriteId, donorSpriteIds, 0, stack, ordinal, 0x4154);
-                    mutateTexturePixels(spriteId, image, null, List.of(), donor, stack, CorruptionSurface.TEXTURE_MEMORY, "atlas_sprite:", intensity, ordinal, 0x4154);
-                    mutated = true;
-                }
-            } else {
-                for (int mip = 0; mip < mipLevels.length; mip++) {
-                    NativeImage image = mipLevels[mip];
-                    if (!isMutablePixelImage(image)) {
-                        continue;
-                    }
-                    PixelBank donor = atlasDonorPixels(atlas, spriteId, donorSpriteIds, mip, stack, ordinal, 0x4154 ^ mip);
-                    mutateTexturePixels(spriteId, image, null, List.of(), donor, stack, CorruptionSurface.TEXTURE_MEMORY, "atlas_sprite:mip" + mip + ":", intensity, ordinal, 0x4154 ^ mip);
-                    mutated = true;
-                }
-            }
-
-            if (mutated) {
-                contents.uploadFirstFrame(sprite.getX(), sprite.getY());
-                MUTATED_ATLAS_TEXTURES.add(key);
-            }
-            return mutated;
-        } catch (RuntimeException exception) {
-            RealtimeMinecraftCorruptionSimulator.LOGGER.debug("Unable to mutate atlas sprite {}", spriteId, exception);
-            return false;
-        }
-    }
-
-    private static PixelBank atlasDonorPixels(TextureAtlas atlas, ResourceLocation spriteId, List<ResourceLocation> donorSpriteIds, int mip, CorruptionEffectStack stack, int ordinal, int salt) {
-        if (atlas == null || donorSpriteIds == null || donorSpriteIds.size() < 2) {
-            return null;
-        }
-        int attempts = Math.min(12, donorSpriteIds.size());
-        int start = CorruptionValueMutator.selectIndex(stack, CorruptionSurface.TEXTURE_MEMORY, "atlas_donor:" + spriteId + ":" + mip, ordinal ^ salt, donorSpriteIds.size());
-        for (int attempt = 0; attempt < attempts; attempt++) {
-            ResourceLocation donorId = donorSpriteIds.get(Math.floorMod(start + attempt * 17, donorSpriteIds.size()));
-            if (donorId == null || donorId.equals(spriteId) || ClientCorruptionProtection.isProtectedResource(donorId)) {
-                continue;
-            }
-            TextureAtlasSprite donorSprite = atlas.getSprite(donorId);
-            if (donorSprite == null || donorSprite.contents() == null) {
-                continue;
-            }
-            AtlasSpriteKey donorKey = new AtlasSpriteKey(atlas.location(), donorId);
-            AtlasSpriteSnapshot donorSnapshot = ATLAS_ORIGINALS.get(donorKey);
-            if (donorSnapshot == null) {
-                donorSnapshot = AtlasSpriteSnapshot.capture(donorSprite.contents());
-                if (donorSnapshot != null) {
-                    ATLAS_ORIGINALS.put(donorKey, donorSnapshot);
-                }
-            }
-            PixelBank bank = donorSnapshot == null ? null : donorSnapshot.pixelBank(mip);
-            if (bank != null) {
-                return bank;
-            }
-        }
-        return null;
-    }
-
     private static boolean isGlobalTextureResource(ResourceLocation location) {
         if (location == null || ClientCorruptionProtection.isProtectedResource(location)) {
             return false;
@@ -699,28 +438,6 @@ public final class TextureMutationManager {
     private static int compareGlobalTexturePriority(ResourceLocation first, ResourceLocation second) {
         int priority = Integer.compare(globalTexturePriority(first), globalTexturePriority(second));
         return priority != 0 ? priority : first.toString().compareTo(second.toString());
-    }
-
-    private static int compareAtlasSpritePriority(ResourceLocation first, ResourceLocation second) {
-        int priority = Integer.compare(atlasSpritePriority(first), atlasSpritePriority(second));
-        return priority != 0 ? priority : first.toString().compareTo(second.toString());
-    }
-
-    private static int atlasSpritePriority(ResourceLocation id) {
-        String path = id.getPath();
-        if (path.contains("water") || path.contains("lava")) {
-            return 0;
-        }
-        if (path.startsWith("block/")) {
-            return 1;
-        }
-        if (path.startsWith("item/")) {
-            return 2;
-        }
-        if (path.startsWith("entity/")) {
-            return 3;
-        }
-        return 4;
     }
 
     private static int globalTexturePriority(ResourceLocation id) {
@@ -870,101 +587,11 @@ public final class TextureMutationManager {
         return ((mixLong(value) >>> 40) & 0xFF_FFFFL) / 16_777_215.0F;
     }
 
-    private record AtlasSpriteKey(ResourceLocation atlasId, ResourceLocation spriteId) {
-    }
-
     private record PixelBank(int[] pixels, int width, int height) {
         private PixelBank {
             if (pixels == null || width <= 0 || height <= 0 || (long) width * (long) height > MAX_TEXTURE_PIXELS_TO_MUTATE || pixels.length < width * height) {
                 throw new IllegalArgumentException("invalid pixel bank");
             }
-        }
-    }
-
-    private static final class AtlasSpriteSnapshot {
-        private final int[] widths;
-        private final int[] heights;
-        private final int[][] pixels;
-
-        private AtlasSpriteSnapshot(int[] widths, int[] heights, int[][] pixels) {
-            this.widths = widths;
-            this.heights = heights;
-            this.pixels = pixels;
-        }
-
-        private static AtlasSpriteSnapshot capture(SpriteContents contents) {
-            if (contents == null) {
-                return null;
-            }
-            NativeImage[] images = contents.byMipLevel;
-            if (images == null || images.length == 0) {
-                NativeImage original = contents.getOriginalImage();
-                if (original == null) {
-                    return null;
-                }
-                images = new NativeImage[]{original};
-            }
-
-            int[] widths = new int[images.length];
-            int[] heights = new int[images.length];
-            int[][] pixels = new int[images.length][];
-            for (int index = 0; index < images.length; index++) {
-                NativeImage image = images[index];
-                if (!isMutablePixelImage(image)) {
-                    widths[index] = 0;
-                    heights[index] = 0;
-                    pixels[index] = new int[0];
-                    continue;
-                }
-                widths[index] = image.getWidth();
-                heights[index] = image.getHeight();
-                pixels[index] = new int[widths[index] * heights[index]];
-                for (int y = 0; y < heights[index]; y++) {
-                    int rowOffset = y * widths[index];
-                    for (int x = 0; x < widths[index]; x++) {
-                        pixels[index][rowOffset + x] = image.getPixelRGBA(x, y);
-                    }
-                }
-            }
-            return new AtlasSpriteSnapshot(widths, heights, pixels);
-        }
-
-        private boolean restore(SpriteContents contents) {
-            if (contents == null) {
-                return false;
-            }
-            NativeImage[] images = contents.byMipLevel;
-            if (images == null || images.length == 0) {
-                NativeImage original = contents.getOriginalImage();
-                if (original == null) {
-                    return false;
-                }
-                images = new NativeImage[]{original};
-            }
-
-            boolean restored = false;
-            int count = Math.min(images.length, pixels.length);
-            for (int index = 0; index < count; index++) {
-                NativeImage image = images[index];
-                if (!isMutablePixelImage(image) || image.getWidth() != widths[index] || image.getHeight() != heights[index]) {
-                    continue;
-                }
-                for (int y = 0; y < heights[index]; y++) {
-                    int rowOffset = y * widths[index];
-                    for (int x = 0; x < widths[index]; x++) {
-                        image.setPixelRGBA(x, y, pixels[index][rowOffset + x]);
-                    }
-                }
-                restored = true;
-            }
-            return restored;
-        }
-
-        private PixelBank pixelBank(int mip) {
-            if (mip < 0 || mip >= pixels.length || widths[mip] <= 0 || heights[mip] <= 0 || pixels[mip].length < widths[mip] * heights[mip]) {
-                return null;
-            }
-            return new PixelBank(pixels[mip], widths[mip], heights[mip]);
         }
     }
 
@@ -1008,20 +635,4 @@ public final class TextureMutationManager {
         }
     }
 
-    private static final class PendingAtlasTextureScan {
-        private final String signature;
-        private final CorruptionEffectStack stack;
-        private final List<TextureAtlas> atlases;
-        private List<ResourceLocation> spriteIds = List.of();
-        private int atlasOrdinal;
-        private int spriteOrdinal;
-        private int atlasSpriteOrdinal;
-        private int mutatedCount;
-
-        private PendingAtlasTextureScan(String signature, CorruptionEffectStack stack, List<TextureAtlas> atlases) {
-            this.signature = signature;
-            this.stack = stack;
-            this.atlases = atlases;
-        }
-    }
 }

@@ -23,6 +23,7 @@ public final class CorruptionOverlayPanel {
     public static final int COLLAPSED_SIZE = 28;
     public static final int APPLY_BUTTON_WIDTH = 74;
     public static final int APPLY_BUTTON_HEIGHT = 16;
+    public static final int CANCEL_BUTTON_WIDTH = 58;
     private static final int TAB_WIDTH = 64;
     private static final int TAB_HEIGHT = 16;
     private static final int SEED_BUTTON_WIDTH = 42;
@@ -100,8 +101,18 @@ public final class CorruptionOverlayPanel {
     }
 
     public static Rect applyButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
-        Rect slider = sliderBounds(layout, screenWidth, screenHeight);
-        return new Rect(slider.x() + slider.width() - APPLY_BUTTON_WIDTH, slider.y() + 19, APPLY_BUTTON_WIDTH, APPLY_BUTTON_HEIGHT);
+        return globalApplyButtonBounds(layout, Page.CONTROL, screenWidth, screenHeight);
+    }
+
+    public static Rect globalApplyButtonBounds(CorruptionOverlayLayout layout, Page page, int screenWidth, int screenHeight) {
+        Rect panel = panelBounds(layout, screenWidth, screenHeight);
+        int y = Math.max(panel.y() + HEADER_HEIGHT + 6, panel.y() + panel.height() - APPLY_BUTTON_HEIGHT - 12);
+        return new Rect(panel.x() + panel.width() - 12 - APPLY_BUTTON_WIDTH, y, APPLY_BUTTON_WIDTH, APPLY_BUTTON_HEIGHT);
+    }
+
+    public static Rect globalCancelButtonBounds(CorruptionOverlayLayout layout, Page page, int screenWidth, int screenHeight) {
+        Rect apply = globalApplyButtonBounds(layout, page, screenWidth, screenHeight);
+        return new Rect(apply.x() - 6 - CANCEL_BUTTON_WIDTH, apply.y(), CANCEL_BUTTON_WIDTH, apply.height());
     }
 
     public static Rect seedFieldBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
@@ -262,21 +273,21 @@ public final class CorruptionOverlayPanel {
         return new Rect(panel.x() + panel.width() - RESIZE_HANDLE_SIZE, panel.y() + panel.height() - RESIZE_HANDLE_SIZE, RESIZE_HANDLE_SIZE, RESIZE_HANDLE_SIZE);
     }
 
-    public static void renderOpen(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingLevel, int pendingAutoIntervalTicks, int pendingAutoAmount, Page page, boolean seedEditing, String seedEditText, boolean funIntervalEditing, String funIntervalEditText, boolean funAmountEditing, String funAmountEditText, int achievementsScroll, int achievementResetPresses, CorruptionAchievementManager.HudCorner pinnedCorner, int mouseX, int mouseY) {
+    public static void renderOpen(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, CorruptionProfileSnapshot draftSnapshot, int pendingLevel, int pendingAutoIntervalTicks, int pendingAutoAmount, boolean draftDirty, Page page, boolean seedEditing, String seedEditText, boolean funIntervalEditing, String funIntervalEditText, boolean funAmountEditing, String funAmountEditText, int achievementsScroll, int achievementResetPresses, CorruptionAchievementManager.HudCorner pinnedCorner, int mouseX, int mouseY) {
         Rect panel = panelBounds(layout, graphics.guiWidth(), graphics.guiHeight());
         fillPanel(graphics, panel);
         renderHeader(graphics, font, layout, snapshot, panel, mouseX, mouseY, false);
         renderTabs(graphics, font, layout, page, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         if (page == Page.SETTINGS) {
-            renderSettings(graphics, font, layout, snapshot, seedEditing, seedEditText, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
+            renderSettings(graphics, font, layout, draftSnapshot, seedEditing, seedEditText, draftDirty, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         } else if (page == Page.FUN) {
-            renderFun(graphics, font, layout, snapshot, pendingAutoIntervalTicks, pendingAutoAmount, funIntervalEditing, funIntervalEditText, funAmountEditing, funAmountEditText, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
+            renderFun(graphics, font, layout, draftSnapshot, pendingAutoIntervalTicks, pendingAutoAmount, funIntervalEditing, funIntervalEditText, funAmountEditing, funAmountEditText, draftDirty, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         } else if (page == Page.ACHIEVEMENTS) {
             renderAchievements(graphics, font, layout, achievementsScroll, achievementResetPresses, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         } else if (page == Page.HUD) {
             renderHudSettings(graphics, font, layout, pinnedCorner, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         } else {
-            renderControl(graphics, font, layout, snapshot, pendingLevel, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
+            renderControl(graphics, font, layout, snapshot, draftSnapshot, pendingLevel, draftDirty, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         }
         renderResizeHandles(graphics, layout, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
     }
@@ -329,15 +340,15 @@ public final class CorruptionOverlayPanel {
         drawTab(graphics, font, hudTabBounds(layout, screenWidth, screenHeight), "HUD", page == Page.HUD, mouseX, mouseY);
     }
 
-    private static void renderControl(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingLevel, int mouseX, int mouseY, int screenWidth, int screenHeight) {
+    private static void renderControl(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, CorruptionProfileSnapshot draftSnapshot, int pendingLevel, boolean draftDirty, int mouseX, int mouseY, int screenWidth, int screenHeight) {
         Rect panel = panelBounds(layout, screenWidth, screenHeight);
-        renderReadouts(graphics, font, panel, snapshot, pendingLevel);
+        renderReadouts(graphics, font, panel, snapshot, draftSnapshot, pendingLevel);
         renderSlider(graphics, font, layout, snapshot, pendingLevel, mouseX, mouseY, screenWidth, screenHeight);
-        renderApplyControl(graphics, font, layout, snapshot, pendingLevel, mouseX, mouseY, screenWidth, screenHeight);
+        renderApplyControl(graphics, font, layout, snapshot, pendingLevel, draftDirty, mouseX, mouseY, screenWidth, screenHeight);
         renderStatus(graphics, font, layout, snapshot, pendingLevel, screenWidth, screenHeight);
     }
 
-    private static void renderReadouts(GuiGraphics graphics, Font font, Rect panel, CorruptionProfileSnapshot snapshot, int pendingLevel) {
+    private static void renderReadouts(GuiGraphics graphics, Font font, Rect panel, CorruptionProfileSnapshot snapshot, CorruptionProfileSnapshot draftSnapshot, int pendingLevel) {
         int x = panel.x() + 12;
         int y = panel.y() + 50;
         int leftWidth = Math.max(120, (panel.width() - 30) / 2);
@@ -346,10 +357,10 @@ public final class CorruptionOverlayPanel {
 
         drawLabelValue(graphics, font, "Active corruption", snapshot.getCorruptionLevel() + "%", x, y, leftWidth);
         drawLabelValue(graphics, font, "Selected level", pendingLevel + "%", x, y + 12, leftWidth);
-        drawLabelValue(graphics, font, "Seed", snapshot.getCorruptionSeedLabel(), x, y + 24, leftWidth);
+        drawLabelValue(graphics, font, "Seed", draftSnapshot.getCorruptionSeedLabel(), x, y + 24, leftWidth);
 
-        drawLabelValue(graphics, font, "Update mode", "live", rightX, y, rightWidth);
-        drawLabelValue(graphics, font, "Targets", countEnabledTargets(snapshot.getEnabledTargetsMask()) + "/" + CorruptionTarget.values().length, rightX, y + 12, rightWidth);
+        drawLabelValue(graphics, font, "Update mode", "manual", rightX, y, rightWidth);
+        drawLabelValue(graphics, font, "Targets", countEnabledTargets(draftSnapshot.getEnabledTargetsMask()) + "/" + CorruptionTarget.values().length, rightX, y + 12, rightWidth);
         drawLabelValue(graphics, font, "Last change", snapshot.getCorruptionDelta() + "%", rightX, y + 24, rightWidth);
     }
 
@@ -375,16 +386,14 @@ public final class CorruptionOverlayPanel {
         }
     }
 
-    private static void renderApplyControl(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingLevel, int mouseX, int mouseY, int screenWidth, int screenHeight) {
+    private static void renderApplyControl(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingLevel, boolean draftDirty, int mouseX, int mouseY, int screenWidth, int screenHeight) {
         Rect slider = sliderBounds(layout, screenWidth, screenHeight);
-        Rect button = applyButtonBounds(layout, screenWidth, screenHeight);
-        boolean enabled = pendingLevel != snapshot.getCorruptionLevel();
-        boolean hovered = enabled && button.contains(mouseX, mouseY);
-        drawButton(graphics, font, button, "Apply now", enabled, hovered);
+        renderDraftActions(graphics, font, layout, Page.CONTROL, draftDirty, mouseX, mouseY, screenWidth, screenHeight);
 
-        int textWidth = Math.max(0, button.x() - slider.x() - 8);
-        String status = enabled ? "Applies to every connected player." : "This level is active.";
-        drawClipped(graphics, font, status, slider.x(), slider.y() + 23, textWidth, enabled ? 0xFFD4DEE1 : 0xFF9FAEB4);
+        Rect cancel = globalCancelButtonBounds(layout, Page.CONTROL, screenWidth, screenHeight);
+        int textWidth = Math.max(0, cancel.x() - slider.x() - 8);
+        String status = draftDirty ? "Draft changes are not applied yet." : "Current profile is applied.";
+        drawClipped(graphics, font, status, slider.x(), slider.y() + 23, textWidth, draftDirty ? 0xFFD4DEE1 : 0xFF9FAEB4);
     }
 
     private static void renderStatus(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingLevel, int screenWidth, int screenHeight) {
@@ -405,7 +414,7 @@ public final class CorruptionOverlayPanel {
         }
     }
 
-    private static void renderSettings(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, boolean seedEditing, String seedEditText, int mouseX, int mouseY, int screenWidth, int screenHeight) {
+    private static void renderSettings(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, boolean seedEditing, String seedEditText, boolean draftDirty, int mouseX, int mouseY, int screenWidth, int screenHeight) {
         Rect field = seedFieldBounds(layout, screenWidth, screenHeight);
         Rect copy = seedCopyButtonBounds(layout, screenWidth, screenHeight);
         Rect paste = seedPasteButtonBounds(layout, screenWidth, screenHeight);
@@ -417,6 +426,18 @@ public final class CorruptionOverlayPanel {
         drawButton(graphics, font, paste, "Paste", true, paste.contains(mouseX, mouseY));
         drawButton(graphics, font, apply, "Set", seedEditing, seedEditing && apply.contains(mouseX, mouseY));
         drawButton(graphics, font, random, "Random", true, random.contains(mouseX, mouseY));
+        renderDraftActions(graphics, font, layout, Page.SETTINGS, draftDirty, mouseX, mouseY, screenWidth, screenHeight);
+        Rect cancel = globalCancelButtonBounds(layout, Page.SETTINGS, screenWidth, screenHeight);
+        int actionStatusWidth = Math.max(0, cancel.x() - field.x() - 8);
+        drawClipped(
+                graphics,
+                font,
+                draftDirty ? "Draft changes pending." : "No unapplied changes.",
+                field.x(),
+                cancel.y() + 5,
+                actionStatusWidth,
+                draftDirty ? 0xFFD4DEE1 : 0xFF9FAEB4
+        );
 
         Rect area = settingsListArea(layout, screenWidth, screenHeight);
         Rect enableAll = enableAllTargetsButtonBounds(layout, screenWidth, screenHeight);
@@ -463,7 +484,7 @@ public final class CorruptionOverlayPanel {
         }
     }
 
-    private static void renderFun(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingAutoIntervalTicks, int pendingAutoAmount, boolean intervalEditing, String intervalEditText, boolean amountEditing, String amountEditText, int mouseX, int mouseY, int screenWidth, int screenHeight) {
+    private static void renderFun(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingAutoIntervalTicks, int pendingAutoAmount, boolean intervalEditing, String intervalEditText, boolean amountEditing, String amountEditText, boolean draftDirty, int mouseX, int mouseY, int screenWidth, int screenHeight) {
         Rect intervalArea = funIntervalArea(layout, screenWidth, screenHeight);
         drawSectionTitle(graphics, font, "Auto Increase Interval", intervalArea.x(), intervalArea.y(), intervalArea.width());
         Rect intervalSlider = funIntervalSliderBounds(layout, screenWidth, screenHeight);
@@ -485,8 +506,18 @@ public final class CorruptionOverlayPanel {
         String text = pendingAutoIntervalTicks <= 0
                 ? "Auto increase is disabled."
                 : "Every " + interval + ", server changes corruption by " + signedPercentLabel(pendingAutoAmount) + ".";
-        drawWrapped(graphics, font, text, status.x(), status.y(), status.width(), 2, 0xFFC8D4D8);
+        Rect cancel = globalCancelButtonBounds(layout, Page.FUN, screenWidth, screenHeight);
+        int statusWidth = Math.max(40, cancel.x() - status.x() - 8);
+        drawWrapped(graphics, font, text, status.x(), status.y(), statusWidth, 2, 0xFFC8D4D8);
         drawWrapped(graphics, font, "Settings are server-owned and broadcast to connected players.", status.x(), status.y() + 22, status.width(), 2, 0xFF9AA8AD);
+        renderDraftActions(graphics, font, layout, Page.FUN, draftDirty, mouseX, mouseY, screenWidth, screenHeight);
+    }
+
+    private static void renderDraftActions(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, Page page, boolean draftDirty, int mouseX, int mouseY, int screenWidth, int screenHeight) {
+        Rect cancel = globalCancelButtonBounds(layout, page, screenWidth, screenHeight);
+        Rect apply = globalApplyButtonBounds(layout, page, screenWidth, screenHeight);
+        drawButton(graphics, font, cancel, "Cancel", draftDirty, draftDirty && cancel.contains(mouseX, mouseY));
+        drawButton(graphics, font, apply, "Apply", draftDirty, draftDirty && apply.contains(mouseX, mouseY));
     }
 
     private static void renderAchievements(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, int scroll, int resetPresses, int mouseX, int mouseY, int screenWidth, int screenHeight) {
@@ -527,9 +558,9 @@ public final class CorruptionOverlayPanel {
                 int titleColor = unlocked ? 0xFFEAF4F7 : disqualified ? 0xFFD99A9A : 0xFF9AA8AD;
                 int detailColor = unlocked ? 0xFFB8C8CD : disqualified ? 0xFF9D6262 : 0xFF667277;
                 int textWidth = Math.max(20, pin.x() - row.x() - 29);
-                drawClipped(graphics, font, achievement.title(), row.x() + 25, row.y() + 1, textWidth, titleColor);
-                drawClipped(graphics, font, achievement.description(), row.x() + 25, row.y() + 11, textWidth, detailColor);
-                drawClipped(graphics, font, CorruptionAchievementManager.statusText(achievement), row.x() + 25, row.y() + 21, textWidth, unlocked ? 0xFF8FD6A2 : disqualified ? 0xFFE07878 : 0xFF7BAAB3);
+                drawMarqueeClipped(graphics, font, achievement.title(), row.x() + 25, row.y() + 1, textWidth, titleColor, achievement.id().hashCode());
+                drawMarqueeClipped(graphics, font, achievement.description(), row.x() + 25, row.y() + 11, textWidth, detailColor, achievement.id().hashCode() ^ 0x445343);
+                drawMarqueeClipped(graphics, font, CorruptionAchievementManager.statusText(achievement), row.x() + 25, row.y() + 21, textWidth, unlocked ? 0xFF8FD6A2 : disqualified ? 0xFFE07878 : 0xFF7BAAB3, achievement.id().hashCode() ^ 0x535441);
                 drawButton(graphics, font, pin, pinned ? "On" : "Pin", true, pin.contains(mouseX, mouseY));
                 if (!unlocked) {
                     int progressWidth = Math.max(1, pin.x() - row.x() - 25);
@@ -617,10 +648,11 @@ public final class CorruptionOverlayPanel {
 
     private static Rect statusArea(CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingLevel, int screenWidth, int screenHeight) {
         Rect panel = panelBounds(layout, screenWidth, screenHeight);
+        Rect actions = globalCancelButtonBounds(layout, Page.CONTROL, screenWidth, screenHeight);
         int delta = Math.abs(pendingLevel - snapshot.getCorruptionLevel());
         int warningOffset = delta > StabilityDebtCalculator.getCalibratedRange(snapshot.getCalibrationConfidence()) ? WARNING_HEIGHT + WARNING_GAP : 0;
         int top = panel.y() + 142 + warningOffset;
-        int bottom = panel.y() + panel.height() - 10;
+        int bottom = Math.min(panel.y() + panel.height() - 10, actions.y() - 8);
         return new Rect(panel.x() + 12, top, panel.width() - 24, Math.max(30, bottom - top));
     }
 
@@ -633,8 +665,9 @@ public final class CorruptionOverlayPanel {
 
     private static Rect settingsListArea(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
         Rect panel = panelBounds(layout, screenWidth, screenHeight);
-        int top = panel.y() + 98;
-        int bottom = panel.y() + panel.height() - 10;
+        Rect actions = globalCancelButtonBounds(layout, Page.SETTINGS, screenWidth, screenHeight);
+        int top = seedFieldBounds(layout, screenWidth, screenHeight).y() + 30;
+        int bottom = Math.min(panel.y() + panel.height() - 10, actions.y() - 8);
         return new Rect(panel.x() + 12, top, panel.width() - 24, Math.max(30, bottom - top));
     }
 
@@ -650,8 +683,10 @@ public final class CorruptionOverlayPanel {
 
     private static Rect funStatusArea(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
         Rect panel = panelBounds(layout, screenWidth, screenHeight);
+        Rect actions = globalCancelButtonBounds(layout, Page.FUN, screenWidth, screenHeight);
         int top = panel.y() + 194;
-        return new Rect(panel.x() + 12, top, panel.width() - 24, Math.max(32, panel.y() + panel.height() - top - 10));
+        int bottom = Math.min(panel.y() + panel.height() - 10, actions.y() - 8);
+        return new Rect(panel.x() + 12, top, panel.width() - 24, Math.max(32, bottom - top));
     }
 
     private static Rect achievementsArea(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
@@ -811,6 +846,37 @@ public final class CorruptionOverlayPanel {
             }
         }
         ProtectedTextRenderer.drawString(graphics, clipped, x, y, color);
+    }
+
+    private static void drawMarqueeClipped(GuiGraphics graphics, Font font, String text, int x, int y, int maxWidth, int color, int salt) {
+        if (maxWidth <= 0 || text == null || text.isEmpty()) {
+            return;
+        }
+        int textWidth = ProtectedTextRenderer.width(text);
+        if (textWidth <= maxWidth) {
+            ProtectedTextRenderer.drawString(graphics, text, x, y, color);
+            return;
+        }
+
+        int overflow = textWidth - maxWidth;
+        int holdMs = 900;
+        int travelMs = Math.max(1200, overflow * 55);
+        int cycleMs = holdMs * 2 + travelMs * 2;
+        long phase = Math.floorMod(System.currentTimeMillis() + Math.floorMod(salt, cycleMs), cycleMs);
+        int offset;
+        if (phase < holdMs) {
+            offset = 0;
+        } else if (phase < holdMs + travelMs) {
+            offset = Math.round(overflow * ((phase - holdMs) / (float) travelMs));
+        } else if (phase < holdMs + travelMs + holdMs) {
+            offset = overflow;
+        } else {
+            offset = Math.round(overflow * (1.0F - (phase - holdMs - travelMs - holdMs) / (float) travelMs));
+        }
+
+        graphics.enableScissor(x, y, x + maxWidth, y + ProtectedTextRenderer.LINE_HEIGHT);
+        ProtectedTextRenderer.drawString(graphics, text, x - offset, y, color);
+        graphics.disableScissor();
     }
 
     private static int drawWrapped(GuiGraphics graphics, Font font, String text, int x, int y, int maxWidth, int maxLines, int color) {

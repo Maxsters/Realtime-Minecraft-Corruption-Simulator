@@ -86,6 +86,10 @@ public abstract class ParticleMixin {
     @Dynamic("Targets both mapped dev names and SRG runtime aliases for Particle#tick.")
     private void rmc$corruptParticleGravity(CallbackInfo callback) {
         Particle particle = (Particle) (Object) this;
+        if (ParticleCorruptionHooks.shouldCullParticleForBudget(particle)) {
+            particle.remove();
+            return;
+        }
         if (!ParticleCorruptionHooks.shouldProcessParticle(particle)) {
             return;
         }

@@ -5,11 +5,9 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionTarge
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ServerData;
-import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.stats.Stats;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
 import net.minecraft.world.entity.player.Player;
@@ -37,6 +35,7 @@ import java.util.Base64;
 import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.Set;
 
@@ -50,18 +49,29 @@ public final class CorruptionAchievementManager {
     private static final int DIAMOND_BLESSING = 4;
     private static final int STABLE_RELEASE = 5;
 
+    private static final String DISQUALIFICATION_SCHEMA = "disqualificationSchema";
+    private static final String DISQUALIFICATION_SCHEMA_VERSION = "2";
+    private static final String DISQUALIFIED_WORLDS = "disqualifiedWorlds";
+    private static final String SPOILED_DRAGON_FIGHTS = "spoiledDragonFights";
+    private static final String ARMED_DRAGON_FIGHTS = "armedDragonFights";
+    private static final String WARRANTY_VOIDED_STARTED_WORLDS = "warrantyVoidedStartedWorlds";
+    private static final String WARRANTY_VOIDED_DISQUALIFIED_WORLDS = "warrantyVoidedDisqualifiedWorlds";
+
     private static final int AUTO_NIGHTMARE_INTERVAL_TICKS = seconds(30);
     private static final int AUTO_NIGHTMARE_TOLERANCE_TICKS = seconds(2);
+    private static final int CHEAT_DISQUALIFICATION_GRACE_TICKS = seconds(3);
+    private static final int WARRANTY_VOIDED_CORRUPTION_LEVEL = 10;
     private static final int SKYHOOK_REQUIRED_BLOCKS = 500;
     private static final int DIAMOND_REQUIRED_BLOCKS = 7;
+    private static final float DRAGON_FULL_HEALTH_EPSILON = 0.5F;
 
     private static final Achievement[] ACHIEVEMENTS = new Achievement[]{
-            new Achievement("still_play", "I Can Still Play This", "Survive 10m at 100% with all targets.", Blocks.OBSIDIAN, minutes(10)),
-            new Achievement("dragon_ten", "Warranty Voided", "Defeat the Ender Dragon at 10%+ corruption.", Blocks.DRAGON_EGG, 1),
-            new Achievement("skyhook", "Skyhook", "Gain 500 vertical blocks in 5s with Mobility corruption.", Blocks.SLIME_BLOCK, SKYHOOK_REQUIRED_BLOCKS),
-            new Achievement("nightmare", "It Was Just a Nightmare", "Let 100% drain to 0% at -1% every 30s without dying with all targets.", Blocks.CRYING_OBSIDIAN, 100),
-            new Achievement("diamond_blessing", "A Blessing in Disguise", "Mine 7 diamond ore blocks at 10% with all targets.", Blocks.DIAMOND_ORE, DIAMOND_REQUIRED_BLOCKS),
-            new Achievement("stable_release", "Stable Release", "Play 90m with level 0, auto off, and every target disabled.", Blocks.EMERALD_BLOCK, minutes(90))
+            new Achievement("still_play", "I Can Still Play This", "Survive 10m at 100% corruption with all targets enabled.", Blocks.OBSIDIAN, minutes(10)),
+            new Achievement("dragon_ten", "Warranty Voided", "Create the world at exactly 10% corruption with all targets enabled, never change it, then defeat the Ender Dragon.", Blocks.DRAGON_EGG, 1),
+            new Achievement("skyhook", "Skyhook", "Gain 500 vertical blocks in 5s at 35%+ corruption with Mobility enabled.", Blocks.SLIME_BLOCK, SKYHOOK_REQUIRED_BLOCKS),
+            new Achievement("nightmare", "It Was Just a Nightmare", "Start at 100% corruption with all targets and auto -1% every 30s; never die before 0%.", Blocks.CRYING_OBSIDIAN, 100),
+            new Achievement("diamond_blessing", "A Blessing in Disguise", "Mine 7 diamond ore blocks at 10%+ corruption with all targets enabled.", Blocks.DIAMOND_ORE, DIAMOND_REQUIRED_BLOCKS),
+            new Achievement("stable_release", "Stable Release", "Play 90m at 0% corruption with auto off and every target disabled.", Blocks.EMERALD_BLOCK, minutes(90))
     };
 
     private static final Set<ResourceLocation> PROTECTED_ICON_SPRITES = Set.of(
@@ -76,18 +86,23 @@ public final class CorruptionAchievementManager {
     private static final boolean[] UNLOCKED = new boolean[ACHIEVEMENTS.length];
     private static final int[] PROGRESS = new int[ACHIEVEMENTS.length];
     private static final Set<String> DISQUALIFIED_WORLD_KEYS = new LinkedHashSet<>();
+    private static final Set<String> SPOILED_DRAGON_KEYS = new LinkedHashSet<>();
+    private static final Set<String> ARMED_DRAGON_KEYS = new LinkedHashSet<>();
+    private static final Set<String> WARRANTY_STARTED_WORLD_KEYS = new LinkedHashSet<>();
+    private static final Set<String> WARRANTY_DISQUALIFIED_WORLD_KEYS = new LinkedHashSet<>();
     private static final Set<String> PINNED_IDS = new LinkedHashSet<>();
     private static final Deque<MovementSample> VERTICAL_SAMPLES = new ArrayDeque<>();
+    private static double skyhookProgressBlocks;
     private static boolean loaded;
     private static String activeWorldKey = "";
+    private static int activeWorldTicks;
     private static HudCorner pinnedCorner = HudCorner.TOP_RIGHT;
-    private static boolean dragonSeenEligible;
     private static boolean nightmareActive;
     private static int nightmareLastLevel = -1;
     private static long nightmareLastLevelTick = Long.MIN_VALUE;
-    private static int diamondStatsBaseline = -1;
     private static RunSignature lastKnownRunSignature;
     private static RunSignature suspendedRunSignature;
+    private static boolean serverCheatsExposed;
 
     private CorruptionAchievementManager() {
     }
@@ -149,12 +164,19 @@ public final class CorruptionAchievementManager {
 
     public static void resetAll() {
         ensureLoaded();
+        Minecraft minecraft = Minecraft.getInstance();
+        String currentWorldKey = currentWorldKey(minecraft);
+        boolean currentWorldCheatsExposed = !currentWorldKey.isBlank() && worldCheatsExposed(minecraft);
         Arrays.fill(UNLOCKED, false);
         Arrays.fill(PROGRESS, 0);
-        DISQUALIFIED_WORLD_KEYS.clear();
-        activeWorldKey = "";
+        if (currentWorldCheatsExposed) {
+            DISQUALIFIED_WORLD_KEYS.add(currentWorldKey);
+        }
+        activeWorldKey = currentWorldKey;
+        activeWorldTicks = currentWorldCheatsExposed ? CHEAT_DISQUALIFICATION_GRACE_TICKS : 0;
         lastKnownRunSignature = null;
         suspendedRunSignature = null;
+        ARMED_DRAGON_KEYS.clear();
         resetTransientProgress();
         save();
     }
@@ -162,7 +184,11 @@ public final class CorruptionAchievementManager {
     public static boolean isDisqualified(Achievement achievement) {
         ensureLoaded();
         String worldKey = currentWorldKey(Minecraft.getInstance());
-        return achievement != null && !worldKey.isBlank() && DISQUALIFIED_WORLD_KEYS.contains(worldKey);
+        if (achievement == null || worldKey.isBlank()) {
+            return false;
+        }
+        return DISQUALIFIED_WORLD_KEYS.contains(worldKey)
+                || indexOf(achievement) == WARRANTY_VOIDED && WARRANTY_DISQUALIFIED_WORLD_KEYS.contains(worldKey);
     }
 
     public static String statusText(Achievement achievement) {
@@ -181,6 +207,12 @@ public final class CorruptionAchievementManager {
         if (DISQUALIFIED_WORLD_KEYS.contains(worldKey)) {
             return "Disqualified in this world";
         }
+        if (index == WARRANTY_VOIDED && WARRANTY_DISQUALIFIED_WORLD_KEYS.contains(worldKey)) {
+            return "World did not keep 10% + all targets";
+        }
+        if (index == WARRANTY_VOIDED && currentDragonFightSpoiled(Minecraft.getInstance())) {
+            return "Current dragon fight disqualified";
+        }
         return progressText(index);
     }
 
@@ -188,6 +220,12 @@ public final class CorruptionAchievementManager {
         int index = indexOf(achievement);
         if (index < 0 || achievement.requiredProgress() <= 0) {
             return 0.0F;
+        }
+        if (UNLOCKED[index]) {
+            return 1.0F;
+        }
+        if (index == SKYHOOK) {
+            return Math.max(0.0F, Math.min(1.0F, (float) skyhookProgressBlocks / achievement.requiredProgress()));
         }
         return Math.max(0.0F, Math.min(1.0F, PROGRESS[index] / (float) achievement.requiredProgress()));
     }
@@ -202,12 +240,26 @@ public final class CorruptionAchievementManager {
         return spriteId != null && PROTECTED_ICON_SPRITES.contains(spriteId);
     }
 
-    public static void recordWrongSound(ResourceLocation original, ResourceLocation replacement) {
-        // Kept as a compatibility hook for sound corruption; the sound achievement was removed.
+    public static void setServerCheatsExposed(boolean exposed) {
+        serverCheatsExposed = exposed;
+        if (exposed) {
+            ensureLoaded();
+            disqualifyCurrentWorld(Minecraft.getInstance());
+        }
     }
 
-    public static void recordHoverCorruption() {
-        // Kept as a compatibility hook for item/action corruption; the hover achievement was removed.
+    public static void recordDiamondOreMined() {
+        ensureLoaded();
+        if (UNLOCKED[DIAMOND_BLESSING]) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        CorruptionProfileSnapshot snapshot = ClientCorruptionState.snapshot();
+        if (diamondBlessingEligible(minecraft, snapshot)) {
+            setProgress(DIAMOND_BLESSING, PROGRESS[DIAMOND_BLESSING] + 1);
+        } else {
+            setProgress(DIAMOND_BLESSING, 0);
+        }
     }
 
     @SubscribeEvent
@@ -225,6 +277,7 @@ public final class CorruptionAchievementManager {
         }
 
         updateWorldContext(minecraft);
+        updateWarrantyWorldState(minecraft, snapshot);
         resumeSuspendedRunIfNeeded(minecraft, snapshot);
         lastKnownRunSignature = RunSignature.from(currentWorldKey(minecraft), snapshot);
 
@@ -253,21 +306,61 @@ public final class CorruptionAchievementManager {
         if (UNLOCKED[WARRANTY_VOIDED]) {
             return;
         }
-        if (!eligibleSurvival(minecraft)
-                || snapshot.getCorruptionLevel() < 10
-                || !isDimension(minecraft, Level.END)) {
-            dragonSeenEligible = false;
+        if (!isDimension(minecraft, Level.END)) {
             return;
         }
 
+        boolean eligible = warrantyVoidedEligible(minecraft, snapshot);
+        boolean changed = false;
         for (Entity entity : minecraft.level.entitiesForRendering()) {
             if (entity instanceof EnderDragon dragon) {
-                if (dragon.isAlive() && dragon.getHealth() > 0.0F) {
-                    dragonSeenEligible = true;
-                } else if (dragonSeenEligible || dragon.getHealth() <= 0.0F || dragon.isDeadOrDying()) {
+                String fightKey = dragonFightKey(minecraft, dragon);
+                if (fightKey.isBlank()) {
+                    continue;
+                }
+                boolean alive = dragon.isAlive() && dragon.getHealth() > 0.0F && !dragon.isDeadOrDying();
+                if (alive) {
+                    if (!eligible) {
+                        changed |= SPOILED_DRAGON_KEYS.add(fightKey);
+                        changed |= ARMED_DRAGON_KEYS.remove(fightKey);
+                    } else if (!SPOILED_DRAGON_KEYS.contains(fightKey)
+                            && dragon.getHealth() >= dragon.getMaxHealth() - DRAGON_FULL_HEALTH_EPSILON) {
+                        changed |= ARMED_DRAGON_KEYS.add(fightKey);
+                    }
+                } else if (eligible && ARMED_DRAGON_KEYS.contains(fightKey) && !SPOILED_DRAGON_KEYS.contains(fightKey)) {
                     setProgress(WARRANTY_VOIDED, 1);
+                    changed |= ARMED_DRAGON_KEYS.remove(fightKey);
                 }
             }
+        }
+        if (changed) {
+            save();
+        }
+    }
+
+    private static void updateWarrantyWorldState(Minecraft minecraft, CorruptionProfileSnapshot snapshot) {
+        if (UNLOCKED[WARRANTY_VOIDED]) {
+            return;
+        }
+        String worldKey = currentWorldKey(minecraft);
+        if (worldKey.isBlank() || snapshot == null || WARRANTY_DISQUALIFIED_WORLD_KEYS.contains(worldKey)) {
+            return;
+        }
+
+        boolean exactWarrantySettings = warrantySettingsActive(snapshot);
+        boolean changed = false;
+        if (!WARRANTY_STARTED_WORLD_KEYS.contains(worldKey)) {
+            if (exactWarrantySettings) {
+                changed = WARRANTY_STARTED_WORLD_KEYS.add(worldKey);
+            } else {
+                changed = WARRANTY_DISQUALIFIED_WORLD_KEYS.add(worldKey);
+            }
+        } else if (!exactWarrantySettings) {
+            changed = WARRANTY_DISQUALIFIED_WORLD_KEYS.add(worldKey);
+            removeArmedDragonFightsForWorld(worldKey);
+        }
+        if (changed) {
+            save();
         }
     }
 
@@ -279,6 +372,7 @@ public final class CorruptionAchievementManager {
                 || snapshot.getCorruptionLevel() < 35
                 || !enabled(snapshot, CorruptionTarget.MOBILITY)) {
             VERTICAL_SAMPLES.clear();
+            skyhookProgressBlocks = 0.0D;
             setProgress(SKYHOOK, 0);
             return;
         }
@@ -290,7 +384,8 @@ public final class CorruptionAchievementManager {
         for (MovementSample previous : VERTICAL_SAMPLES) {
             bestGain = Math.max(bestGain, sample.y() - previous.y());
         }
-        setProgress(SKYHOOK, (int) Math.min(SKYHOOK_REQUIRED_BLOCKS, Math.round(bestGain)));
+        skyhookProgressBlocks = Math.min(SKYHOOK_REQUIRED_BLOCKS, Math.max(0.0D, bestGain));
+        setProgress(SKYHOOK, skyhookProgressBlocks >= SKYHOOK_REQUIRED_BLOCKS ? SKYHOOK_REQUIRED_BLOCKS : (int) Math.floor(skyhookProgressBlocks));
     }
 
     private static void updateNightmare(Minecraft minecraft, CorruptionProfileSnapshot snapshot) {
@@ -340,17 +435,9 @@ public final class CorruptionAchievementManager {
         if (UNLOCKED[DIAMOND_BLESSING]) {
             return;
         }
-        if (!eligibleSurvival(minecraft) || snapshot.getCorruptionLevel() != 10 || !allTargets(snapshot)) {
-            diamondStatsBaseline = -1;
+        if (!diamondBlessingEligible(minecraft, snapshot)) {
             setProgress(DIAMOND_BLESSING, 0);
-            return;
         }
-
-        int mined = diamondOreMined(minecraft.player);
-        if (diamondStatsBaseline < 0 || mined < diamondStatsBaseline) {
-            diamondStatsBaseline = mined;
-        }
-        setProgress(DIAMOND_BLESSING, mined - diamondStatsBaseline);
     }
 
     private static void updateStableRelease(Minecraft minecraft, CorruptionProfileSnapshot snapshot) {
@@ -372,13 +459,31 @@ public final class CorruptionAchievementManager {
     private static void updateWorldContext(Minecraft minecraft) {
         String worldKey = currentWorldKey(minecraft);
         if (worldKey.isBlank()) {
+            activeWorldTicks = 0;
             return;
         }
         if (!worldKey.equals(activeWorldKey)) {
             activeWorldKey = worldKey;
+            activeWorldTicks = 0;
             resetSessionProgress();
         }
-        if (!worldKey.isBlank() && worldCheatsExposed(minecraft) && DISQUALIFIED_WORLD_KEYS.add(worldKey)) {
+        activeWorldTicks = Math.min(CHEAT_DISQUALIFICATION_GRACE_TICKS, activeWorldTicks + 1);
+        if (shouldDisqualifyCurrentWorld(minecraft) && DISQUALIFIED_WORLD_KEYS.add(worldKey)) {
+            save();
+        }
+    }
+
+    private static boolean shouldDisqualifyCurrentWorld(Minecraft minecraft) {
+        return confirmedWorldCheatsExposed(minecraft)
+                || activeWorldTicks >= CHEAT_DISQUALIFICATION_GRACE_TICKS && worldCheatsExposed(minecraft);
+    }
+
+    private static void disqualifyCurrentWorld(Minecraft minecraft) {
+        String worldKey = currentWorldKey(minecraft);
+        if (!worldKey.isBlank() && DISQUALIFIED_WORLD_KEYS.add(worldKey)) {
+            activeWorldKey = worldKey;
+            activeWorldTicks = CHEAT_DISQUALIFICATION_GRACE_TICKS;
+            resetTransientProgress();
             save();
         }
     }
@@ -390,9 +495,8 @@ public final class CorruptionAchievementManager {
 
     private static void resetTransientProgress() {
         VERTICAL_SAMPLES.clear();
-        dragonSeenEligible = false;
+        skyhookProgressBlocks = 0.0D;
         resetNightmare();
-        diamondStatsBaseline = -1;
     }
 
     private static void resetNightmare() {
@@ -406,7 +510,6 @@ public final class CorruptionAchievementManager {
 
     private static void pauseWorldTransientProgress() {
         VERTICAL_SAMPLES.clear();
-        dragonSeenEligible = false;
     }
 
     private static void suspendRunIfNeeded() {
@@ -443,18 +546,28 @@ public final class CorruptionAchievementManager {
                 return true;
             }
         }
-        try {
-            IntegratedServer server = minecraft.getSingleplayerServer();
-            if (server != null && server.getWorldData() != null && server.getWorldData().getAllowCommands()) {
-                return true;
-            }
-        } catch (RuntimeException ignored) {
+        if (serverCheatsExposed || minecraft.player.hasPermissions(2)) {
+            return true;
+        }
+        return confirmedWorldCheatsExposed(minecraft);
+    }
+
+    private static boolean confirmedWorldCheatsExposed(Minecraft minecraft) {
+        if (minecraft == null || minecraft.level == null) {
+            return false;
+        }
+        if (serverCheatsExposed) {
+            return true;
         }
         try {
-            return minecraft.player.hasPermissions(2);
+            IntegratedServer server = minecraft.getSingleplayerServer();
+            if (server != null) {
+                return server.getWorldData() != null && server.getWorldData().getAllowCommands();
+            }
         } catch (RuntimeException ignored) {
             return false;
         }
+        return false;
     }
 
     private static String currentWorldKey(Minecraft minecraft) {
@@ -498,14 +611,62 @@ public final class CorruptionAchievementManager {
         return snapshot.isTargetEnabled(target);
     }
 
+    private static boolean diamondBlessingEligible(Minecraft minecraft, CorruptionProfileSnapshot snapshot) {
+        return snapshot != null
+                && eligibleSurvival(minecraft)
+                && snapshot.getCorruptionLevel() >= 10
+                && allTargets(snapshot);
+    }
+
+    private static boolean warrantyVoidedEligible(Minecraft minecraft, CorruptionProfileSnapshot snapshot) {
+        String worldKey = currentWorldKey(minecraft);
+        return snapshot != null
+                && eligibleSurvival(minecraft)
+                && !worldKey.isBlank()
+                && WARRANTY_STARTED_WORLD_KEYS.contains(worldKey)
+                && !WARRANTY_DISQUALIFIED_WORLD_KEYS.contains(worldKey)
+                && warrantySettingsActive(snapshot);
+    }
+
+    private static boolean warrantySettingsActive(CorruptionProfileSnapshot snapshot) {
+        return snapshot != null
+                && snapshot.getCorruptionLevel() == WARRANTY_VOIDED_CORRUPTION_LEVEL
+                && allTargets(snapshot);
+    }
+
     private static boolean nightmareAutoSettings(CorruptionProfileSnapshot snapshot) {
         return snapshot.getAutoIncreaseAmount() == -1
                 && Math.abs(snapshot.getAutoIncreaseIntervalTicks() - AUTO_NIGHTMARE_INTERVAL_TICKS) <= AUTO_NIGHTMARE_TOLERANCE_TICKS;
     }
 
-    private static int diamondOreMined(LocalPlayer player) {
-        return player.getStats().getValue(Stats.BLOCK_MINED.get(Blocks.DIAMOND_ORE))
-                + player.getStats().getValue(Stats.BLOCK_MINED.get(Blocks.DEEPSLATE_DIAMOND_ORE));
+    private static String dragonFightKey(Minecraft minecraft, EnderDragon dragon) {
+        String worldKey = currentWorldKey(minecraft);
+        if (worldKey.isBlank() || dragon == null || dragon.getUUID() == null) {
+            return "";
+        }
+        return worldKey + "\nender_dragon:" + dragon.getUUID();
+    }
+
+    private static boolean currentDragonFightSpoiled(Minecraft minecraft) {
+        if (minecraft == null || minecraft.level == null || !isDimension(minecraft, Level.END)) {
+            return false;
+        }
+        for (Entity entity : minecraft.level.entitiesForRendering()) {
+            if (entity instanceof EnderDragon dragon) {
+                String key = dragonFightKey(minecraft, dragon);
+                if (!key.isBlank() && SPOILED_DRAGON_KEYS.contains(key)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static void removeArmedDragonFightsForWorld(String worldKey) {
+        if (worldKey == null || worldKey.isBlank()) {
+            return;
+        }
+        ARMED_DRAGON_KEYS.removeIf(key -> key.startsWith(worldKey + "\nender_dragon:"));
     }
 
     private static MovementSample sample(Minecraft minecraft) {
@@ -557,7 +718,7 @@ public final class CorruptionAchievementManager {
         int progress = Math.min(PROGRESS[index], achievement.requiredProgress());
         return switch (index) {
             case STILL_PLAY, STABLE_RELEASE -> ticksText(progress) + "/" + ticksText(achievement.requiredProgress());
-            case SKYHOOK -> progress + "/" + SKYHOOK_REQUIRED_BLOCKS + " blocks";
+            case SKYHOOK -> String.format(Locale.ROOT, "%.1f/%d blocks", Math.min(skyhookProgressBlocks, SKYHOOK_REQUIRED_BLOCKS), SKYHOOK_REQUIRED_BLOCKS);
             case NIGHTMARE -> progress + "%/100%";
             case DIAMOND_BLESSING -> progress + "/" + DIAMOND_REQUIRED_BLOCKS + " diamonds";
             default -> progress + "/" + achievement.requiredProgress();
@@ -579,6 +740,10 @@ public final class CorruptionAchievementManager {
         loaded = true;
         Arrays.fill(UNLOCKED, false);
         DISQUALIFIED_WORLD_KEYS.clear();
+        SPOILED_DRAGON_KEYS.clear();
+        ARMED_DRAGON_KEYS.clear();
+        WARRANTY_STARTED_WORLD_KEYS.clear();
+        WARRANTY_DISQUALIFIED_WORLD_KEYS.clear();
         PINNED_IDS.clear();
         Path path = path();
         if (!Files.isRegularFile(path)) {
@@ -590,15 +755,14 @@ public final class CorruptionAchievementManager {
             for (int index = 0; index < ACHIEVEMENTS.length; index++) {
                 UNLOCKED[index] = Boolean.parseBoolean(properties.getProperty(ACHIEVEMENTS[index].id(), "false"));
             }
-            String worlds = properties.getProperty("disqualifiedWorlds", "");
-            if (!worlds.isBlank()) {
-                for (String encoded : worlds.split(",")) {
-                    String decoded = decodeWorldKey(encoded);
-                    if (!decoded.isBlank()) {
-                        DISQUALIFIED_WORLD_KEYS.add(decoded);
-                    }
-                }
-            }
+            String worlds = DISQUALIFICATION_SCHEMA_VERSION.equals(properties.getProperty(DISQUALIFICATION_SCHEMA))
+                    ? properties.getProperty(DISQUALIFIED_WORLDS, "")
+                    : "";
+            loadEncodedSet(worlds, DISQUALIFIED_WORLD_KEYS);
+            loadEncodedSet(properties.getProperty(SPOILED_DRAGON_FIGHTS, ""), SPOILED_DRAGON_KEYS);
+            loadEncodedSet(properties.getProperty(ARMED_DRAGON_FIGHTS, ""), ARMED_DRAGON_KEYS);
+            loadEncodedSet(properties.getProperty(WARRANTY_VOIDED_STARTED_WORLDS, ""), WARRANTY_STARTED_WORLD_KEYS);
+            loadEncodedSet(properties.getProperty(WARRANTY_VOIDED_DISQUALIFIED_WORLDS, ""), WARRANTY_DISQUALIFIED_WORLD_KEYS);
             String pinned = properties.getProperty("pinned", "");
             if (!pinned.isBlank()) {
                 for (String id : pinned.split(",")) {
@@ -619,15 +783,21 @@ public final class CorruptionAchievementManager {
         for (int index = 0; index < ACHIEVEMENTS.length; index++) {
             properties.setProperty(ACHIEVEMENTS[index].id(), Boolean.toString(UNLOCKED[index]));
         }
+        properties.setProperty(DISQUALIFICATION_SCHEMA, DISQUALIFICATION_SCHEMA_VERSION);
         if (!DISQUALIFIED_WORLD_KEYS.isEmpty()) {
-            StringBuilder worlds = new StringBuilder();
-            for (String key : DISQUALIFIED_WORLD_KEYS) {
-                if (!worlds.isEmpty()) {
-                    worlds.append(',');
-                }
-                worlds.append(encodeWorldKey(key));
-            }
-            properties.setProperty("disqualifiedWorlds", worlds.toString());
+            properties.setProperty(DISQUALIFIED_WORLDS, encodedSet(DISQUALIFIED_WORLD_KEYS));
+        }
+        if (!SPOILED_DRAGON_KEYS.isEmpty()) {
+            properties.setProperty(SPOILED_DRAGON_FIGHTS, encodedSet(SPOILED_DRAGON_KEYS));
+        }
+        if (!ARMED_DRAGON_KEYS.isEmpty()) {
+            properties.setProperty(ARMED_DRAGON_FIGHTS, encodedSet(ARMED_DRAGON_KEYS));
+        }
+        if (!WARRANTY_STARTED_WORLD_KEYS.isEmpty()) {
+            properties.setProperty(WARRANTY_VOIDED_STARTED_WORLDS, encodedSet(WARRANTY_STARTED_WORLD_KEYS));
+        }
+        if (!WARRANTY_DISQUALIFIED_WORLD_KEYS.isEmpty()) {
+            properties.setProperty(WARRANTY_VOIDED_DISQUALIFIED_WORLDS, encodedSet(WARRANTY_DISQUALIFIED_WORLD_KEYS));
         }
         if (!PINNED_IDS.isEmpty()) {
             properties.setProperty("pinned", String.join(",", PINNED_IDS));
@@ -650,6 +820,29 @@ public final class CorruptionAchievementManager {
 
     private static String encodeWorldKey(String key) {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(key.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String encodedSet(Set<String> keys) {
+        StringBuilder encoded = new StringBuilder();
+        for (String key : keys) {
+            if (!encoded.isEmpty()) {
+                encoded.append(',');
+            }
+            encoded.append(encodeWorldKey(key));
+        }
+        return encoded.toString();
+    }
+
+    private static void loadEncodedSet(String value, Set<String> target) {
+        if (value == null || value.isBlank() || target == null) {
+            return;
+        }
+        for (String encoded : value.split(",")) {
+            String decoded = decodeWorldKey(encoded);
+            if (!decoded.isBlank()) {
+                target.add(decoded);
+            }
+        }
     }
 
     private static String decodeWorldKey(String encoded) {

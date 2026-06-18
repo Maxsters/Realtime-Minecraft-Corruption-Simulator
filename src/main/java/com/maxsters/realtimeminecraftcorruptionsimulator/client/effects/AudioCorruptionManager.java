@@ -1,7 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client.effects;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.CorruptionAchievementManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionMutation;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionOperation;
@@ -686,7 +685,6 @@ public final class AudioCorruptionManager {
                     if (sound != null && sound != SoundManager.EMPTY_SOUND && sound != SoundManager.INTENTIONALLY_EMPTY_SOUND) {
                         resolvedReplacementLocation = replacement;
                         resolvedReplacementSound = sound;
-                        CorruptionAchievementManager.recordWrongSound(delegate.getLocation(), replacement);
                         return events;
                     }
                 }

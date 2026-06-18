@@ -6,6 +6,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ItemText
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.TextureMutationManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.VisualCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.overlay.CorruptionOverlayManager;
+import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.AchievementEventPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.api.distmarker.Dist;
@@ -17,8 +18,13 @@ public final class ClientNetworkHandlers {
     }
 
     public static void handleState(CorruptionProfileSnapshot snapshot) {
+        handleState(snapshot, false);
+    }
+
+    public static void handleState(CorruptionProfileSnapshot snapshot, boolean serverCheatsExposed) {
         Minecraft.getInstance().execute(() -> {
             CorruptionProfileSnapshot previous = ClientCorruptionState.snapshot();
+            CorruptionAchievementManager.setServerCheatsExposed(serverCheatsExposed);
             ClientCorruptionState.applySnapshot(snapshot);
             CorruptionOverlayManager.applySnapshot(snapshot);
             CorruptionProfileSnapshot current = ClientCorruptionState.snapshot();
@@ -32,5 +38,13 @@ public final class ClientNetworkHandlers {
 
     public static void openOverlayFromServer() {
         Minecraft.getInstance().execute(CorruptionOverlayManager::openOverlayForInteraction);
+    }
+
+    public static void handleAchievementEvent(String eventId) {
+        Minecraft.getInstance().execute(() -> {
+            if (AchievementEventPacket.DIAMOND_ORE_MINED.equals(eventId)) {
+                CorruptionAchievementManager.recordDiamondOreMined();
+            }
+        });
     }
 }

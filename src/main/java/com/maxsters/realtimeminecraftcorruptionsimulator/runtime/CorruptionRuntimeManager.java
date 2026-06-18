@@ -9,10 +9,10 @@ public final class CorruptionRuntimeManager {
     }
 
     public static boolean syncGlobalLevel(CorruptionSavedData data) {
-        return syncGlobalSettings(data);
+        return applySavedDataToGlobalSettings(data);
     }
 
-    public static boolean syncGlobalSettings(CorruptionSavedData data) {
+    public static boolean copyGlobalSettingsToData(CorruptionSavedData data) {
         int activeLevel = GlobalCorruptionSettings.activeLevel();
         boolean changed = false;
         if (data.getFixedCorruptionSeed() != GlobalCorruptionSettings.seed()
@@ -37,5 +37,34 @@ public final class CorruptionRuntimeManager {
             changed = true;
         }
         return changed;
+    }
+
+    public static boolean applySavedDataToGlobalSettings(CorruptionSavedData data) {
+        if (data == null) {
+            return false;
+        }
+        int activeLevel = GlobalCorruptionSettings.activeLevel();
+        long seed = GlobalCorruptionSettings.seed();
+        String seedLabel = GlobalCorruptionSettings.seedLabel();
+        int enabledTargetsMask = GlobalCorruptionSettings.enabledTargetsMask();
+        int autoIncreaseIntervalTicks = GlobalCorruptionSettings.autoIncreaseIntervalTicks();
+        int autoIncreaseAmount = GlobalCorruptionSettings.autoIncreaseAmount();
+        if (activeLevel == data.getCorruptionLevel()
+                && seed == data.getFixedCorruptionSeed()
+                && seedLabel.equals(data.getCorruptionSeedLabel())
+                && enabledTargetsMask == data.getEnabledTargetsMask()
+                && autoIncreaseIntervalTicks == data.getAutoIncreaseIntervalTicks()
+                && autoIncreaseAmount == data.getAutoIncreaseAmount()) {
+            return false;
+        }
+        GlobalCorruptionSettings.apply(
+                data.getCorruptionLevel(),
+                data.getFixedCorruptionSeed(),
+                data.getCorruptionSeedLabel(),
+                data.getEnabledTargetsMask(),
+                data.getAutoIncreaseIntervalTicks(),
+                data.getAutoIncreaseAmount()
+        );
+        return true;
     }
 }
