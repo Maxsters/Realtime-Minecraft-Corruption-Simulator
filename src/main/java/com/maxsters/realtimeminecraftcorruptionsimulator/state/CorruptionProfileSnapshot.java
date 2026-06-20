@@ -17,8 +17,87 @@ public record CorruptionProfileSnapshot(
         String corruptionSeedLabel,
         int enabledTargetsMask,
         int autoIncreaseIntervalTicks,
-        int autoIncreaseAmount
+        int autoIncreaseAmount,
+        boolean clientDriftEnabled,
+        int seedRandomizerIntervalTicks,
+        long clientDriftSalt
 ) {
+    public CorruptionProfileSnapshot(
+            int corruptionLevel,
+            int previousCorruptionLevel,
+            int corruptionDelta,
+            int calibrationConfidence,
+            int stabilityDebt,
+            int profileCoherence,
+            int emergenceScore,
+            int lastKnownSafeCorruptionLevel,
+            String activeProfile,
+            long fixedCorruptionSeed,
+            String corruptionSeedLabel,
+            int enabledTargetsMask,
+            int autoIncreaseIntervalTicks,
+            int autoIncreaseAmount
+    ) {
+        this(
+                corruptionLevel,
+                previousCorruptionLevel,
+                corruptionDelta,
+                calibrationConfidence,
+                stabilityDebt,
+                profileCoherence,
+                emergenceScore,
+                lastKnownSafeCorruptionLevel,
+                activeProfile,
+                fixedCorruptionSeed,
+                corruptionSeedLabel,
+                enabledTargetsMask,
+                autoIncreaseIntervalTicks,
+                autoIncreaseAmount,
+                false,
+                0,
+                0L
+        );
+    }
+
+    public CorruptionProfileSnapshot(
+            int corruptionLevel,
+            int previousCorruptionLevel,
+            int corruptionDelta,
+            int calibrationConfidence,
+            int stabilityDebt,
+            int profileCoherence,
+            int emergenceScore,
+            int lastKnownSafeCorruptionLevel,
+            String activeProfile,
+            long fixedCorruptionSeed,
+            String corruptionSeedLabel,
+            int enabledTargetsMask,
+            int autoIncreaseIntervalTicks,
+            int autoIncreaseAmount,
+            boolean clientDriftEnabled,
+            int seedRandomizerIntervalTicks
+    ) {
+        this(
+                corruptionLevel,
+                previousCorruptionLevel,
+                corruptionDelta,
+                calibrationConfidence,
+                stabilityDebt,
+                profileCoherence,
+                emergenceScore,
+                lastKnownSafeCorruptionLevel,
+                activeProfile,
+                fixedCorruptionSeed,
+                corruptionSeedLabel,
+                enabledTargetsMask,
+                autoIncreaseIntervalTicks,
+                autoIncreaseAmount,
+                clientDriftEnabled,
+                seedRandomizerIntervalTicks,
+                0L
+        );
+    }
+
     public CorruptionProfileSnapshot {
         corruptionLevel = clampPercent(corruptionLevel);
         previousCorruptionLevel = clampPercent(previousCorruptionLevel);
@@ -33,6 +112,8 @@ public record CorruptionProfileSnapshot(
         enabledTargetsMask = CorruptionTarget.normalizeMask(enabledTargetsMask);
         autoIncreaseIntervalTicks = clampIntervalTicks(autoIncreaseIntervalTicks);
         autoIncreaseAmount = clampAutoAmount(autoIncreaseAmount);
+        seedRandomizerIntervalTicks = clampIntervalTicks(seedRandomizerIntervalTicks);
+        clientDriftSalt = clientDriftEnabled ? clientDriftSalt : 0L;
     }
 
     public static CorruptionProfileSnapshot from(CorruptionSavedData data) {
@@ -50,7 +131,10 @@ public record CorruptionProfileSnapshot(
                 data.getCorruptionSeedLabel(),
                 data.getEnabledTargetsMask(),
                 data.getAutoIncreaseIntervalTicks(),
-                data.getAutoIncreaseAmount()
+                data.getAutoIncreaseAmount(),
+                data.isClientDriftEnabled(),
+                data.getSeedRandomizerIntervalTicks(),
+                0L
         );
     }
 
@@ -69,6 +153,8 @@ public record CorruptionProfileSnapshot(
         int enabledTargetsMask = buffer.readVarInt();
         int autoIncreaseIntervalTicks = buffer.readVarInt();
         int autoIncreaseAmount = buffer.readVarInt();
+        boolean clientDriftEnabled = buffer.readBoolean();
+        int seedRandomizerIntervalTicks = buffer.readVarInt();
         return new CorruptionProfileSnapshot(
                 corruptionLevel,
                 previousCorruptionLevel,
@@ -83,7 +169,10 @@ public record CorruptionProfileSnapshot(
                 corruptionSeedLabel,
                 enabledTargetsMask,
                 autoIncreaseIntervalTicks,
-                autoIncreaseAmount
+                autoIncreaseAmount,
+                clientDriftEnabled,
+                seedRandomizerIntervalTicks,
+                0L
         );
     }
 
@@ -102,6 +191,8 @@ public record CorruptionProfileSnapshot(
         buffer.writeVarInt(enabledTargetsMask);
         buffer.writeVarInt(autoIncreaseIntervalTicks);
         buffer.writeVarInt(autoIncreaseAmount);
+        buffer.writeBoolean(clientDriftEnabled);
+        buffer.writeVarInt(seedRandomizerIntervalTicks);
     }
 
     public int getCorruptionLevel() {
@@ -158,6 +249,44 @@ public record CorruptionProfileSnapshot(
 
     public int getAutoIncreaseAmount() {
         return autoIncreaseAmount;
+    }
+
+    public boolean isClientDriftEnabled() {
+        return clientDriftEnabled;
+    }
+
+    public int getSeedRandomizerIntervalTicks() {
+        return seedRandomizerIntervalTicks;
+    }
+
+    public long getClientDriftSalt() {
+        return clientDriftSalt;
+    }
+
+    public long getEffectiveCorruptionSeed() {
+        return clientDriftEnabled ? fixedCorruptionSeed ^ clientDriftSalt : fixedCorruptionSeed;
+    }
+
+    public CorruptionProfileSnapshot withClientDriftSalt(long salt) {
+        return new CorruptionProfileSnapshot(
+                corruptionLevel,
+                previousCorruptionLevel,
+                corruptionDelta,
+                calibrationConfidence,
+                stabilityDebt,
+                profileCoherence,
+                emergenceScore,
+                lastKnownSafeCorruptionLevel,
+                activeProfile,
+                fixedCorruptionSeed,
+                corruptionSeedLabel,
+                enabledTargetsMask,
+                autoIncreaseIntervalTicks,
+                autoIncreaseAmount,
+                clientDriftEnabled,
+                seedRandomizerIntervalTicks,
+                salt
+        );
     }
 
     public boolean isTargetEnabled(CorruptionTarget target) {

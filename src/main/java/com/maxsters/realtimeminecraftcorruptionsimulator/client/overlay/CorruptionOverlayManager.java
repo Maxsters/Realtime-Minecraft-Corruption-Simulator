@@ -64,6 +64,8 @@ public final class CorruptionOverlayManager {
     private static int draftTargetsMask = latestSnapshot.getEnabledTargetsMask();
     private static int draftAutoIntervalTicks = latestSnapshot.getAutoIncreaseIntervalTicks();
     private static int draftAutoAmount = latestSnapshot.getAutoIncreaseAmount();
+    private static boolean draftClientDriftEnabled = latestSnapshot.isClientDriftEnabled();
+    private static int draftSeedRandomizerIntervalTicks = latestSnapshot.getSeedRandomizerIntervalTicks();
     private static int achievementsScroll;
     private static CorruptionTarget pendingTarget;
     private static CorruptionAchievementManager.Achievement pendingAchievement;
@@ -72,6 +74,7 @@ public final class CorruptionOverlayManager {
     private static FunEditField funEditField = FunEditField.NONE;
     private static String funIntervalEditText = "";
     private static String funAmountEditText = "";
+    private static String funSeedRandomizerEditText = "";
     private static boolean seedEditing;
     private static String seedEditText = latestSnapshot.getCorruptionSeedLabel();
     private static int achievementResetPresses;
@@ -99,7 +102,7 @@ public final class CorruptionOverlayManager {
 
     public static void applySnapshot(CorruptionProfileSnapshot snapshot) {
         boolean preserveDraft = hasPendingChanges() || isTextEditing() || mouseAction == MouseAction.SLIDER
-                || mouseAction == MouseAction.FUN_INTERVAL || mouseAction == MouseAction.FUN_AMOUNT;
+                || mouseAction == MouseAction.FUN_INTERVAL || mouseAction == MouseAction.FUN_AMOUNT || mouseAction == MouseAction.FUN_SEED_RANDOMIZER;
         latestSnapshot = snapshot == null ? ClientCorruptionState.localSnapshot() : snapshot;
         if (!preserveDraft) {
             syncDraftFromSnapshot();
@@ -388,6 +391,7 @@ public final class CorruptionOverlayManager {
                 } else {
                     int displayAutoInterval = mouseAction == MouseAction.FUN_INTERVAL ? pendingFunValue : draftAutoIntervalTicks;
                     int displayAutoAmount = mouseAction == MouseAction.FUN_AMOUNT ? pendingFunValue : draftAutoAmount;
+                    int displaySeedRandomizerInterval = mouseAction == MouseAction.FUN_SEED_RANDOMIZER ? pendingFunValue : draftSeedRandomizerIntervalTicks;
                     boolean draftDirty = hasPendingChanges();
                     achievementsScroll = clampAchievementsScroll(graphics.guiWidth(), graphics.guiHeight());
                     expireAchievementResetPresses();
@@ -400,6 +404,7 @@ public final class CorruptionOverlayManager {
                             pendingLevel,
                             displayAutoInterval,
                             displayAutoAmount,
+                            displaySeedRandomizerInterval,
                             draftDirty,
                             currentPage,
                             seedEditing,
@@ -408,6 +413,8 @@ public final class CorruptionOverlayManager {
                             funIntervalEditText,
                             funEditField == FunEditField.AMOUNT,
                             funAmountEditText,
+                            funEditField == FunEditField.SEED_RANDOMIZER,
+                            funSeedRandomizerEditText,
                             achievementsScroll,
                             achievementResetPresses,
                             CorruptionAchievementManager.pinnedCorner(),
@@ -582,6 +589,12 @@ public final class CorruptionOverlayManager {
                     mouseAction = MouseAction.PANEL;
                     return true;
                 }
+                CorruptionOverlayPanel.Rect seedRandomizerInput = CorruptionOverlayPanel.funSeedRandomizerInputBounds(LAYOUT, screenWidth, screenHeight);
+                if (seedRandomizerInput.contains(mouseX, mouseY)) {
+                    beginFunSeedRandomizerEditing();
+                    mouseAction = MouseAction.PANEL;
+                    return true;
+                }
                 if (funEditField != FunEditField.NONE) {
                     submitFunEdit();
                 }
@@ -595,6 +608,17 @@ public final class CorruptionOverlayManager {
                 if (amountSlider.contains(mouseX, mouseY)) {
                     mouseAction = MouseAction.FUN_AMOUNT;
                     updatePendingFunAmount(mouseX);
+                    return true;
+                }
+                CorruptionOverlayPanel.Rect seedRandomizerSlider = CorruptionOverlayPanel.funSeedRandomizerSliderBounds(LAYOUT, screenWidth, screenHeight);
+                if (seedRandomizerSlider.contains(mouseX, mouseY)) {
+                    mouseAction = MouseAction.FUN_SEED_RANDOMIZER;
+                    updatePendingSeedRandomizerInterval(mouseX);
+                    return true;
+                }
+                CorruptionOverlayPanel.Rect clientDrift = CorruptionOverlayPanel.funClientDriftButtonBounds(LAYOUT, screenWidth, screenHeight);
+                if (clientDrift.contains(mouseX, mouseY)) {
+                    mouseAction = MouseAction.CLIENT_DRIFT_TOGGLE;
                     return true;
                 }
             }
@@ -766,6 +790,14 @@ public final class CorruptionOverlayManager {
         } else if (mouseAction == MouseAction.FUN_AMOUNT) {
             updatePendingFunAmount(mouseX);
             draftAutoAmount = pendingFunValue;
+        } else if (mouseAction == MouseAction.FUN_SEED_RANDOMIZER) {
+            updatePendingSeedRandomizerInterval(mouseX);
+            draftSeedRandomizerIntervalTicks = pendingFunValue;
+        } else if (mouseAction == MouseAction.CLIENT_DRIFT_TOGGLE) {
+            CorruptionOverlayPanel.Rect clientDrift = CorruptionOverlayPanel.funClientDriftButtonBounds(LAYOUT, screenWidth, screenHeight);
+            if (clientDrift.contains(mouseX, mouseY)) {
+                draftClientDriftEnabled = !draftClientDriftEnabled;
+            }
         } else if (mouseAction == MouseAction.ACHIEVEMENT_PIN) {
             if (pendingAchievement != null) {
                 for (CorruptionOverlayPanel.AchievementHitBox hitBox : CorruptionOverlayPanel.achievementHitBoxes(LAYOUT, screenWidth, screenHeight, achievementsScroll)) {
@@ -816,13 +848,13 @@ public final class CorruptionOverlayManager {
         }
     }
 
-    private static void applyCurrentSettings(int level, long seed, String seedLabel, int enabledTargetsMask, int autoIncreaseIntervalTicks, int autoIncreaseAmount) {
+    private static void applyCurrentSettings(int level, long seed, String seedLabel, int enabledTargetsMask, int autoIncreaseIntervalTicks, int autoIncreaseAmount, boolean clientDriftEnabled, int seedRandomizerIntervalTicks) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.getConnection() != null) {
-            ModNetwork.sendToServer(new ApplyCorruptionSettingsPacket(level, seed, seedLabel, enabledTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount));
+            ModNetwork.sendToServer(new ApplyCorruptionSettingsPacket(level, seed, seedLabel, enabledTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount, clientDriftEnabled, seedRandomizerIntervalTicks));
         } else {
             CorruptionProfileSnapshot previous = ClientCorruptionState.snapshot();
-            GlobalCorruptionSettings.apply(level, seed, seedLabel, enabledTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount);
+            GlobalCorruptionSettings.apply(level, seed, seedLabel, enabledTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount, clientDriftEnabled, seedRandomizerIntervalTicks);
             ClientCorruptionState.reset();
             CorruptionProfileSnapshot current = ClientCorruptionState.snapshot();
             latestSnapshot = current;
@@ -841,7 +873,7 @@ public final class CorruptionOverlayManager {
         if (!hasDraftChanges()) {
             return;
         }
-        applyCurrentSettings(pendingLevel, draftSeed, draftSeedLabel, draftTargetsMask, draftAutoIntervalTicks, draftAutoAmount);
+        applyCurrentSettings(pendingLevel, draftSeed, draftSeedLabel, draftTargetsMask, draftAutoIntervalTicks, draftAutoAmount, draftClientDriftEnabled, draftSeedRandomizerIntervalTicks);
     }
 
     private static void cancelDraftSettings() {
@@ -934,6 +966,15 @@ public final class CorruptionOverlayManager {
         KeyMapping.releaseAll();
     }
 
+    private static void beginFunSeedRandomizerEditing() {
+        seedEditing = false;
+        funEditField = FunEditField.SEED_RANDOMIZER;
+        funSeedRandomizerEditText = formatIntervalEdit(draftSeedRandomizerIntervalTicks);
+        interactionMode = true;
+        releaseMouseForOverlay();
+        KeyMapping.releaseAll();
+    }
+
     private static void finishTextEditingBeforeNavigation() {
         if (funEditField != FunEditField.NONE) {
             submitFunEdit();
@@ -966,7 +1007,7 @@ public final class CorruptionOverlayManager {
 
     private static void updateDrag(double mouseX, double mouseY) {
         if (mouseAction != MouseAction.WINDOW && mouseAction != MouseAction.COLLAPSED_BUTTON && mouseAction != MouseAction.SLIDER
-                && mouseAction != MouseAction.FUN_INTERVAL && mouseAction != MouseAction.FUN_AMOUNT
+                && mouseAction != MouseAction.FUN_INTERVAL && mouseAction != MouseAction.FUN_AMOUNT && mouseAction != MouseAction.FUN_SEED_RANDOMIZER
                 && mouseAction != MouseAction.RESIZE_HORIZONTAL && mouseAction != MouseAction.RESIZE_VERTICAL && mouseAction != MouseAction.RESIZE_BOTH) {
             return;
         }
@@ -994,6 +1035,8 @@ public final class CorruptionOverlayManager {
             updatePendingFunInterval(mouseX);
         } else if (mouseAction == MouseAction.FUN_AMOUNT) {
             updatePendingFunAmount(mouseX);
+        } else if (mouseAction == MouseAction.FUN_SEED_RANDOMIZER) {
+            updatePendingSeedRandomizerInterval(mouseX);
         }
     }
 
@@ -1026,6 +1069,17 @@ public final class CorruptionOverlayManager {
         );
         double ratio = Math.max(0.0D, Math.min(1.0D, (mouseX - slider.x()) / Math.max(1.0D, slider.width())));
         pendingFunValue = CorruptionOverlayPanel.MIN_AUTO_AMOUNT + (int) Math.round(ratio * (CorruptionOverlayPanel.MAX_AUTO_AMOUNT - CorruptionOverlayPanel.MIN_AUTO_AMOUNT));
+    }
+
+    private static void updatePendingSeedRandomizerInterval(double mouseX) {
+        CorruptionOverlayPanel.Rect slider = CorruptionOverlayPanel.funSeedRandomizerSliderBounds(
+                LAYOUT,
+                Minecraft.getInstance().getWindow().getGuiScaledWidth(),
+                Minecraft.getInstance().getWindow().getGuiScaledHeight()
+        );
+        double ratio = Math.max(0.0D, Math.min(1.0D, (mouseX - slider.x()) / Math.max(1.0D, slider.width())));
+        int ticks = (int) Math.round(ratio * CorruptionOverlayPanel.MAX_AUTO_INTERVAL_TICKS);
+        pendingFunValue = ticks < 20 ? 0 : Math.max(20, ticks);
     }
 
     private static boolean handleTextEditKey(int key, int modifiers, int action, boolean captureUnhandled) {
@@ -1094,6 +1148,8 @@ public final class CorruptionOverlayManager {
                 funIntervalEditText = funIntervalEditText.substring(0, funIntervalEditText.length() - 1);
             } else if (funEditField == FunEditField.AMOUNT && !funAmountEditText.isEmpty()) {
                 funAmountEditText = funAmountEditText.substring(0, funAmountEditText.length() - 1);
+            } else if (funEditField == FunEditField.SEED_RANDOMIZER && !funSeedRandomizerEditText.isEmpty()) {
+                funSeedRandomizerEditText = funSeedRandomizerEditText.substring(0, funSeedRandomizerEditText.length() - 1);
             }
             return true;
         }
@@ -1102,6 +1158,8 @@ public final class CorruptionOverlayManager {
                 funIntervalEditText = "";
             } else if (funEditField == FunEditField.AMOUNT) {
                 funAmountEditText = "";
+            } else if (funEditField == FunEditField.SEED_RANDOMIZER) {
+                funSeedRandomizerEditText = "";
             }
             return true;
         }
@@ -1111,11 +1169,13 @@ public final class CorruptionOverlayManager {
                 funIntervalEditText = pasted;
             } else if (funEditField == FunEditField.AMOUNT) {
                 funAmountEditText = pasted;
+            } else if (funEditField == FunEditField.SEED_RANDOMIZER) {
+                funSeedRandomizerEditText = pasted;
             }
             return true;
         }
         if ((modifiers & GLFW.GLFW_MOD_CONTROL) != 0 && key == GLFW.GLFW_KEY_C) {
-            String text = funEditField == FunEditField.INTERVAL ? funIntervalEditText : funAmountEditText;
+            String text = funEditField == FunEditField.INTERVAL ? funIntervalEditText : funEditField == FunEditField.AMOUNT ? funAmountEditText : funSeedRandomizerEditText;
             Minecraft.getInstance().keyboardHandler.setClipboard(text);
             return true;
         }
@@ -1125,6 +1185,8 @@ public final class CorruptionOverlayManager {
                 funIntervalEditText = sanitizeFunEditText(funIntervalEditText + character);
             } else if (funEditField == FunEditField.AMOUNT && funAmountEditText.length() < 24) {
                 funAmountEditText = sanitizeFunEditText(funAmountEditText + character);
+            } else if (funEditField == FunEditField.SEED_RANDOMIZER && funSeedRandomizerEditText.length() < 24) {
+                funSeedRandomizerEditText = sanitizeFunEditText(funSeedRandomizerEditText + character);
             }
             return true;
         }
@@ -1140,6 +1202,10 @@ public final class CorruptionOverlayManager {
             int amount = parseAutoAmount(funAmountEditText, draftAutoAmount);
             funEditField = FunEditField.NONE;
             draftAutoAmount = amount;
+        } else if (funEditField == FunEditField.SEED_RANDOMIZER) {
+            int ticks = parseIntervalTicks(funSeedRandomizerEditText, draftSeedRandomizerIntervalTicks);
+            funEditField = FunEditField.NONE;
+            draftSeedRandomizerIntervalTicks = ticks;
         }
     }
 
@@ -1340,7 +1406,10 @@ public final class CorruptionOverlayManager {
                 draftSeedLabel,
                 draftTargetsMask,
                 draftAutoIntervalTicks,
-                draftAutoAmount
+                draftAutoAmount,
+                draftClientDriftEnabled,
+                draftSeedRandomizerIntervalTicks,
+                snapshot.getClientDriftSalt()
         );
     }
 
@@ -1350,7 +1419,9 @@ public final class CorruptionOverlayManager {
                 || !draftSeedLabel.equals(latestSnapshot.getCorruptionSeedLabel())
                 || draftTargetsMask != latestSnapshot.getEnabledTargetsMask()
                 || draftAutoIntervalTicks != latestSnapshot.getAutoIncreaseIntervalTicks()
-                || draftAutoAmount != latestSnapshot.getAutoIncreaseAmount();
+                || draftAutoAmount != latestSnapshot.getAutoIncreaseAmount()
+                || draftClientDriftEnabled != latestSnapshot.isClientDriftEnabled()
+                || draftSeedRandomizerIntervalTicks != latestSnapshot.getSeedRandomizerIntervalTicks();
     }
 
     private static boolean hasPendingChanges() {
@@ -1368,6 +1439,9 @@ public final class CorruptionOverlayManager {
         if (funEditField == FunEditField.AMOUNT) {
             return parseAutoAmount(funAmountEditText, draftAutoAmount) != draftAutoAmount;
         }
+        if (funEditField == FunEditField.SEED_RANDOMIZER) {
+            return parseIntervalTicks(funSeedRandomizerEditText, draftSeedRandomizerIntervalTicks) != draftSeedRandomizerIntervalTicks;
+        }
         return false;
     }
 
@@ -1378,9 +1452,12 @@ public final class CorruptionOverlayManager {
         draftTargetsMask = latestSnapshot.getEnabledTargetsMask();
         draftAutoIntervalTicks = latestSnapshot.getAutoIncreaseIntervalTicks();
         draftAutoAmount = latestSnapshot.getAutoIncreaseAmount();
+        draftClientDriftEnabled = latestSnapshot.isClientDriftEnabled();
+        draftSeedRandomizerIntervalTicks = latestSnapshot.getSeedRandomizerIntervalTicks();
         seedEditText = draftSeedLabel;
         funIntervalEditText = formatIntervalEdit(draftAutoIntervalTicks);
         funAmountEditText = signedPercentLabel(draftAutoAmount);
+        funSeedRandomizerEditText = formatIntervalEdit(draftSeedRandomizerIntervalTicks);
     }
 
     private static boolean isProfileDraftPage(CorruptionOverlayPanel.Page page) {
@@ -1434,6 +1511,8 @@ public final class CorruptionOverlayManager {
         TARGET_DISABLE_ALL,
         FUN_INTERVAL,
         FUN_AMOUNT,
+        FUN_SEED_RANDOMIZER,
+        CLIENT_DRIFT_TOGGLE,
         ACHIEVEMENT_PIN,
         ACHIEVEMENT_RESET,
         HUD_CORNER,
@@ -1453,6 +1532,7 @@ public final class CorruptionOverlayManager {
     private enum FunEditField {
         NONE,
         INTERVAL,
-        AMOUNT
+        AMOUNT,
+        SEED_RANDOMIZER
     }
 }

@@ -26,8 +26,8 @@ public final class ClientNetworkHandlers {
             CorruptionProfileSnapshot previous = ClientCorruptionState.snapshot();
             CorruptionAchievementManager.setServerCheatsExposed(serverCheatsExposed);
             ClientCorruptionState.applySnapshot(snapshot);
-            CorruptionOverlayManager.applySnapshot(snapshot);
             CorruptionProfileSnapshot current = ClientCorruptionState.snapshot();
+            CorruptionOverlayManager.applySnapshot(current);
             TextureMutationManager.onSettingsChanged(previous, current);
             FontTextureCorruptionManager.onSettingsChanged(previous, current);
             ItemTextureCorruptionManager.onSettingsChanged(previous, current);

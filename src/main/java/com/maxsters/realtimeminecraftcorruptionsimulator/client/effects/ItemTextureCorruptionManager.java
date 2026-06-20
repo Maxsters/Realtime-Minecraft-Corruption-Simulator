@@ -63,7 +63,7 @@ public final class ItemTextureCorruptionManager {
         boolean becameUsable = false;
         synchronized (SPRITE_POOL) {
             if (SPRITE_POOL_IDS.add(id)) {
-                SPRITE_POOL.add(sprite);
+                SPRITE_POOL.add(spriteInsertionIndex(id), sprite);
                 becameUsable = SPRITE_POOL.size() == 2;
             }
         }
@@ -745,6 +745,24 @@ public final class ItemTextureCorruptionManager {
         ResourceLocation firstName = first.contents().name();
         ResourceLocation secondName = second.contents().name();
         return firstName != null && firstName.equals(secondName);
+    }
+
+    private static int spriteInsertionIndex(ResourceLocation id) {
+        String key = id.toString();
+        int low = 0;
+        int high = SPRITE_POOL.size();
+        while (low < high) {
+            int mid = (low + high) >>> 1;
+            TextureAtlasSprite sprite = SPRITE_POOL.get(mid);
+            ResourceLocation existing = sprite == null || sprite.contents() == null ? null : sprite.contents().name();
+            String existingKey = existing == null ? "" : existing.toString();
+            if (existingKey.compareTo(key) < 0) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        return low;
     }
 
     private static float signedHash(long hash, float amplitude) {

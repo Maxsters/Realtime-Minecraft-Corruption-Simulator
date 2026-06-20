@@ -95,7 +95,7 @@ public final class FontTextureCorruptionManager {
     public static void onSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
         if (previous == null || current == null
                 || previous.getCorruptionLevel() != current.getCorruptionLevel()
-                || previous.getFixedCorruptionSeed() != current.getFixedCorruptionSeed()
+                || previous.getEffectiveCorruptionSeed() != current.getEffectiveCorruptionSeed()
                 || previous.getEnabledTargetsMask() != current.getEnabledTargetsMask()) {
             installCooldown = 0;
             activeSignature = STALE_SIGNATURE;

@@ -22,6 +22,8 @@ public final class GlobalCorruptionSettings {
     private static final String ENABLED_TARGETS_MASK = "enabled_targets_mask";
     private static final String AUTO_INCREASE_INTERVAL_TICKS = "auto_increase_interval_ticks";
     private static final String AUTO_INCREASE_AMOUNT = "auto_increase_amount";
+    private static final String CLIENT_DRIFT_ENABLED = "client_drift_enabled";
+    private static final String SEED_RANDOMIZER_INTERVAL_TICKS = "seed_randomizer_interval_ticks";
 
     private static boolean loaded;
     private static int activeLevel;
@@ -30,6 +32,8 @@ public final class GlobalCorruptionSettings {
     private static int enabledTargetsMask = CorruptionTarget.ALL_MASK;
     private static int autoIncreaseIntervalTicks;
     private static int autoIncreaseAmount = 1;
+    private static boolean clientDriftEnabled;
+    private static int seedRandomizerIntervalTicks;
     private static final ExecutorService SAVE_EXECUTOR = Executors.newSingleThreadExecutor(task -> {
         Thread thread = new Thread(task, "RMC corruption settings save");
         thread.setDaemon(true);
@@ -69,16 +73,30 @@ public final class GlobalCorruptionSettings {
         return autoIncreaseAmount;
     }
 
+    public static synchronized boolean clientDriftEnabled() {
+        ensureLoaded();
+        return clientDriftEnabled;
+    }
+
+    public static synchronized int seedRandomizerIntervalTicks() {
+        ensureLoaded();
+        return seedRandomizerIntervalTicks;
+    }
+
     public static synchronized boolean queueLevel(int requestedLevel) {
-        apply(clampPercent(requestedLevel), seed, seedLabel, enabledTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount);
+        apply(clampPercent(requestedLevel), seed, seedLabel, enabledTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount, clientDriftEnabled, seedRandomizerIntervalTicks);
         return false;
     }
 
     public static synchronized void apply(int requestedLevel, long requestedSeed, String requestedSeedLabel, int requestedTargetsMask) {
-        apply(requestedLevel, requestedSeed, requestedSeedLabel, requestedTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount);
+        apply(requestedLevel, requestedSeed, requestedSeedLabel, requestedTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount, clientDriftEnabled, seedRandomizerIntervalTicks);
     }
 
     public static synchronized void apply(int requestedLevel, long requestedSeed, String requestedSeedLabel, int requestedTargetsMask, int requestedAutoIncreaseIntervalTicks, int requestedAutoIncreaseAmount) {
+        apply(requestedLevel, requestedSeed, requestedSeedLabel, requestedTargetsMask, requestedAutoIncreaseIntervalTicks, requestedAutoIncreaseAmount, clientDriftEnabled, seedRandomizerIntervalTicks);
+    }
+
+    public static synchronized void apply(int requestedLevel, long requestedSeed, String requestedSeedLabel, int requestedTargetsMask, int requestedAutoIncreaseIntervalTicks, int requestedAutoIncreaseAmount, boolean requestedClientDriftEnabled, int requestedSeedRandomizerIntervalTicks) {
         ensureLoaded();
         activeLevel = clampPercent(requestedLevel);
         seed = requestedSeed;
@@ -86,6 +104,8 @@ public final class GlobalCorruptionSettings {
         enabledTargetsMask = CorruptionTarget.normalizeMask(requestedTargetsMask);
         autoIncreaseIntervalTicks = clampIntervalTicks(requestedAutoIncreaseIntervalTicks);
         autoIncreaseAmount = clampAutoAmount(requestedAutoIncreaseAmount);
+        clientDriftEnabled = requestedClientDriftEnabled;
+        seedRandomizerIntervalTicks = clampIntervalTicks(requestedSeedRandomizerIntervalTicks);
         saveAsync();
     }
 
@@ -116,6 +136,8 @@ public final class GlobalCorruptionSettings {
         enabledTargetsMask = CorruptionTarget.normalizeMask(parseInt(properties.getProperty(ENABLED_TARGETS_MASK), CorruptionTarget.ALL_MASK));
         autoIncreaseIntervalTicks = clampIntervalTicks(parseInt(properties.getProperty(AUTO_INCREASE_INTERVAL_TICKS), 0));
         autoIncreaseAmount = clampAutoAmount(parseInt(properties.getProperty(AUTO_INCREASE_AMOUNT), 1));
+        clientDriftEnabled = parseBoolean(properties.getProperty(CLIENT_DRIFT_ENABLED), false);
+        seedRandomizerIntervalTicks = clampIntervalTicks(parseInt(properties.getProperty(SEED_RANDOMIZER_INTERVAL_TICKS), 0));
 
         loaded = true;
         saveAsync();
@@ -129,6 +151,8 @@ public final class GlobalCorruptionSettings {
         properties.setProperty(ENABLED_TARGETS_MASK, Integer.toString(enabledTargetsMask));
         properties.setProperty(AUTO_INCREASE_INTERVAL_TICKS, Integer.toString(autoIncreaseIntervalTicks));
         properties.setProperty(AUTO_INCREASE_AMOUNT, Integer.toString(autoIncreaseAmount));
+        properties.setProperty(CLIENT_DRIFT_ENABLED, Boolean.toString(clientDriftEnabled));
+        properties.setProperty(SEED_RANDOMIZER_INTERVAL_TICKS, Integer.toString(seedRandomizerIntervalTicks));
 
         Path path = path();
         SAVE_EXECUTOR.execute(() -> saveSnapshot(path, properties));
@@ -173,6 +197,20 @@ public final class GlobalCorruptionSettings {
         } catch (NumberFormatException ignored) {
             return fallback;
         }
+    }
+
+    private static boolean parseBoolean(String value, boolean fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        String trimmed = value.trim().toLowerCase();
+        if (trimmed.equals("true") || trimmed.equals("1") || trimmed.equals("yes") || trimmed.equals("on")) {
+            return true;
+        }
+        if (trimmed.equals("false") || trimmed.equals("0") || trimmed.equals("no") || trimmed.equals("off")) {
+            return false;
+        }
+        return fallback;
     }
 
     private static int clampPercent(int value) {

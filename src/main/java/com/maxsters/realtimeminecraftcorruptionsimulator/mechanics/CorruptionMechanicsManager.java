@@ -74,6 +74,7 @@ import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
 @Mod.EventBusSubscriber(modid = RealtimeMinecraftCorruptionSimulator.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -162,6 +163,7 @@ public final class CorruptionMechanicsManager {
         }
         scheduleServerMutationWarmup(server, SERVER_SAVE_MUTATION_COOLDOWN_TICKS);
         resetAutoIncreaseTimer(server);
+        resetSeedRandomizerTimer(server);
         clearServerStackCache();
         resetTerrainMutationBudget();
         resetWorldProcessBudget();
@@ -1302,31 +1304,33 @@ public final class CorruptionMechanicsManager {
         CorruptionSavedData data = CorruptionSavedData.get(server);
         int intervalTicks = data.getAutoIncreaseIntervalTicks();
         int amount = data.getAutoIncreaseAmount();
-        if (intervalTicks <= 0 || amount == 0) {
-            return;
-        }
-
         long clock = Math.max(0L, server.overworld().getGameTime());
-        long last = data.getLastAutoIncreaseGameTime();
-        if (last > clock || last <= 0L) {
-            data.setLastAutoIncreaseGameTime(clock);
-            return;
-        }
-        if (clock - last < intervalTicks) {
-            return;
+
+        boolean changed = false;
+        if (intervalTicks > 0 && amount != 0) {
+            long last = data.getLastAutoIncreaseGameTime();
+            if (last > clock || last <= 0L) {
+                data.setLastAutoIncreaseGameTime(clock);
+            } else if (clock - last >= intervalTicks) {
+                int current = data.getCorruptionLevel();
+                int next = clampInt(current + amount, 0, 100);
+                data.setLastAutoIncreaseGameTime(clock);
+                if (next != current) {
+                    CorruptionCalibrationManager.applyCorruptionLevel(data, next);
+                    changed = true;
+                }
+            }
         }
 
-        int current = data.getCorruptionLevel();
-        int next = clampInt(current + amount, 0, 100);
-        data.setLastAutoIncreaseGameTime(clock);
-        if (next == current) {
-            return;
+        if (applySeedRandomizer(data, clock)) {
+            changed = true;
         }
 
-        CorruptionCalibrationManager.applyCorruptionLevel(data, next);
-        CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
-        clearServerStackCache();
-        ModNetwork.broadcastState(server);
+        if (changed) {
+            CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
+            clearServerStackCache();
+            ModNetwork.broadcastState(server);
+        }
     }
 
     private static void resetAutoIncreaseTimer(MinecraftServer server) {
@@ -1335,6 +1339,35 @@ public final class CorruptionMechanicsManager {
         }
         CorruptionSavedData data = CorruptionSavedData.get(server);
         data.setLastAutoIncreaseGameTime(Math.max(0L, server.overworld().getGameTime()));
+    }
+
+    private static boolean applySeedRandomizer(CorruptionSavedData data, long clock) {
+        int intervalTicks = data.getSeedRandomizerIntervalTicks();
+        if (intervalTicks <= 0) {
+            return false;
+        }
+
+        long last = data.getLastSeedRandomizerGameTime();
+        if (last > clock || last <= 0L) {
+            data.setLastSeedRandomizerGameTime(clock);
+            return false;
+        }
+        if (clock - last < intervalTicks) {
+            return false;
+        }
+
+        long nextSeed = ThreadLocalRandom.current().nextLong();
+        data.setCorruptionSeed(nextSeed, CorruptionSavedData.seedLabel(nextSeed));
+        data.setLastSeedRandomizerGameTime(clock);
+        return true;
+    }
+
+    private static void resetSeedRandomizerTimer(MinecraftServer server) {
+        if (server == null) {
+            return;
+        }
+        CorruptionSavedData data = CorruptionSavedData.get(server);
+        data.setLastSeedRandomizerGameTime(Math.max(0L, server.overworld().getGameTime()));
     }
 
     private static void syncEntityMechanics(LivingEntity entity, CorruptionEffectStack stack, String entityTargetId) {

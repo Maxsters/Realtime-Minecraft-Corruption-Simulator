@@ -59,7 +59,9 @@ public final class TextureMutationManager {
             return;
         }
 
-        for (ResourceLocation spriteId : atlas.getTextureLocations()) {
+        List<ResourceLocation> spriteIds = new ArrayList<>(atlas.getTextureLocations());
+        spriteIds.sort(Comparator.comparing(ResourceLocation::toString));
+        for (ResourceLocation spriteId : spriteIds) {
             ItemTextureCorruptionManager.rememberAtlasSprite(atlas.getSprite(spriteId));
         }
     }

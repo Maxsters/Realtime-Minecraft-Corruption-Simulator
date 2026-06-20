@@ -57,7 +57,7 @@ public final class CorruptionEffectStack {
                 snapshot.getCalibrationConfidence(),
                 snapshot.getStabilityDebt(),
                 snapshot.getProfileCoherence(),
-                snapshot.getFixedCorruptionSeed(),
+                snapshot.getEffectiveCorruptionSeed(),
                 snapshot.getEnabledTargetsMask()
         );
     }

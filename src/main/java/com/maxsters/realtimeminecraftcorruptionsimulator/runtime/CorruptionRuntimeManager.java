@@ -32,6 +32,14 @@ public final class CorruptionRuntimeManager {
             data.setAutoIncreaseAmount(GlobalCorruptionSettings.autoIncreaseAmount());
             changed = true;
         }
+        if (data.isClientDriftEnabled() != GlobalCorruptionSettings.clientDriftEnabled()) {
+            data.setClientDriftEnabled(GlobalCorruptionSettings.clientDriftEnabled());
+            changed = true;
+        }
+        if (data.getSeedRandomizerIntervalTicks() != GlobalCorruptionSettings.seedRandomizerIntervalTicks()) {
+            data.setSeedRandomizerIntervalTicks(GlobalCorruptionSettings.seedRandomizerIntervalTicks());
+            changed = true;
+        }
         if (data.getCorruptionLevel() != activeLevel) {
             CorruptionCalibrationManager.applyCorruptionLevel(data, activeLevel);
             changed = true;
@@ -49,12 +57,16 @@ public final class CorruptionRuntimeManager {
         int enabledTargetsMask = GlobalCorruptionSettings.enabledTargetsMask();
         int autoIncreaseIntervalTicks = GlobalCorruptionSettings.autoIncreaseIntervalTicks();
         int autoIncreaseAmount = GlobalCorruptionSettings.autoIncreaseAmount();
+        boolean clientDriftEnabled = GlobalCorruptionSettings.clientDriftEnabled();
+        int seedRandomizerIntervalTicks = GlobalCorruptionSettings.seedRandomizerIntervalTicks();
         if (activeLevel == data.getCorruptionLevel()
                 && seed == data.getFixedCorruptionSeed()
                 && seedLabel.equals(data.getCorruptionSeedLabel())
                 && enabledTargetsMask == data.getEnabledTargetsMask()
                 && autoIncreaseIntervalTicks == data.getAutoIncreaseIntervalTicks()
-                && autoIncreaseAmount == data.getAutoIncreaseAmount()) {
+                && autoIncreaseAmount == data.getAutoIncreaseAmount()
+                && clientDriftEnabled == data.isClientDriftEnabled()
+                && seedRandomizerIntervalTicks == data.getSeedRandomizerIntervalTicks()) {
             return false;
         }
         GlobalCorruptionSettings.apply(
@@ -63,7 +75,9 @@ public final class CorruptionRuntimeManager {
                 data.getCorruptionSeedLabel(),
                 data.getEnabledTargetsMask(),
                 data.getAutoIncreaseIntervalTicks(),
-                data.getAutoIncreaseAmount()
+                data.getAutoIncreaseAmount(),
+                data.isClientDriftEnabled(),
+                data.getSeedRandomizerIntervalTicks()
         );
         return true;
     }

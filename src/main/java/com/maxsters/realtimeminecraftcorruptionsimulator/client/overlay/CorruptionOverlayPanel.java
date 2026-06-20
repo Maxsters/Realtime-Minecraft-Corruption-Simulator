@@ -204,6 +204,23 @@ public final class CorruptionOverlayPanel {
         return new Rect(slider.x() + slider.width() + 8, slider.y() - 6, FUN_INPUT_WIDTH, 18);
     }
 
+    public static Rect funSeedRandomizerSliderBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect area = funSeedRandomizerArea(layout, screenWidth, screenHeight);
+        int width = Math.max(42, area.width() - FUN_INPUT_WIDTH - 8);
+        return new Rect(area.x(), area.y() + 24, width, 12);
+    }
+
+    public static Rect funSeedRandomizerInputBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect slider = funSeedRandomizerSliderBounds(layout, screenWidth, screenHeight);
+        return new Rect(slider.x() + slider.width() + 8, slider.y() - 6, FUN_INPUT_WIDTH, 18);
+    }
+
+    public static Rect funClientDriftButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect area = funClientDriftArea(layout, screenWidth, screenHeight);
+        int width = Math.min(82, Math.max(54, area.width() / 2));
+        return new Rect(area.x(), area.y() + 18, width, 18);
+    }
+
     public static Rect achievementResetButtonBounds(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
         Rect area = achievementsArea(layout, screenWidth, screenHeight);
         return new Rect(area.x() + area.width() - ACHIEVEMENT_RESET_BUTTON_WIDTH, area.y() - 2, ACHIEVEMENT_RESET_BUTTON_WIDTH, 14);
@@ -273,7 +290,7 @@ public final class CorruptionOverlayPanel {
         return new Rect(panel.x() + panel.width() - RESIZE_HANDLE_SIZE, panel.y() + panel.height() - RESIZE_HANDLE_SIZE, RESIZE_HANDLE_SIZE, RESIZE_HANDLE_SIZE);
     }
 
-    public static void renderOpen(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, CorruptionProfileSnapshot draftSnapshot, int pendingLevel, int pendingAutoIntervalTicks, int pendingAutoAmount, boolean draftDirty, Page page, boolean seedEditing, String seedEditText, boolean funIntervalEditing, String funIntervalEditText, boolean funAmountEditing, String funAmountEditText, int achievementsScroll, int achievementResetPresses, CorruptionAchievementManager.HudCorner pinnedCorner, int mouseX, int mouseY) {
+    public static void renderOpen(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, CorruptionProfileSnapshot draftSnapshot, int pendingLevel, int pendingAutoIntervalTicks, int pendingAutoAmount, int pendingSeedRandomizerIntervalTicks, boolean draftDirty, Page page, boolean seedEditing, String seedEditText, boolean funIntervalEditing, String funIntervalEditText, boolean funAmountEditing, String funAmountEditText, boolean funSeedRandomizerEditing, String funSeedRandomizerEditText, int achievementsScroll, int achievementResetPresses, CorruptionAchievementManager.HudCorner pinnedCorner, int mouseX, int mouseY) {
         Rect panel = panelBounds(layout, graphics.guiWidth(), graphics.guiHeight());
         fillPanel(graphics, panel);
         renderHeader(graphics, font, layout, snapshot, panel, mouseX, mouseY, false);
@@ -281,7 +298,7 @@ public final class CorruptionOverlayPanel {
         if (page == Page.SETTINGS) {
             renderSettings(graphics, font, layout, draftSnapshot, seedEditing, seedEditText, draftDirty, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         } else if (page == Page.FUN) {
-            renderFun(graphics, font, layout, draftSnapshot, pendingAutoIntervalTicks, pendingAutoAmount, funIntervalEditing, funIntervalEditText, funAmountEditing, funAmountEditText, draftDirty, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
+            renderFun(graphics, font, layout, draftSnapshot, pendingAutoIntervalTicks, pendingAutoAmount, pendingSeedRandomizerIntervalTicks, funIntervalEditing, funIntervalEditText, funAmountEditing, funAmountEditText, funSeedRandomizerEditing, funSeedRandomizerEditText, draftDirty, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         } else if (page == Page.ACHIEVEMENTS) {
             renderAchievements(graphics, font, layout, achievementsScroll, achievementResetPresses, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         } else if (page == Page.HUD) {
@@ -484,7 +501,7 @@ public final class CorruptionOverlayPanel {
         }
     }
 
-    private static void renderFun(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingAutoIntervalTicks, int pendingAutoAmount, boolean intervalEditing, String intervalEditText, boolean amountEditing, String amountEditText, boolean draftDirty, int mouseX, int mouseY, int screenWidth, int screenHeight) {
+    private static void renderFun(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingAutoIntervalTicks, int pendingAutoAmount, int pendingSeedRandomizerIntervalTicks, boolean intervalEditing, String intervalEditText, boolean amountEditing, String amountEditText, boolean seedRandomizerEditing, String seedRandomizerEditText, boolean draftDirty, int mouseX, int mouseY, int screenWidth, int screenHeight) {
         Rect intervalArea = funIntervalArea(layout, screenWidth, screenHeight);
         drawSectionTitle(graphics, font, "Auto Increase Interval", intervalArea.x(), intervalArea.y(), intervalArea.width());
         Rect intervalSlider = funIntervalSliderBounds(layout, screenWidth, screenHeight);
@@ -501,15 +518,35 @@ public final class CorruptionOverlayPanel {
         drawTextField(graphics, font, amountInput, amountEditing ? amountEditText : signedPercentLabel(pendingAutoAmount), amountEditing);
         drawClipped(graphics, font, "-100% to +100% per automatic step.", amountArea.x(), amountSlider.y() + 18, amountArea.width(), 0xFF9AA8AD);
 
+        Rect seedArea = funSeedRandomizerArea(layout, screenWidth, screenHeight);
+        drawSectionTitle(graphics, font, "Seed Shuffle", seedArea.x(), seedArea.y(), seedArea.width());
+        Rect seedSlider = funSeedRandomizerSliderBounds(layout, screenWidth, screenHeight);
+        Rect seedInput = funSeedRandomizerInputBounds(layout, screenWidth, screenHeight);
+        drawValueSlider(graphics, font, seedSlider, intervalRatio(pendingSeedRandomizerIntervalTicks), intervalLabel(pendingSeedRandomizerIntervalTicks), mouseX, mouseY);
+        drawTextField(graphics, font, seedInput, seedRandomizerEditing ? seedRandomizerEditText : intervalLabel(pendingSeedRandomizerIntervalTicks), seedRandomizerEditing);
+        drawClipped(graphics, font, "Randomizes the shared seed on this interval.", seedArea.x(), seedSlider.y() + 18, seedArea.width(), 0xFF9AA8AD);
+
+        Rect driftArea = funClientDriftArea(layout, screenWidth, screenHeight);
+        drawSectionTitle(graphics, font, "Client Drift", driftArea.x(), driftArea.y(), driftArea.width());
+        Rect driftButton = funClientDriftButtonBounds(layout, screenWidth, screenHeight);
+        drawButton(graphics, font, driftButton, snapshot.isClientDriftEnabled() ? "On" : "Off", true, driftButton.contains(mouseX, mouseY));
+        drawWrapped(graphics, font, "Each player gets private corruption patterns from the same shared seed.", driftArea.x(), driftButton.y() + 22, driftArea.width(), 2, 0xFF9AA8AD);
+
         Rect status = funStatusArea(layout, screenWidth, screenHeight);
         String interval = intervalLabel(pendingAutoIntervalTicks).toLowerCase();
-        String text = pendingAutoIntervalTicks <= 0
+        String autoText = pendingAutoIntervalTicks <= 0
                 ? "Auto increase is disabled."
                 : "Every " + interval + ", server changes corruption by " + signedPercentLabel(pendingAutoAmount) + ".";
+        String seedText = pendingSeedRandomizerIntervalTicks <= 0
+                ? "Seed Shuffle is disabled."
+                : "Seed Shuffle changes the shared seed every " + intervalLabel(pendingSeedRandomizerIntervalTicks).toLowerCase() + ".";
+        String driftText = snapshot.isClientDriftEnabled()
+                ? "Client Drift is on, so players intentionally diverge."
+                : "Client Drift is off; shared seed stays deterministic where inputs match.";
         Rect cancel = globalCancelButtonBounds(layout, Page.FUN, screenWidth, screenHeight);
         int statusWidth = Math.max(40, cancel.x() - status.x() - 8);
-        drawWrapped(graphics, font, text, status.x(), status.y(), statusWidth, 2, 0xFFC8D4D8);
-        drawWrapped(graphics, font, "Settings are server-owned and broadcast to connected players.", status.x(), status.y() + 22, status.width(), 2, 0xFF9AA8AD);
+        drawWrapped(graphics, font, autoText + " " + seedText, status.x(), status.y(), statusWidth, 2, 0xFFC8D4D8);
+        drawWrapped(graphics, font, driftText, status.x(), status.y() + 22, statusWidth, 2, 0xFF9AA8AD);
         renderDraftActions(graphics, font, layout, Page.FUN, draftDirty, mouseX, mouseY, screenWidth, screenHeight);
     }
 
@@ -672,21 +709,65 @@ public final class CorruptionOverlayPanel {
     }
 
     private static Rect funIntervalArea(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
-        Rect panel = panelBounds(layout, screenWidth, screenHeight);
-        return new Rect(panel.x() + 12, panel.y() + 60, panel.width() - 24, 64);
+        Rect content = funContentArea(layout, screenWidth, screenHeight);
+        if (content.width() < 260) {
+            return new Rect(content.x(), content.y(), content.width(), 64);
+        }
+        Rect column = funColumn(content, 0);
+        return new Rect(column.x(), column.y(), column.width(), 64);
     }
 
     private static Rect funAmountArea(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
-        Rect panel = panelBounds(layout, screenWidth, screenHeight);
-        return new Rect(panel.x() + 12, panel.y() + 138, panel.width() - 24, 64);
+        Rect content = funContentArea(layout, screenWidth, screenHeight);
+        if (content.width() < 260) {
+            return new Rect(content.x(), content.y() + 78, content.width(), 64);
+        }
+        Rect column = funColumn(content, 0);
+        return new Rect(column.x(), column.y() + 78, column.width(), 64);
+    }
+
+    private static Rect funSeedRandomizerArea(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect content = funContentArea(layout, screenWidth, screenHeight);
+        if (content.width() < 260) {
+            return new Rect(content.x(), content.y() + 156, content.width(), 64);
+        }
+        Rect column = funColumn(content, 1);
+        return new Rect(column.x(), column.y(), column.width(), 64);
+    }
+
+    private static Rect funClientDriftArea(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect content = funContentArea(layout, screenWidth, screenHeight);
+        if (content.width() < 260) {
+            return new Rect(content.x(), content.y() + 234, content.width(), 64);
+        }
+        Rect column = funColumn(content, 1);
+        return new Rect(column.x(), column.y() + 78, column.width(), 64);
     }
 
     private static Rect funStatusArea(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
+        Rect content = funContentArea(layout, screenWidth, screenHeight);
+        Rect actions = globalCancelButtonBounds(layout, Page.FUN, screenWidth, screenHeight);
+        int top = content.y() + (content.width() < 260 ? 312 : 156);
+        int bottom = Math.min(content.y() + content.height(), actions.y() - 8);
+        return new Rect(content.x(), top, content.width(), Math.max(24, bottom - top));
+    }
+
+    private static Rect funContentArea(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {
         Rect panel = panelBounds(layout, screenWidth, screenHeight);
         Rect actions = globalCancelButtonBounds(layout, Page.FUN, screenWidth, screenHeight);
-        int top = panel.y() + 194;
+        int top = panel.y() + 60;
         int bottom = Math.min(panel.y() + panel.height() - 10, actions.y() - 8);
-        return new Rect(panel.x() + 12, top, panel.width() - 24, Math.max(32, bottom - top));
+        return new Rect(panel.x() + 12, top, panel.width() - 24, Math.max(120, bottom - top));
+    }
+
+    private static Rect funColumn(Rect content, int index) {
+        if (content.width() < 260) {
+            return content;
+        }
+        int gap = 12;
+        int width = Math.max(80, (content.width() - gap) / 2);
+        int x = index <= 0 ? content.x() : content.x() + width + gap;
+        return new Rect(x, content.y(), width, content.height());
     }
 
     private static Rect achievementsArea(CorruptionOverlayLayout layout, int screenWidth, int screenHeight) {

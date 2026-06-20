@@ -877,7 +877,9 @@ public final class CorruptionAchievementManager {
                                 long fixedSeed,
                                 int enabledTargetsMask,
                                 int autoIncreaseIntervalTicks,
-                                int autoIncreaseAmount) {
+                                int autoIncreaseAmount,
+                                boolean clientDriftEnabled,
+                                int seedRandomizerIntervalTicks) {
         private static RunSignature from(String worldKey, CorruptionProfileSnapshot snapshot) {
             return new RunSignature(
                     worldKey == null ? "" : worldKey,
@@ -886,7 +888,9 @@ public final class CorruptionAchievementManager {
                     snapshot.getFixedCorruptionSeed(),
                     snapshot.getEnabledTargetsMask(),
                     snapshot.getAutoIncreaseIntervalTicks(),
-                    snapshot.getAutoIncreaseAmount()
+                    snapshot.getAutoIncreaseAmount(),
+                    snapshot.isClientDriftEnabled(),
+                    snapshot.getSeedRandomizerIntervalTicks()
             );
         }
     }

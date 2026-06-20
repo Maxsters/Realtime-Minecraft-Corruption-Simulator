@@ -35,6 +35,9 @@ public class CorruptionSavedData extends SavedData {
     private int autoIncreaseIntervalTicks;
     private int autoIncreaseAmount = 1;
     private long lastAutoIncreaseGameTime;
+    private boolean clientDriftEnabled;
+    private int seedRandomizerIntervalTicks;
+    private long lastSeedRandomizerGameTime;
 
     public static CorruptionSavedData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(
@@ -85,6 +88,15 @@ public class CorruptionSavedData extends SavedData {
         if (tag.contains("last_auto_increase_game_time", Tag.TAG_LONG)) {
             data.lastAutoIncreaseGameTime = tag.getLong("last_auto_increase_game_time");
         }
+        if (tag.contains("client_drift_enabled", Tag.TAG_BYTE)) {
+            data.clientDriftEnabled = tag.getBoolean("client_drift_enabled");
+        }
+        if (tag.contains("seed_randomizer_interval_ticks", Tag.TAG_INT)) {
+            data.seedRandomizerIntervalTicks = clampIntervalTicks(tag.getInt("seed_randomizer_interval_ticks"));
+        }
+        if (tag.contains("last_seed_randomizer_game_time", Tag.TAG_LONG)) {
+            data.lastSeedRandomizerGameTime = tag.getLong("last_seed_randomizer_game_time");
+        }
         return data;
     }
 
@@ -108,6 +120,9 @@ public class CorruptionSavedData extends SavedData {
         tag.putInt("auto_increase_interval_ticks", autoIncreaseIntervalTicks);
         tag.putInt("auto_increase_amount", autoIncreaseAmount);
         tag.putLong("last_auto_increase_game_time", lastAutoIncreaseGameTime);
+        tag.putBoolean("client_drift_enabled", clientDriftEnabled);
+        tag.putInt("seed_randomizer_interval_ticks", seedRandomizerIntervalTicks);
+        tag.putLong("last_seed_randomizer_game_time", lastSeedRandomizerGameTime);
         return tag;
     }
 
@@ -247,6 +262,33 @@ public class CorruptionSavedData extends SavedData {
 
     public void setLastAutoIncreaseGameTime(long lastAutoIncreaseGameTime) {
         this.lastAutoIncreaseGameTime = Math.max(0L, lastAutoIncreaseGameTime);
+        setDirty();
+    }
+
+    public boolean isClientDriftEnabled() {
+        return clientDriftEnabled;
+    }
+
+    public void setClientDriftEnabled(boolean clientDriftEnabled) {
+        this.clientDriftEnabled = clientDriftEnabled;
+        setDirty();
+    }
+
+    public int getSeedRandomizerIntervalTicks() {
+        return seedRandomizerIntervalTicks;
+    }
+
+    public void setSeedRandomizerIntervalTicks(int seedRandomizerIntervalTicks) {
+        this.seedRandomizerIntervalTicks = clampIntervalTicks(seedRandomizerIntervalTicks);
+        setDirty();
+    }
+
+    public long getLastSeedRandomizerGameTime() {
+        return lastSeedRandomizerGameTime;
+    }
+
+    public void setLastSeedRandomizerGameTime(long lastSeedRandomizerGameTime) {
+        this.lastSeedRandomizerGameTime = Math.max(0L, lastSeedRandomizerGameTime);
         setDirty();
     }
 

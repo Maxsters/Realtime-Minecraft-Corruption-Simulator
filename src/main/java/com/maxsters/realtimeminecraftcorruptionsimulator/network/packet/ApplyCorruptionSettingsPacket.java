@@ -19,18 +19,26 @@ public final class ApplyCorruptionSettingsPacket {
     private final int enabledTargetsMask;
     private final int autoIncreaseIntervalTicks;
     private final int autoIncreaseAmount;
+    private final boolean clientDriftEnabled;
+    private final int seedRandomizerIntervalTicks;
 
     public ApplyCorruptionSettingsPacket(int requestedLevel, long seed, String seedLabel, int enabledTargetsMask) {
-        this(requestedLevel, seed, seedLabel, enabledTargetsMask, GlobalCorruptionSettings.autoIncreaseIntervalTicks(), GlobalCorruptionSettings.autoIncreaseAmount());
+        this(requestedLevel, seed, seedLabel, enabledTargetsMask, GlobalCorruptionSettings.autoIncreaseIntervalTicks(), GlobalCorruptionSettings.autoIncreaseAmount(), GlobalCorruptionSettings.clientDriftEnabled(), GlobalCorruptionSettings.seedRandomizerIntervalTicks());
     }
 
     public ApplyCorruptionSettingsPacket(int requestedLevel, long seed, String seedLabel, int enabledTargetsMask, int autoIncreaseIntervalTicks, int autoIncreaseAmount) {
+        this(requestedLevel, seed, seedLabel, enabledTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount, GlobalCorruptionSettings.clientDriftEnabled(), GlobalCorruptionSettings.seedRandomizerIntervalTicks());
+    }
+
+    public ApplyCorruptionSettingsPacket(int requestedLevel, long seed, String seedLabel, int enabledTargetsMask, int autoIncreaseIntervalTicks, int autoIncreaseAmount, boolean clientDriftEnabled, int seedRandomizerIntervalTicks) {
         this.requestedLevel = Math.max(0, Math.min(100, requestedLevel));
         this.seed = seed;
         this.seedLabel = CorruptionSavedData.sanitizeSeedLabel(seedLabel, seed);
         this.enabledTargetsMask = CorruptionTarget.normalizeMask(enabledTargetsMask);
         this.autoIncreaseIntervalTicks = clampIntervalTicks(autoIncreaseIntervalTicks);
         this.autoIncreaseAmount = clampAutoAmount(autoIncreaseAmount);
+        this.clientDriftEnabled = clientDriftEnabled;
+        this.seedRandomizerIntervalTicks = clampIntervalTicks(seedRandomizerIntervalTicks);
     }
 
     public void encode(FriendlyByteBuf buffer) {
@@ -40,10 +48,12 @@ public final class ApplyCorruptionSettingsPacket {
         buffer.writeVarInt(enabledTargetsMask);
         buffer.writeVarInt(autoIncreaseIntervalTicks);
         buffer.writeVarInt(autoIncreaseAmount);
+        buffer.writeBoolean(clientDriftEnabled);
+        buffer.writeVarInt(seedRandomizerIntervalTicks);
     }
 
     public static ApplyCorruptionSettingsPacket decode(FriendlyByteBuf buffer) {
-        return new ApplyCorruptionSettingsPacket(buffer.readVarInt(), buffer.readLong(), buffer.readUtf(96), buffer.readVarInt(), buffer.readVarInt(), buffer.readVarInt());
+        return new ApplyCorruptionSettingsPacket(buffer.readVarInt(), buffer.readLong(), buffer.readUtf(96), buffer.readVarInt(), buffer.readVarInt(), buffer.readVarInt(), buffer.readBoolean(), buffer.readVarInt());
     }
 
     public static void handle(ApplyCorruptionSettingsPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
@@ -57,7 +67,7 @@ public final class ApplyCorruptionSettingsPacket {
                         CorruptionSavedData.seedLabel(packet.seed),
                         packet.enabledTargetsMask
                 );
-                GlobalCorruptionSettings.apply(packet.requestedLevel, packet.seed, packet.seedLabel, packet.enabledTargetsMask, packet.autoIncreaseIntervalTicks, packet.autoIncreaseAmount);
+                GlobalCorruptionSettings.apply(packet.requestedLevel, packet.seed, packet.seedLabel, packet.enabledTargetsMask, packet.autoIncreaseIntervalTicks, packet.autoIncreaseAmount, packet.clientDriftEnabled, packet.seedRandomizerIntervalTicks);
                 CorruptionMechanicsManager.onGlobalSettingsApplied(sender.getServer());
                 ModNetwork.broadcastState(sender.getServer());
                 RealtimeMinecraftCorruptionSimulator.LOGGER.info("Corruption settings applied and synchronized");

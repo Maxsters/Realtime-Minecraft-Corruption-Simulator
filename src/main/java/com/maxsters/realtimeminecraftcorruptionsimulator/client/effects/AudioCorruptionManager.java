@@ -69,7 +69,7 @@ public final class AudioCorruptionManager {
     public static void onSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
         if (previous == null || current == null
                 || previous.getCorruptionLevel() != current.getCorruptionLevel()
-                || previous.getFixedCorruptionSeed() != current.getFixedCorruptionSeed()
+                || previous.getEffectiveCorruptionSeed() != current.getEffectiveCorruptionSeed()
                 || previous.getEnabledTargetsMask() != current.getEnabledTargetsMask()) {
             SoundManager soundManager = Minecraft.getInstance().getSoundManager();
             SoundEngine engine = soundEngine(soundManager);
