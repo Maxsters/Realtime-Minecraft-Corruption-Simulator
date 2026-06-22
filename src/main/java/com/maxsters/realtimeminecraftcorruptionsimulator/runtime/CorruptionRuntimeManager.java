@@ -15,6 +15,10 @@ public final class CorruptionRuntimeManager {
     public static boolean copyGlobalSettingsToData(CorruptionSavedData data) {
         int activeLevel = GlobalCorruptionSettings.activeLevel();
         boolean changed = false;
+        if (!data.isInitialized()) {
+            data.markInitialized();
+            changed = true;
+        }
         if (data.getFixedCorruptionSeed() != GlobalCorruptionSettings.seed()
                 || !data.getCorruptionSeedLabel().equals(GlobalCorruptionSettings.seedLabel())) {
             data.setCorruptionSeed(GlobalCorruptionSettings.seed(), GlobalCorruptionSettings.seedLabel());
@@ -50,6 +54,9 @@ public final class CorruptionRuntimeManager {
     public static boolean applySavedDataToGlobalSettings(CorruptionSavedData data) {
         if (data == null) {
             return false;
+        }
+        if (!data.isInitialized()) {
+            return copyGlobalSettingsToData(data);
         }
         int activeLevel = GlobalCorruptionSettings.activeLevel();
         long seed = GlobalCorruptionSettings.seed();

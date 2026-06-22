@@ -5,6 +5,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffec
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionMutation;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionOperation;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
+import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionTarget;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
 import com.mojang.blaze3d.audio.OggAudioStream;
@@ -67,13 +68,19 @@ public final class AudioCorruptionManager {
     }
 
     public static void onSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
-        if (previous == null || current == null
-                || previous.getCorruptionLevel() != current.getCorruptionLevel()
-                || previous.getEffectiveCorruptionSeed() != current.getEffectiveCorruptionSeed()
-                || previous.getEnabledTargetsMask() != current.getEnabledTargetsMask()) {
-            SoundManager soundManager = Minecraft.getInstance().getSoundManager();
-            SoundEngine engine = soundEngine(soundManager);
-            installMutatingSoundBuffers(engine);
+        SoundManager soundManager = Minecraft.getInstance().getSoundManager();
+        SoundEngine engine = soundEngine(soundManager);
+        MutatingSoundBufferLibrary library = installMutatingSoundBuffers(engine);
+        if (library == null) {
+            library = mutatingSoundBufferLibrary(engine);
+        }
+        if (!audioRefreshSignature(previous).equals(audioRefreshSignature(current))) {
+            if (audioPlaybackAffected(previous) || audioPlaybackAffected(current)) {
+                stopPlayingSounds(soundManager);
+            }
+            if (library != null) {
+                library.clearCorruptedCache();
+            }
         }
     }
 
@@ -94,9 +101,9 @@ public final class AudioCorruptionManager {
         event.setSound(wrap(sound));
     }
 
-    private static void installMutatingSoundBuffers(SoundEngine engine) {
+    private static MutatingSoundBufferLibrary installMutatingSoundBuffers(SoundEngine engine) {
         if (engine == null) {
-            return;
+            return null;
         }
 
         Field soundBuffersField = soundEngineSoundBuffersField;
@@ -105,20 +112,74 @@ public final class AudioCorruptionManager {
             soundEngineSoundBuffersField = soundBuffersField;
         }
         if (soundBuffersField == null) {
-            return;
+            return null;
         }
 
         try {
             Object value = soundBuffersField.get(engine);
-            if (!(value instanceof SoundBufferLibrary original) || value instanceof MutatingSoundBufferLibrary) {
-                return;
+            if (value instanceof MutatingSoundBufferLibrary mutating) {
+                return mutating;
+            }
+            if (!(value instanceof SoundBufferLibrary original)) {
+                return null;
             }
             ResourceProvider resources = resourceProvider(original);
             if (resources == null) {
-                return;
+                return null;
             }
-            soundBuffersField.set(engine, new MutatingSoundBufferLibrary(resources));
+            MutatingSoundBufferLibrary mutating = new MutatingSoundBufferLibrary(resources);
+            soundBuffersField.set(engine, mutating);
+            return mutating;
         } catch (IllegalAccessException ignored) {
+            return null;
+        }
+    }
+
+    private static MutatingSoundBufferLibrary mutatingSoundBufferLibrary(SoundEngine engine) {
+        if (engine == null) {
+            return null;
+        }
+        Field soundBuffersField = soundEngineSoundBuffersField;
+        if (soundBuffersField == null) {
+            soundBuffersField = findField(SoundEngine.class, "soundBuffers", "f_120222_");
+            soundEngineSoundBuffersField = soundBuffersField;
+        }
+        if (soundBuffersField == null) {
+            return null;
+        }
+        try {
+            Object value = soundBuffersField.get(engine);
+            return value instanceof MutatingSoundBufferLibrary library ? library : null;
+        } catch (IllegalAccessException ignored) {
+            return null;
+        }
+    }
+
+    private static String audioRefreshSignature(CorruptionProfileSnapshot snapshot) {
+        if (snapshot == null) {
+            return "missing";
+        }
+        boolean audioEnabled = snapshot.isTargetEnabled(CorruptionTarget.AUDIO);
+        return audioEnabled
+                + ":" + snapshot.getCorruptionLevel()
+                + ":" + snapshot.getPreviousCorruptionLevel()
+                + ":" + snapshot.getCorruptionDelta()
+                + ":" + snapshot.getStabilityDebt()
+                + ":" + snapshot.getProfileCoherence()
+                + ":" + snapshot.getEffectiveCorruptionSeed();
+    }
+
+    private static boolean audioPlaybackAffected(CorruptionProfileSnapshot snapshot) {
+        return snapshot != null && snapshot.getCorruptionLevel() > 0 && snapshot.isTargetEnabled(CorruptionTarget.AUDIO);
+    }
+
+    private static void stopPlayingSounds(SoundManager soundManager) {
+        if (soundManager == null) {
+            return;
+        }
+        try {
+            soundManager.stop();
+        } catch (RuntimeException ignored) {
         }
     }
 
@@ -163,7 +224,7 @@ public final class AudioCorruptionManager {
         if (stream == null || stream instanceof MutatedPcmAudioStream || !shouldCorruptAudio(stack, targetId)) {
             return stream;
         }
-        return new MutatedPcmAudioStream(stream, targetId, stack);
+        return new MutatedPcmAudioStream(stream, targetId);
     }
 
     private static ByteBuffer mutateDecodedPcm(ByteBuffer source, AudioFormat format, String targetId, CorruptionEffectStack stack, long firstFrame) {
@@ -605,8 +666,13 @@ public final class AudioCorruptionManager {
 
         @Override
         public void clear() {
-            corruptedCache.values().forEach(future -> future.thenAccept(SoundBuffer::discardAlBuffer));
+            clearCorruptedCache();
+        }
+
+        private void clearCorruptedCache() {
+            List<CompletableFuture<SoundBuffer>> staleBuffers = List.copyOf(corruptedCache.values());
             corruptedCache.clear();
+            staleBuffers.forEach(future -> future.thenAccept(SoundBuffer::discardAlBuffer));
         }
 
         @Override
@@ -623,13 +689,11 @@ public final class AudioCorruptionManager {
     private static final class MutatedPcmAudioStream implements AudioStream {
         private final AudioStream delegate;
         private final String targetId;
-        private final CorruptionEffectStack stack;
         private long frameCursor;
 
-        private MutatedPcmAudioStream(AudioStream delegate, String targetId, CorruptionEffectStack stack) {
+        private MutatedPcmAudioStream(AudioStream delegate, String targetId) {
             this.delegate = delegate;
             this.targetId = targetId;
-            this.stack = stack;
         }
 
         @Override
@@ -642,6 +706,7 @@ public final class AudioCorruptionManager {
             ByteBuffer decoded = delegate.read(bytes);
             AudioFormat format = getFormat();
             long firstFrame = frameCursor;
+            CorruptionEffectStack stack = ClientCorruptionEffects.current();
             ByteBuffer mutated = mutateDecodedPcm(decoded, format, targetId, stack, firstFrame);
             int frameSize = format == null || format.getFrameSize() <= 0 ? 2 : format.getFrameSize();
             frameCursor += Math.max(0, mutated.remaining() / frameSize);

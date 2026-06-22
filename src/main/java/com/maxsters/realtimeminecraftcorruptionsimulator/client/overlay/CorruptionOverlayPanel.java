@@ -1,6 +1,5 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client.overlay;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.calibration.StabilityDebtCalculator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.CorruptionAchievementManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.logs.CorruptionLogManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionTarget;
@@ -34,6 +33,7 @@ public final class CorruptionOverlayPanel {
     private static final int TOGGLE_ROW_HEIGHT = 28;
     private static final int WARNING_HEIGHT = 28;
     private static final int WARNING_GAP = 8;
+    private static final int HIGH_LEVEL_WARNING_THRESHOLD = 50;
     private static final int RESIZE_HANDLE_SIZE = 10;
     private static final int ACHIEVEMENT_ROW_HEIGHT = 34;
     private static final int ACHIEVEMENT_ROW_GAP = 3;
@@ -394,12 +394,11 @@ public final class CorruptionOverlayPanel {
         int handleX = slider.x() + slider.width() * pendingLevel / 100;
         graphics.fill(handleX - 3, slider.y(), handleX + 4, slider.y() + 12, slider.contains(mouseX, mouseY) ? 0xFFEAF4F7 : 0xFFB8C8CD);
 
-        int calibratedRange = StabilityDebtCalculator.getCalibratedRange(snapshot.getCalibrationConfidence());
-        if (delta > calibratedRange) {
+        if (shouldShowHighLevelWarning(pendingLevel)) {
             int warningY = slider.y() + 38;
             graphics.fill(slider.x(), warningY, slider.x() + slider.width(), warningY + WARNING_HEIGHT, 0xCC2B2417);
-            drawClipped(graphics, font, "Large value changes can cause lag spikes.", slider.x() + 5, warningY + 5, slider.width() - 10, 0xFFFFD58A);
-            drawClipped(graphics, font, "Texture, model, sound, and chunk state may rebuild.", slider.x() + 5, warningY + 16, slider.width() - 10, 0xFFE7D5B0);
+            drawClipped(graphics, font, "Higher corruption levels can cause lag spikes.", slider.x() + 5, warningY + 5, slider.width() - 10, 0xFFFFD58A);
+            drawClipped(graphics, font, "Texture, model, sound, and chunk work scales up.", slider.x() + 5, warningY + 16, slider.width() - 10, 0xFFE7D5B0);
         }
     }
 
@@ -686,11 +685,14 @@ public final class CorruptionOverlayPanel {
     private static Rect statusArea(CorruptionOverlayLayout layout, CorruptionProfileSnapshot snapshot, int pendingLevel, int screenWidth, int screenHeight) {
         Rect panel = panelBounds(layout, screenWidth, screenHeight);
         Rect actions = globalCancelButtonBounds(layout, Page.CONTROL, screenWidth, screenHeight);
-        int delta = Math.abs(pendingLevel - snapshot.getCorruptionLevel());
-        int warningOffset = delta > StabilityDebtCalculator.getCalibratedRange(snapshot.getCalibrationConfidence()) ? WARNING_HEIGHT + WARNING_GAP : 0;
+        int warningOffset = shouldShowHighLevelWarning(pendingLevel) ? WARNING_HEIGHT + WARNING_GAP : 0;
         int top = panel.y() + 142 + warningOffset;
         int bottom = Math.min(panel.y() + panel.height() - 10, actions.y() - 8);
         return new Rect(panel.x() + 12, top, panel.width() - 24, Math.max(30, bottom - top));
+    }
+
+    private static boolean shouldShowHighLevelWarning(int pendingLevel) {
+        return pendingLevel >= HIGH_LEVEL_WARNING_THRESHOLD;
     }
 
     private static TextureAtlasSprite achievementIconSprite(CorruptionAchievementManager.Achievement achievement) {

@@ -60,15 +60,16 @@ public final class CorruptionAchievementManager {
     private static final int AUTO_NIGHTMARE_INTERVAL_TICKS = seconds(30);
     private static final int AUTO_NIGHTMARE_TOLERANCE_TICKS = seconds(2);
     private static final int CHEAT_DISQUALIFICATION_GRACE_TICKS = seconds(3);
+    private static final int WARRANTY_INITIALIZATION_GRACE_TICKS = seconds(3);
     private static final int WARRANTY_VOIDED_CORRUPTION_LEVEL = 10;
-    private static final int SKYHOOK_REQUIRED_BLOCKS = 500;
+    private static final int SKYHOOK_REQUIRED_BLOCKS = 300;
     private static final int DIAMOND_REQUIRED_BLOCKS = 7;
     private static final float DRAGON_FULL_HEALTH_EPSILON = 0.5F;
 
     private static final Achievement[] ACHIEVEMENTS = new Achievement[]{
             new Achievement("still_play", "I Can Still Play This", "Survive 10m at 100% corruption with all targets enabled.", Blocks.OBSIDIAN, minutes(10)),
             new Achievement("dragon_ten", "Warranty Voided", "Create the world at exactly 10% corruption with all targets enabled, never change it, then defeat the Ender Dragon.", Blocks.DRAGON_EGG, 1),
-            new Achievement("skyhook", "Skyhook", "Gain 500 vertical blocks in 5s at 35%+ corruption with Mobility enabled.", Blocks.SLIME_BLOCK, SKYHOOK_REQUIRED_BLOCKS),
+            new Achievement("skyhook", "Skyhook", "Gain 300 vertical blocks in 5s at 35%+ corruption with Entities & timing enabled.", Blocks.SLIME_BLOCK, SKYHOOK_REQUIRED_BLOCKS),
             new Achievement("nightmare", "It Was Just a Nightmare", "Start at 100% corruption with all targets and auto -1% every 30s; never die before 0%.", Blocks.CRYING_OBSIDIAN, 100),
             new Achievement("diamond_blessing", "A Blessing in Disguise", "Mine 7 diamond ore blocks at 10%+ corruption with all targets enabled.", Blocks.DIAMOND_ORE, DIAMOND_REQUIRED_BLOCKS),
             new Achievement("stable_release", "Stable Release", "Play 90m at 0% corruption with auto off and every target disabled.", Blocks.EMERALD_BLOCK, minutes(90))
@@ -352,6 +353,8 @@ public final class CorruptionAchievementManager {
         if (!WARRANTY_STARTED_WORLD_KEYS.contains(worldKey)) {
             if (exactWarrantySettings) {
                 changed = WARRANTY_STARTED_WORLD_KEYS.add(worldKey);
+            } else if (activeWorldTicks < WARRANTY_INITIALIZATION_GRACE_TICKS) {
+                return;
             } else {
                 changed = WARRANTY_DISQUALIFIED_WORLD_KEYS.add(worldKey);
             }
@@ -370,7 +373,7 @@ public final class CorruptionAchievementManager {
         }
         if (!eligibleSurvival(minecraft)
                 || snapshot.getCorruptionLevel() < 35
-                || !enabled(snapshot, CorruptionTarget.MOBILITY)) {
+                || !enabled(snapshot, CorruptionTarget.ENTITY_BEHAVIOR)) {
             VERTICAL_SAMPLES.clear();
             skyhookProgressBlocks = 0.0D;
             setProgress(SKYHOOK, 0);

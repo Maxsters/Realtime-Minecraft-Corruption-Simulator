@@ -2,6 +2,7 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.effects;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
+import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraftforge.api.distmarker.Dist;
@@ -30,6 +31,9 @@ public final class GuiEscapeSafetyManager {
             return;
         }
         if (ClientCorruptionProtection.isSaveCriticalScreen(screen)) {
+            return;
+        }
+        if (!ClientCorruptionEffects.current().activeOrExtreme(CorruptionSurface.GUI_SURFACE)) {
             return;
         }
 

@@ -38,6 +38,7 @@ public class CorruptionSavedData extends SavedData {
     private boolean clientDriftEnabled;
     private int seedRandomizerIntervalTicks;
     private long lastSeedRandomizerGameTime;
+    private boolean initialized;
 
     public static CorruptionSavedData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(
@@ -49,6 +50,7 @@ public class CorruptionSavedData extends SavedData {
 
     public static CorruptionSavedData load(CompoundTag tag) {
         CorruptionSavedData data = new CorruptionSavedData();
+        data.initialized = true;
         data.corruptionLevel = clampPercent(tag.getInt("corruption_level"));
         data.previousCorruptionLevel = clampPercent(tag.getInt("previous_corruption_level"));
         data.corruptionDelta = clampPercent(tag.getInt("corruption_delta"));
@@ -123,6 +125,7 @@ public class CorruptionSavedData extends SavedData {
         tag.putBoolean("client_drift_enabled", clientDriftEnabled);
         tag.putInt("seed_randomizer_interval_ticks", seedRandomizerIntervalTicks);
         tag.putLong("last_seed_randomizer_game_time", lastSeedRandomizerGameTime);
+        tag.putBoolean("initialized", true);
         return tag;
     }
 
@@ -290,6 +293,17 @@ public class CorruptionSavedData extends SavedData {
     public void setLastSeedRandomizerGameTime(long lastSeedRandomizerGameTime) {
         this.lastSeedRandomizerGameTime = Math.max(0L, lastSeedRandomizerGameTime);
         setDirty();
+    }
+
+    public boolean isInitialized() {
+        return initialized;
+    }
+
+    public void markInitialized() {
+        if (!initialized) {
+            initialized = true;
+            setDirty();
+        }
     }
 
     private static String normalizeProfile(String activeProfile) {

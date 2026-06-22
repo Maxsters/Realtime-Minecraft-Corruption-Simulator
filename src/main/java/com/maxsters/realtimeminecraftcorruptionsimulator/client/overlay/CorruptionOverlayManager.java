@@ -50,7 +50,9 @@ public final class CorruptionOverlayManager {
     private static final long RESET_CLICK_WINDOW_MS = 1500L;
 
     private static KeyMapping overlayKey;
+    private static KeyMapping quickToggleKey;
     private static CorruptionProfileSnapshot latestSnapshot = ClientCorruptionState.localSnapshot();
+    private static QuickToggleSnapshot quickToggleRestore;
     private static String currentWorldKey = "";
     private static boolean requestedThisWorld;
     private static boolean autoOpenedThisWorld;
@@ -98,6 +100,13 @@ public final class CorruptionOverlayManager {
                 "key.categories.realtime_minecraft_corruption_simulator"
         );
         event.register(overlayKey);
+        quickToggleKey = new KeyMapping(
+                "key.realtime_minecraft_corruption_simulator.toggle_all",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_K,
+                "key.categories.realtime_minecraft_corruption_simulator"
+        );
+        event.register(quickToggleKey);
     }
 
     public static void applySnapshot(CorruptionProfileSnapshot snapshot) {
@@ -197,12 +206,16 @@ public final class CorruptionOverlayManager {
             event.setCanceled(true);
             return;
         }
-        if (overlayKey == null) {
-            return;
+        if (quickToggleKey != null) {
+            while (quickToggleKey.consumeClick()) {
+                toggleAllCorruption();
+            }
         }
-        while (overlayKey.consumeClick()) {
-            interactionMode = true;
-            releaseMouseForOverlay();
+        if (overlayKey != null) {
+            while (overlayKey.consumeClick()) {
+                interactionMode = true;
+                releaseMouseForOverlay();
+            }
         }
     }
 
@@ -876,6 +889,42 @@ public final class CorruptionOverlayManager {
         applyCurrentSettings(pendingLevel, draftSeed, draftSeedLabel, draftTargetsMask, draftAutoIntervalTicks, draftAutoAmount, draftClientDriftEnabled, draftSeedRandomizerIntervalTicks);
     }
 
+    private static void toggleAllCorruption() {
+        CorruptionProfileSnapshot snapshot = latestSnapshot == null ? ClientCorruptionState.snapshot() : latestSnapshot;
+        if (snapshot == null) {
+            snapshot = ClientCorruptionState.localSnapshot();
+        }
+
+        if (quickToggleRestore != null && snapshot.getCorruptionLevel() == 0) {
+            quickToggleRestore.apply();
+            quickToggleRestore = null;
+            return;
+        }
+
+        if (isQuickToggleOff(snapshot)) {
+            return;
+        }
+
+        quickToggleRestore = QuickToggleSnapshot.from(snapshot);
+        applyCurrentSettings(
+                0,
+                snapshot.getFixedCorruptionSeed(),
+                snapshot.getCorruptionSeedLabel(),
+                0,
+                0,
+                snapshot.getAutoIncreaseAmount(),
+                snapshot.isClientDriftEnabled(),
+                0
+        );
+    }
+
+    private static boolean isQuickToggleOff(CorruptionProfileSnapshot snapshot) {
+        return snapshot.getCorruptionLevel() == 0
+                && snapshot.getEnabledTargetsMask() == 0
+                && snapshot.getAutoIncreaseIntervalTicks() == 0
+                && snapshot.getSeedRandomizerIntervalTicks() == 0;
+    }
+
     private static void cancelDraftSettings() {
         seedEditing = false;
         funEditField = FunEditField.NONE;
@@ -1488,6 +1537,7 @@ public final class CorruptionOverlayManager {
         requestedThisWorld = false;
         autoOpenedThisWorld = false;
         interactionMode = false;
+        quickToggleRestore = null;
         seedEditing = false;
         funEditField = FunEditField.NONE;
         ClientCorruptionState.reset();
@@ -1534,5 +1584,33 @@ public final class CorruptionOverlayManager {
         INTERVAL,
         AMOUNT,
         SEED_RANDOMIZER
+    }
+
+    private record QuickToggleSnapshot(
+            int level,
+            long seed,
+            String seedLabel,
+            int enabledTargetsMask,
+            int autoIncreaseIntervalTicks,
+            int autoIncreaseAmount,
+            boolean clientDriftEnabled,
+            int seedRandomizerIntervalTicks
+    ) {
+        private static QuickToggleSnapshot from(CorruptionProfileSnapshot snapshot) {
+            return new QuickToggleSnapshot(
+                    snapshot.getCorruptionLevel(),
+                    snapshot.getFixedCorruptionSeed(),
+                    snapshot.getCorruptionSeedLabel(),
+                    snapshot.getEnabledTargetsMask(),
+                    snapshot.getAutoIncreaseIntervalTicks(),
+                    snapshot.getAutoIncreaseAmount(),
+                    snapshot.isClientDriftEnabled(),
+                    snapshot.getSeedRandomizerIntervalTicks()
+            );
+        }
+
+        private void apply() {
+            applyCurrentSettings(level, seed, seedLabel, enabledTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount, clientDriftEnabled, seedRandomizerIntervalTicks);
+        }
     }
 }

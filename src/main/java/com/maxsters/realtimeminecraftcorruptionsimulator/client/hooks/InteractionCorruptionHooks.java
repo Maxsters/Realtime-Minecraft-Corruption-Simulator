@@ -35,6 +35,14 @@ public final class InteractionCorruptionHooks {
 
         Player player = minecraft.player;
         HitResult hitResult = minecraft.hitResult;
+        if (hitResult instanceof BlockHitResult && blockTargetingBroken(minecraft, stack)) {
+            missCurrentTarget(minecraft, player, hitResult, partialTick, stack, blockTargetId(minecraft), 0.0F);
+            return;
+        }
+        if (!(hitResult instanceof EntityHitResult)) {
+            return;
+        }
+
         String targetId = targetId(hitResult);
         float intensity = Mth.clamp(Math.max(
                 stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING),
@@ -49,9 +57,31 @@ public final class InteractionCorruptionHooks {
             return;
         }
 
+        missCurrentTarget(minecraft, player, hitResult, partialTick, stack, targetId, intensity);
+    }
+
+    private static boolean blockTargetingBroken(Minecraft minecraft, CorruptionEffectStack stack) {
+        String targetId = blockTargetId(minecraft);
+        float intensity = Mth.clamp(Math.max(
+                stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING),
+                stack.targetIntensity(CorruptionSurface.INTERACTION_ROUTING, targetId)
+        ), 0.0F, 1.0F);
+        if (intensity <= 0.0F) {
+            return false;
+        }
+        long seed = stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, targetId, 0x424C4F43);
+        float chance = stack.extreme(CorruptionSurface.INTERACTION_ROUTING)
+                ? 0.96F
+                : Mth.clamp(Math.max(0.0F, intensity - 0.18F) * 0.86F + stack.instability() * 0.12F, 0.0F, 0.88F);
+        return stack.unit(CorruptionSurface.INTERACTION_ROUTING, targetId + ":ray_function", (int) (seed ^ 0x524159)) < chance;
+    }
+
+    private static void missCurrentTarget(Minecraft minecraft, Player player, HitResult hitResult, float partialTick, CorruptionEffectStack stack, String targetId, float intensity) {
         Vec3 location = hitResult.getLocation();
         Vec3 view = player.getViewVector(partialTick);
         Direction direction = Direction.getNearest(view.x, view.y, view.z).getOpposite();
+        long clock = gameTime(minecraft) ^ Float.floatToIntBits(partialTick);
+        long seed = stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, targetId, player.getId() ^ (int) clock);
         if (unit(seed ^ 0x4F464653L) < intensity * 0.46F) {
             location = location.add(
                     signed(seed ^ 0x584F4646L, intensity * 0.28D),
@@ -61,6 +91,11 @@ public final class InteractionCorruptionHooks {
         }
         minecraft.hitResult = BlockHitResult.miss(location, direction, BlockPos.containing(location));
         minecraft.crosshairPickEntity = null;
+    }
+
+    private static String blockTargetId(Minecraft minecraft) {
+        String dimension = minecraft == null || minecraft.level == null ? "unknown" : minecraft.level.dimension().location().toString();
+        return "client_block_targeting:" + dimension;
     }
 
     private static String targetId(HitResult hitResult) {

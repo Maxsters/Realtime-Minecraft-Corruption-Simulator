@@ -194,24 +194,6 @@ public final class WorldgenCorruptionHooks {
         return rerouted.equals(origin) ? origin : rerouted;
     }
 
-    public static boolean fakeFeatureSuccess(Feature<?> feature, BlockPos origin) {
-        ResourceLocation featureId = ForgeRegistries.FEATURES.getKey(feature);
-        String target = featureId == null ? feature.getClass().getName() : featureId.toString();
-        long hash = mix(stableString(target) ^ origin.asLong() ^ 0x46414B4553554343L);
-        return unit(hash) < 0.38F;
-    }
-
-    public static boolean handleFeatureRerouteFailure(Feature<?> feature, BlockPos origin, BlockPos reroutedOrigin, RuntimeException exception) {
-        ResourceLocation featureId = ForgeRegistries.FEATURES.getKey(feature);
-        String target = featureId == null ? feature.getClass().getName() : featureId.toString();
-        long hash = mix(stableString(target)
-                ^ origin.asLong()
-                ^ reroutedOrigin.asLong() * 0x9E3779B97F4A7C15L
-                ^ exception.getClass().getName().hashCode()
-                ^ 0x464541545552464CL);
-        return unit(hash) < 0.18F;
-    }
-
     public static DensityFunction corruptDensity(String channel, DensityFunction function) {
         if (function == null || function instanceof CorruptedDensityFunction) {
             return function;

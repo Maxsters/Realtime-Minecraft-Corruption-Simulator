@@ -4,6 +4,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfile
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionSavedData;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -18,6 +19,9 @@ public final class CorruptionEffectStack {
     private final int profileCoherence;
     private final long fixedSeed;
     private final int enabledTargetsMask;
+    private final int layerCount;
+    private final float instability;
+    private final float[] intensityCache;
 
     private CorruptionEffectStack(int corruptionLevel, int previousCorruptionLevel, int corruptionDelta, int calibrationConfidence, int stabilityDebt, int profileCoherence, long fixedSeed, int enabledTargetsMask) {
         this.corruptionLevel = clampPercent(corruptionLevel);
@@ -28,6 +32,10 @@ public final class CorruptionEffectStack {
         this.profileCoherence = clampPercent(profileCoherence);
         this.fixedSeed = fixedSeed;
         this.enabledTargetsMask = CorruptionTarget.normalizeMask(enabledTargetsMask);
+        this.layerCount = computeLayerCount(this.corruptionLevel);
+        this.instability = computeInstability(this.calibrationConfidence, this.stabilityDebt, this.profileCoherence);
+        this.intensityCache = new float[CorruptionSurface.values().length];
+        Arrays.fill(this.intensityCache, Float.NaN);
     }
 
     public static CorruptionEffectStack from(CorruptionSavedData data) {
@@ -143,18 +151,11 @@ public final class CorruptionEffectStack {
     }
 
     public int layerCount() {
-        if (corruptionLevel <= 0) {
-            return 0;
-        }
-        float level = corruptionLevel / 100.0F;
-        return Math.max(1, Math.min(24, Math.round(1.0F + (float) Math.pow(level, 0.82F) * 23.0F)));
+        return layerCount;
     }
 
     public float instability() {
-        float confidenceLoss = (100 - calibrationConfidence) / 100.0F;
-        float coherenceLoss = (100 - profileCoherence) / 100.0F;
-        float debt = stabilityDebt / 100.0F;
-        return clamp01(confidenceLoss * 0.30F + coherenceLoss * 0.32F + debt * 0.38F);
+        return instability;
     }
 
     public boolean active(CorruptionSurface surface) {
@@ -169,17 +170,24 @@ public final class CorruptionEffectStack {
         if (corruptionLevel <= 0 || !surfaceEnabled(surface)) {
             return 0.0F;
         }
+        int index = surface.ordinal();
+        float cached = intensityCache[index];
+        if (!Float.isNaN(cached)) {
+            return cached;
+        }
 
         float level = corruptionLevel / 100.0F;
         float levelPressure = (float) Math.pow(level, 1.18F);
         float layerPressure = layerPressure(surface);
-        float disorder = instability();
+        float disorder = instability;
         float deltaPressure = smoothstep(clamp01(corruptionDelta / 70.0F)) * level;
         float coherenceDamping = 0.74F + profileCoherence / 100.0F * 0.26F;
         float raw = levelPressure * (0.64F + layerPressure * 0.46F) * coherenceDamping;
         raw += disorder * surface.instabilityBias() * (0.28F + level * 0.72F);
         raw += deltaPressure * surface.deltaBias() * 0.62F;
-        return clamp01(raw);
+        float intensity = clamp01(raw);
+        intensityCache[index] = intensity;
+        return intensity;
     }
 
     public float targetIntensity(CorruptionSurface surface, String targetId) {
@@ -192,11 +200,11 @@ public final class CorruptionEffectStack {
         }
 
         long hash = mix(surfaceSeed(surface, targetId, 0));
-        float gate = clamp01(0.08F + global * (0.46F + surface.targetBias()) + instability() * 0.24F + Math.min(0.18F, layerCount() * 0.006F));
+        float gate = clamp01(0.08F + global * (0.46F + surface.targetBias()) + instability * 0.24F + Math.min(0.18F, layerCount * 0.006F));
         if (unit(hash) > gate) {
             return 0.0F;
         }
-        return clamp01(global * (0.62F + unit(hash >>> 17) * 0.62F) + instability() * 0.12F);
+        return clamp01(global * (0.62F + unit(hash >>> 17) * 0.62F) + instability * 0.12F);
     }
 
     public List<CorruptionMutation> mutations(CorruptionSurface surface, String targetId, int limit) {
@@ -215,12 +223,12 @@ public final class CorruptionEffectStack {
             }
 
             long seed = mutationSeed(surface, targetId, layer, result.size());
-            float gate = clamp01(surface.affinity() * 0.72F + targetStrength * 0.34F + instability() * 0.20F);
+            float gate = clamp01(surface.affinity() * 0.72F + targetStrength * 0.34F + instability * 0.20F);
             if (unit(seed ^ 0x4D55544154494F4EL) > gate) {
                 continue;
             }
 
-            float strength = clamp01(targetStrength * (0.42F + progress * 0.48F + unit(seed >>> 11) * 0.22F) + instability() * 0.10F);
+            float strength = clamp01(targetStrength * (0.42F + progress * 0.48F + unit(seed >>> 11) * 0.22F) + instability * 0.10F);
             if (strength > ACTIVE_THRESHOLD) {
                 result.add(new CorruptionMutation(surface, surface.operationFor(seed), layer, strength, seed));
             }
@@ -268,7 +276,7 @@ public final class CorruptionEffectStack {
     }
 
     public boolean chance(CorruptionSurface surface, int salt, float maxChance) {
-        float chance = clamp01(maxChance * intensity(surface) + instability() * 0.08F);
+        float chance = clamp01(maxChance * intensity(surface) + instability * 0.08F);
         return unit(surface, salt) < chance;
     }
 
@@ -362,6 +370,21 @@ public final class CorruptionEffectStack {
     private static float smoothstep(float value) {
         float clamped = clamp01(value);
         return clamped * clamped * (3.0F - 2.0F * clamped);
+    }
+
+    private static int computeLayerCount(int corruptionLevel) {
+        if (corruptionLevel <= 0) {
+            return 0;
+        }
+        float level = corruptionLevel / 100.0F;
+        return Math.max(1, Math.min(24, Math.round(1.0F + (float) Math.pow(level, 0.82F) * 23.0F)));
+    }
+
+    private static float computeInstability(int calibrationConfidence, int stabilityDebt, int profileCoherence) {
+        float confidenceLoss = (100 - calibrationConfidence) / 100.0F;
+        float coherenceLoss = (100 - profileCoherence) / 100.0F;
+        float debt = stabilityDebt / 100.0F;
+        return clamp01(confidenceLoss * 0.30F + coherenceLoss * 0.32F + debt * 0.38F);
     }
 
     private static float unit(long value) {

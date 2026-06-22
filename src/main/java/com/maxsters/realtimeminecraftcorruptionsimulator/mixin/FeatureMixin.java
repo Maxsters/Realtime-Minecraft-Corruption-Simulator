@@ -38,7 +38,7 @@ public abstract class FeatureMixin<FC extends FeatureConfiguration> {
                 Feature<FC> typedFeature = (Feature<FC>) (Object) this;
                 callback.setReturnValue(typedFeature.place(config, level, chunkGenerator, random, reroutedOrigin));
             } catch (RuntimeException exception) {
-                callback.setReturnValue(WorldgenCorruptionHooks.handleFeatureRerouteFailure(feature, origin, reroutedOrigin, exception));
+                callback.setReturnValue(false);
             } finally {
                 WorldgenCorruptionHooks.endFeatureOriginReroute();
             }
@@ -46,7 +46,7 @@ public abstract class FeatureMixin<FC extends FeatureConfiguration> {
         }
 
         if (WorldgenCorruptionHooks.shouldSkipFeature(feature, level, origin)) {
-            callback.setReturnValue(WorldgenCorruptionHooks.fakeFeatureSuccess(feature, origin));
+            callback.setReturnValue(false);
         }
     }
 }

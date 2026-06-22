@@ -97,6 +97,11 @@ public final class ModNetwork {
             }
         } catch (RuntimeException ignored) {
         }
-        return server.getPlayerList().getPlayers().stream().anyMatch(player -> player.hasPermissions(2));
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (player.hasPermissions(2)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
