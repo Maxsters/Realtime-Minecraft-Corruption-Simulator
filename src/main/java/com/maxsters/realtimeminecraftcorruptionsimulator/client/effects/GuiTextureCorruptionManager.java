@@ -6,6 +6,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.overlay.Corrupti
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Renderable;
@@ -20,6 +21,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.lwjgl.glfw.GLFW;
 
+import java.lang.reflect.Field;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -28,10 +30,21 @@ import java.util.WeakHashMap;
 @Mod.EventBusSubscriber(modid = RealtimeMinecraftCorruptionSimulator.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class GuiTextureCorruptionManager {
     private static final WeakHashMap<AbstractWidget, WidgetSnapshot> ORIGINAL_WIDGETS = new WeakHashMap<>();
+    private static Field packedFgColorField;
+    private static boolean packedFgColorFieldChecked;
     private static long lastWidgetStateReportMs;
     private static long lastInputReportMs;
 
     private GuiTextureCorruptionManager() {
+    }
+
+    public static void onSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
+        CorruptionEffectStack previousStack = CorruptionEffectStack.from(previous);
+        CorruptionEffectStack currentStack = CorruptionEffectStack.from(current);
+        if (previousStack.activeOrExtreme(CorruptionSurface.GUI_SURFACE)
+                && !currentStack.activeOrExtreme(CorruptionSurface.GUI_SURFACE)) {
+            restoreCurrentScreenWidgets();
+        }
     }
 
     @SubscribeEvent
@@ -212,17 +225,32 @@ public final class GuiTextureCorruptionManager {
                     : CorruptionValueMutator.mutateColor(stack, CorruptionSurface.GUI_SURFACE, targetId + ":fg", original.fgColor(), 0x58, clock));
             changed = true;
         } else {
-            widget.setFGColor(original.fgColor());
+            original.restoreFgColor(widget);
         }
         widget.setMessage(original.message());
         return changed;
     }
 
+    private static void restoreCurrentScreenWidgets() {
+        Minecraft minecraft = Minecraft.getInstance();
+        Screen screen = minecraft == null ? null : minecraft.screen;
+        if (screen == null || ClientCorruptionProtection.isModScreen(screen) || ClientCorruptionProtection.isSaveCriticalScreen(screen)) {
+            return;
+        }
+        restoreWidgetState(screen, screen.children());
+    }
+
     private static void restoreWidgetState(Screen screen, Iterable<? extends GuiEventListener> listeners) {
+        boolean clearLifecycleColors = ClientCorruptionProtection.isLifecycleAccessScreen(screen);
         for (AbstractWidget widget : collectWidgets(screen, listeners)) {
             WidgetSnapshot original = ORIGINAL_WIDGETS.get(widget);
             if (original != null) {
                 original.restore(widget);
+            } else if (clearLifecycleColors) {
+                widget.clearFGColor();
+            }
+            if (clearLifecycleColors) {
+                widget.clearFGColor();
             }
         }
     }
@@ -280,9 +308,35 @@ public final class GuiTextureCorruptionManager {
         return red << 16 | green << 8 | blue;
     }
 
-    private record WidgetSnapshot(int x, int y, int width, boolean active, boolean visible, float alpha, int fgColor, Component message) {
+    private static int packedFgColor(AbstractWidget widget) {
+        Field field = packedFgColorField();
+        if (field == null) {
+            return AbstractWidget.UNSET_FG_COLOR;
+        }
+        try {
+            return field.getInt(widget);
+        } catch (IllegalAccessException | RuntimeException ignored) {
+            return AbstractWidget.UNSET_FG_COLOR;
+        }
+    }
+
+    private static Field packedFgColorField() {
+        if (packedFgColorFieldChecked) {
+            return packedFgColorField;
+        }
+        packedFgColorFieldChecked = true;
+        try {
+            packedFgColorField = AbstractWidget.class.getDeclaredField("packedFGColor");
+            packedFgColorField.setAccessible(true);
+        } catch (NoSuchFieldException | RuntimeException ignored) {
+            packedFgColorField = null;
+        }
+        return packedFgColorField;
+    }
+
+    private record WidgetSnapshot(int x, int y, int width, boolean active, boolean visible, float alpha, int fgColor, int packedFgColor, Component message) {
         private static WidgetSnapshot capture(AbstractWidget widget) {
-            return new WidgetSnapshot(widget.getX(), widget.getY(), widget.getWidth(), widget.active, widget.visible, 1.0F, widget.getFGColor(), widget.getMessage());
+            return new WidgetSnapshot(widget.getX(), widget.getY(), widget.getWidth(), widget.active, widget.visible, 1.0F, widget.getFGColor(), GuiTextureCorruptionManager.packedFgColor(widget), widget.getMessage());
         }
 
         private void restore(AbstractWidget widget) {
@@ -292,8 +346,16 @@ public final class GuiTextureCorruptionManager {
             widget.active = active;
             widget.visible = visible;
             widget.setAlpha(alpha);
-            widget.setFGColor(fgColor);
+            restoreFgColor(widget);
             widget.setMessage(message);
+        }
+
+        private void restoreFgColor(AbstractWidget widget) {
+            if (packedFgColor == AbstractWidget.UNSET_FG_COLOR) {
+                widget.clearFGColor();
+            } else {
+                widget.setFGColor(packedFgColor);
+            }
         }
     }
 

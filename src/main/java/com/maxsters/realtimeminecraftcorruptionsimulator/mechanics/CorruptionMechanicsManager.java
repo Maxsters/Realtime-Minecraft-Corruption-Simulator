@@ -72,9 +72,12 @@ import net.minecraftforge.registries.ForgeRegistries;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.WeakHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
@@ -111,12 +114,15 @@ public final class CorruptionMechanicsManager {
     private static final int MAX_PERSISTENT_TERRAIN_DEBT = 100;
     private static final int MAX_PERSISTENT_TERRAIN_DELTA = 100;
     private static final float MIN_PERSISTENT_TERRAIN_INTENSITY = 0.006F;
-    private static final float MIN_WORLD_PROCESS_INTENSITY = 0.006F;
-    private static final float MIN_PLAYER_MECHANICS_INTENSITY = 0.006F;
-    private static final float MIN_ENTITY_MECHANICS_INTENSITY = 0.006F;
-    private static final float MIN_SPAWN_MECHANICS_INTENSITY = 0.006F;
-    private static final float MIN_LIQUID_MECHANICS_INTENSITY = 0.006F;
-    private static final float MIN_DAY_TIME_INTENSITY = 0.006F;
+    private static final float MIN_RUNTIME_MECHANICS_INTENSITY = 0.00025F;
+    private static final float MIN_WORLD_PROCESS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
+    private static final float MIN_PLAYER_MECHANICS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
+    private static final float MIN_ENTITY_MECHANICS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
+    private static final float MIN_SPAWN_MECHANICS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
+    private static final float MIN_LIQUID_MECHANICS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
+    private static final float MIN_AIR_MECHANICS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
+    private static final float MIN_COLLISION_MECHANICS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
+    private static final float MIN_DAY_TIME_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
     private static final int MAX_CORRUPTED_NO_PHYSICS_TICKS = 24;
     private static volatile boolean serverMutationSuspended;
     private static volatile long serverMutationResumeTick;
@@ -128,6 +134,8 @@ public final class CorruptionMechanicsManager {
     private static final ThreadLocal<Integer> ENTITY_HITBOX_DIMENSION_BYPASS_DEPTH = ThreadLocal.withInitial(() -> 0);
     private static final ArrayDeque<TerrainMutationRequest> pendingTerrainMutations = new ArrayDeque<>();
     private static final Set<String> pendingTerrainMutationKeys = new HashSet<>();
+    private static final Map<LivingEntity, Integer> ENTITY_MECHANICS_SYNC_SIGNATURES = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<Entity, HitboxSignatureCache> ENTITY_HITBOX_SIGNATURE_CACHE = Collections.synchronizedMap(new WeakHashMap<>());
 
     private CorruptionMechanicsManager() {
     }
@@ -137,6 +145,7 @@ public final class CorruptionMechanicsManager {
         serverMutationSuspended = false;
         serverMutationResumeTick = 0L;
         clearServerStackCache();
+        clearEntityRuntimeCaches();
         resetTerrainMutationBudget();
         resetWorldProcessBudget();
         clearPendingTerrainMutations();
@@ -146,6 +155,7 @@ public final class CorruptionMechanicsManager {
     public static void onServerStopping(ServerStoppingEvent event) {
         serverMutationSuspended = true;
         clearServerStackCache();
+        clearEntityRuntimeCaches();
         clearPendingTerrainMutations();
     }
 
@@ -154,6 +164,7 @@ public final class CorruptionMechanicsManager {
         serverMutationSuspended = false;
         serverMutationResumeTick = 0L;
         clearServerStackCache();
+        clearEntityRuntimeCaches();
         resetTerrainMutationBudget();
         resetWorldProcessBudget();
         clearPendingTerrainMutations();
@@ -163,11 +174,12 @@ public final class CorruptionMechanicsManager {
         serverMutationSuspended = false;
         if (server != null) {
             CorruptionRuntimeManager.copyGlobalSettingsToData(CorruptionSavedData.get(server));
+            serverMutationResumeTick = Math.min(serverMutationResumeTick, server.getTickCount());
         }
-        scheduleServerMutationWarmup(server, SERVER_SAVE_MUTATION_COOLDOWN_TICKS);
         resetAutoIncreaseTimer(server);
         resetSeedRandomizerTimer(server);
         clearServerStackCache();
+        clearEntityRuntimeCaches();
         resetTerrainMutationBudget();
         resetWorldProcessBudget();
         clearPendingTerrainMutations();
@@ -239,16 +251,11 @@ public final class CorruptionMechanicsManager {
 
         CorruptionEffectStack stack = activeStackFor(entity);
         String targetId = "collision_resolution:" + entityTargetId(entity);
-        float minimum = entity instanceof Player ? MIN_PLAYER_MECHANICS_INTENSITY : MIN_ENTITY_MECHANICS_INTENSITY;
-        if (!surfaceActive(stack, CorruptionSurface.BLOCK_COLLISION, minimum)
-                && !targetActive(stack, CorruptionSurface.BLOCK_COLLISION, targetId, minimum)) {
+        if (!collisionMechanicsActive(stack, targetId)) {
             return resolved;
         }
 
-        float intensity = Math.max(
-                stack.targetIntensity(CorruptionSurface.BLOCK_COLLISION, targetId),
-                stack.intensity(CorruptionSurface.BLOCK_COLLISION) * 0.82F
-        );
+        float intensity = collisionMechanicsIntensity(stack, targetId, 0.82F);
         if (intensity <= 0.0F) {
             return resolved;
         }
@@ -259,7 +266,8 @@ public final class CorruptionMechanicsManager {
         Vec3 blocked = requested.subtract(resolved);
         Vec3 out = resolved;
 
-        float leakChance = Math.min(0.94F, Math.max(0.0F, intensity - 0.16F) * 0.72F + stack.instability() * 0.10F);
+        float collisionPressure = progressiveCollisionPressure(stack, intensity);
+        float leakChance = Math.min(0.94F, 0.02F + collisionPressure * 0.78F + stack.instability() * 0.10F);
         if (stack.unit(CorruptionSurface.BLOCK_COLLISION, targetId + ":leak", bucket) < leakChance) {
             double leak = Mth.clamp(unitHash(seed ^ 0x4C45414BL) * (0.22D + intensity * 1.15D), 0.0D, 1.45D);
             out = out.add(blocked.scale(leak));
@@ -271,7 +279,7 @@ public final class CorruptionMechanicsManager {
             out = out.multiply(1.0D - stick, 1.0D - stick * 0.75D, 1.0D - stick);
         }
 
-        float slingChance = Math.min(0.62F, Math.max(0.0F, intensity - 0.28F) * 0.48F + Math.abs(collisionPulse(seed, unitHash(seed ^ bucket))) * intensity * 0.14F);
+        float slingChance = Math.min(0.62F, collisionPressure * 0.42F + Math.abs(collisionPulse(seed, unitHash(seed ^ bucket))) * intensity * 0.14F);
         if (stack.unit(CorruptionSurface.BLOCK_COLLISION, targetId + ":sling", bucket ^ 0x534C494E) < slingChance) {
             Vec3 sling = mutateFeatureVelocity(stack, CorruptionSurface.BLOCK_COLLISION, targetId + ":sling_motion", requested, seed, bucket, intensity, 0.0D, 0.42D, 3.8D);
             out = out.add(sling.subtract(requested).scale(0.35D + intensity * 0.55D));
@@ -282,7 +290,7 @@ public final class CorruptionMechanicsManager {
             out = new Vec3(quantize(out.x, precision), quantize(out.y, precision), quantize(out.z, precision));
         }
 
-        float bypassChance = Math.min(0.98F, Math.max(0.0F, intensity - 0.38F) * 1.08F + stack.instability() * 0.12F);
+        float bypassChance = Math.min(0.98F, collisionPhaseChance(stack, intensity) + stack.instability() * 0.12F);
         if (stack.unit(CorruptionSurface.BLOCK_COLLISION, targetId + ":phase_through", bucket ^ 0x50484153) < bypassChance) {
             double downwardSlip = 0.0D;
             if (requested.y <= resolved.y + 1.0E-6D
@@ -312,21 +320,16 @@ public final class CorruptionMechanicsManager {
 
         CorruptionEffectStack stack = activeStackFor(entity);
         String targetId = "collision_move_bypass:" + entityTargetId(entity);
-        float minimum = entity instanceof Player ? MIN_PLAYER_MECHANICS_INTENSITY : MIN_ENTITY_MECHANICS_INTENSITY;
-        if (!surfaceActive(stack, CorruptionSurface.BLOCK_COLLISION, minimum)
-                && !targetActive(stack, CorruptionSurface.BLOCK_COLLISION, targetId, minimum)) {
+        if (!collisionMechanicsActive(stack, targetId)) {
             return 0;
         }
 
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.BLOCK_COLLISION) ? 1.0F : stack.intensity(CorruptionSurface.BLOCK_COLLISION) * 0.86F,
-                stack.targetIntensity(CorruptionSurface.BLOCK_COLLISION, targetId)
-        ), 0.0F, 1.0F);
+        float intensity = collisionMechanicsIntensity(stack, targetId, 0.86F);
         long seed = stack.stableLong(CorruptionSurface.BLOCK_COLLISION, targetId, entity.getId() ^ 0x4E4F434C);
         int bucket = collisionPositionBucket(entity, seed, intensity);
         float chance = stack.extreme(CorruptionSurface.BLOCK_COLLISION)
                 ? 0.72F
-                : Mth.clamp(Math.max(0.0F, intensity - 0.18F) * 0.72F + stack.instability() * 0.12F, 0.0F, 0.62F);
+                : Mth.clamp(0.01F + progressiveCollisionPressure(stack, intensity) * 0.70F + stack.instability() * 0.12F, 0.0F, 0.68F);
         if (movement.y < -1.0E-5D && entity.onGround()) {
             chance += 0.14F + intensity * 0.24F;
         }
@@ -353,16 +356,11 @@ public final class CorruptionMechanicsManager {
 
         CorruptionEffectStack stack = activeStackFor(entity);
         String targetId = "collision_shape_bypass:" + entityTargetId(entity);
-        float minimum = entity instanceof Player ? MIN_PLAYER_MECHANICS_INTENSITY : MIN_ENTITY_MECHANICS_INTENSITY;
-        if (!surfaceActive(stack, CorruptionSurface.BLOCK_COLLISION, minimum)
-                && !targetActive(stack, CorruptionSurface.BLOCK_COLLISION, targetId, minimum)) {
+        if (!collisionMechanicsActive(stack, targetId)) {
             return false;
         }
 
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.BLOCK_COLLISION) ? 1.0F : stack.intensity(CorruptionSurface.BLOCK_COLLISION),
-                stack.targetIntensity(CorruptionSurface.BLOCK_COLLISION, targetId)
-        ), 0.0F, 1.0F);
+        float intensity = collisionMechanicsIntensity(stack, targetId, 1.0F);
         if (intensity <= 0.0F) {
             return false;
         }
@@ -370,7 +368,7 @@ public final class CorruptionMechanicsManager {
         int bucket = collisionPositionBucket(entity, seed, intensity);
         float chance = stack.extreme(CorruptionSurface.BLOCK_COLLISION)
                 ? 0.86F
-                : Mth.clamp(Math.max(0.0F, intensity - 0.20F) * 1.04F + stack.instability() * 0.14F, 0.0F, 0.78F);
+                : Mth.clamp(0.01F + collisionPhaseChance(stack, intensity) + stack.instability() * 0.14F, 0.0F, 0.86F);
         if (movement.y < -1.0E-5D) {
             chance += 0.08F + intensity * 0.18F;
         }
@@ -383,20 +381,15 @@ public final class CorruptionMechanicsManager {
         }
         CorruptionEffectStack stack = activeStackFor(entity);
         String targetId = "collision_wall_check:" + entityTargetId(entity);
-        float minimum = entity instanceof Player ? MIN_PLAYER_MECHANICS_INTENSITY : MIN_ENTITY_MECHANICS_INTENSITY;
-        if (!surfaceActive(stack, CorruptionSurface.BLOCK_COLLISION, minimum)
-                && !targetActive(stack, CorruptionSurface.BLOCK_COLLISION, targetId, minimum)) {
+        if (!collisionMechanicsActive(stack, targetId)) {
             return false;
         }
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.BLOCK_COLLISION) ? 1.0F : stack.intensity(CorruptionSurface.BLOCK_COLLISION),
-                stack.targetIntensity(CorruptionSurface.BLOCK_COLLISION, targetId)
-        ), 0.0F, 1.0F);
+        float intensity = collisionMechanicsIntensity(stack, targetId, 1.0F);
         long seed = stack.stableLong(CorruptionSurface.BLOCK_COLLISION, targetId, entity.getId() ^ 0x57414C4C);
         int bucket = collisionPositionBucket(entity, seed, intensity);
         float chance = stack.extreme(CorruptionSurface.BLOCK_COLLISION)
                 ? 0.92F
-                : Mth.clamp(Math.max(0.0F, intensity - 0.16F) * 0.88F + stack.instability() * 0.12F, 0.0F, 0.82F);
+                : Mth.clamp(0.01F + collisionPhaseChance(stack, intensity) * 0.86F + stack.instability() * 0.12F, 0.0F, 0.86F);
         return stack.unit(CorruptionSurface.BLOCK_COLLISION, targetId + ":suffocation_probe", bucket) < chance;
     }
 
@@ -449,6 +442,7 @@ public final class CorruptionMechanicsManager {
             syncServerRuntime(player.getServer());
             scheduleServerMutationWarmup(player.getServer(), SERVER_JOIN_MUTATION_WARMUP_TICKS);
             clearServerStackCache();
+            clearEntityRuntimeCaches();
         }
     }
 
@@ -458,6 +452,7 @@ public final class CorruptionMechanicsManager {
         if (server != null && server.getPlayerList().getPlayerCount() <= 1) {
             serverMutationSuspended = true;
             clearServerStackCache();
+            clearEntityRuntimeCaches();
         }
     }
 
@@ -489,21 +484,24 @@ public final class CorruptionMechanicsManager {
 
         CorruptionEffectStack stack = serverStack(entity);
         String targetId = entityTargetId(entity);
-        syncEntityMechanics(entity, stack, targetId);
+        if (shouldSyncEntityMechanics(entity, stack, false)) {
+            syncEntityMechanics(entity, stack, targetId);
+        }
         if (stack.level() <= 0) {
             return;
         }
-        if (!surfaceActive(stack, CorruptionSurface.ENTITY_STATE, MIN_ENTITY_MECHANICS_INTENSITY)
-                && !surfaceActive(stack, CorruptionSurface.ENTITY_KINEMATICS, MIN_ENTITY_MECHANICS_INTENSITY)
-                && !surfaceActive(stack, CorruptionSurface.BLOCK_COLLISION, MIN_ENTITY_MECHANICS_INTENSITY)) {
-            return;
+        mutateAirSupplyTick(entity, stack);
+        boolean entityBehaviorActive = surfaceActive(stack, CorruptionSurface.ENTITY_STATE, MIN_ENTITY_MECHANICS_INTENSITY)
+                || surfaceActive(stack, CorruptionSurface.ENTITY_KINEMATICS, MIN_ENTITY_MECHANICS_INTENSITY);
+        if (entityBehaviorActive) {
+            int cadence = Math.max(2, corruptedCadence(stack, targetId + ":ai_tick", Math.max(2, 8 - Math.round(stack.intensity(CorruptionSurface.ENTITY_STATE) * 4.0F)), 40));
+            if (entity.tickCount % cadence == 0) {
+                mutateLivingState(entity, stack, targetId);
+            }
         }
-        int cadence = corruptedCadence(stack, targetId + ":ai_tick", Math.max(2, 8 - Math.round(stack.intensity(CorruptionSurface.ENTITY_STATE) * 4.0F)), 40);
-        if (entity.tickCount % cadence != 0) {
-            return;
+        if (surfaceActive(stack, CorruptionSurface.BLOCK_COLLISION, MIN_ENTITY_MECHANICS_INTENSITY) && entity.tickCount % 2 == 0) {
+            mutateEntityCollision(entity, stack, targetId);
         }
-        mutateLivingState(entity, stack, targetId);
-        mutateEntityCollision(entity, stack, targetId);
     }
 
     @SubscribeEvent
@@ -514,7 +512,9 @@ public final class CorruptionMechanicsManager {
 
         Player player = event.player;
         CorruptionEffectStack stack = activeStackFor(player);
-        syncEntityMechanics(player, stack, entityTargetId(player));
+        if (shouldSyncEntityMechanics(player, stack, true)) {
+            syncEntityMechanics(player, stack, entityTargetId(player));
+        }
         if (surfaceActive(stack, CorruptionSurface.PLAYER_PHYSICS, MIN_PLAYER_MECHANICS_INTENSITY)) {
             String targetId = playerTargetId(player);
             float intensity = Math.max(stack.targetIntensity(CorruptionSurface.PLAYER_PHYSICS, targetId), stack.intensity(CorruptionSurface.PLAYER_PHYSICS) * 0.70F);
@@ -525,8 +525,9 @@ public final class CorruptionMechanicsManager {
         mutatePlayerCollision(player, stack);
 
         if (player instanceof ServerPlayer serverPlayer) {
-            int itemCadence = corruptedCadence(stack, "loose_entity_tick:" + serverPlayer.serverLevel().dimension().location(), 10, 40);
-            int projectileCadence = corruptedCadence(stack, "projectile_tick:" + serverPlayer.serverLevel().dimension().location(), 8, 40);
+            mutateAirSupplyTick(serverPlayer, stack);
+            int itemCadence = 10;
+            int projectileCadence = 8;
             if (serverPlayer.tickCount % itemCadence == 0 && surfaceActive(stack, CorruptionSurface.LOOSE_ENTITY_PHYSICS, MIN_ENTITY_MECHANICS_INTENSITY)) {
                 shakeNearbyDroppedItems(serverPlayer, stack);
             }
@@ -553,24 +554,13 @@ public final class CorruptionMechanicsManager {
         }
         CorruptionEffectStack stack = activeStackFor(player);
         String targetId = "hunger_depletion:" + playerTargetId(player);
-        boolean active = surfaceActive(stack, CorruptionSurface.TICK_SPEED, MIN_DAY_TIME_INTENSITY)
-                || targetActive(stack, CorruptionSurface.PLAYER_PHYSICS, targetId, MIN_PLAYER_MECHANICS_INTENSITY)
-                || targetActive(stack, CorruptionSurface.INTERACTION_ROUTING, targetId, MIN_PLAYER_MECHANICS_INTENSITY);
-        if (!active) {
+        if (!surfaceActive(stack, CorruptionSurface.TICK_SPEED, MIN_DAY_TIME_INTENSITY)) {
             return exhaustion;
         }
 
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.TICK_SPEED) ? 1.0F : stack.intensity(CorruptionSurface.TICK_SPEED),
-                Math.max(
-                        stack.extreme(CorruptionSurface.PLAYER_PHYSICS) ? 1.0F : stack.intensity(CorruptionSurface.PLAYER_PHYSICS) * 0.72F,
-                        stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING) * 0.55F
-                )
-        ), 0.0F, 1.0F);
+        float intensity = Mth.clamp(stack.extreme(CorruptionSurface.TICK_SPEED) ? 1.0F : stack.intensity(CorruptionSurface.TICK_SPEED), 0.0F, 1.0F);
         long hash = stack.stableLong(CorruptionSurface.TICK_SPEED, targetId, player.getId() ^ 0x48554E47);
-        double speed = surfaceActive(stack, CorruptionSurface.TICK_SPEED, MIN_DAY_TIME_INTENSITY)
-                ? gameSpeedMultiplier(stack, targetId)
-                : Math.pow(2.0D, signedUnit(hash ^ 0x4558504FL) * intensity * 5.0D);
+        double speed = gameSpeedMultiplier(stack, targetId);
         if (unitHash(hash ^ 0x5354414CL) < 0.10F + intensity * 0.28F) {
             speed *= unitHash(hash ^ 0x534C4F57L) < 0.50F
                     ? 0.0D
@@ -585,16 +575,11 @@ public final class CorruptionMechanicsManager {
         }
         CorruptionEffectStack stack = activeStackFor(player);
         String targetId = "attack_cooldown:" + playerTargetId(player);
-        boolean active = surfaceActive(stack, CorruptionSurface.ANIMATION_TIMING, MIN_PLAYER_MECHANICS_INTENSITY)
-                || targetActive(stack, CorruptionSurface.INTERACTION_ROUTING, targetId, MIN_PLAYER_MECHANICS_INTENSITY);
-        if (!active) {
+        if (!surfaceActive(stack, CorruptionSurface.ANIMATION_TIMING, MIN_PLAYER_MECHANICS_INTENSITY)) {
             return original;
         }
 
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.ANIMATION_TIMING) ? 1.0F : stack.intensity(CorruptionSurface.ANIMATION_TIMING),
-                (stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING)) * 0.84F
-        ), 0.0F, 1.0F);
+        float intensity = Mth.clamp(stack.extreme(CorruptionSurface.ANIMATION_TIMING) ? 1.0F : stack.intensity(CorruptionSurface.ANIMATION_TIMING), 0.0F, 1.0F);
         long clock = stack.stableLong(CorruptionSurface.ANIMATION_TIMING, targetId, player.getId() ^ 0x41544B43) ^ Float.floatToIntBits(partialTick);
         if (unitHash(clock ^ 0x554E4C4FL) < 0.08F + intensity * (stack.extreme(CorruptionSurface.ANIMATION_TIMING) ? 0.84F : 0.44F)) {
             return 0.0F;
@@ -609,24 +594,16 @@ public final class CorruptionMechanicsManager {
         }
         CorruptionEffectStack stack = activeStackFor(player);
         String targetId = "attack_delay:" + playerTargetId(player);
-        boolean active = surfaceActive(stack, CorruptionSurface.ANIMATION_TIMING, MIN_PLAYER_MECHANICS_INTENSITY)
-                || targetActive(stack, CorruptionSurface.INTERACTION_ROUTING, targetId, MIN_PLAYER_MECHANICS_INTENSITY);
-        if (!active) {
+        if (!surfaceActive(stack, CorruptionSurface.ANIMATION_TIMING, MIN_PLAYER_MECHANICS_INTENSITY)) {
             return original;
         }
 
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.ANIMATION_TIMING) ? 1.0F : stack.intensity(CorruptionSurface.ANIMATION_TIMING),
-                (stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING)) * 0.84F
-        ), 0.0F, 1.0F);
+        float intensity = Mth.clamp(stack.extreme(CorruptionSurface.ANIMATION_TIMING) ? 1.0F : stack.intensity(CorruptionSurface.ANIMATION_TIMING), 0.0F, 1.0F);
         long hash = stack.stableLong(CorruptionSurface.ANIMATION_TIMING, targetId, player.getId() ^ 0x44454C59);
         if (unitHash(hash ^ 0x53545543L) < 0.06F + intensity * 0.36F) {
             return 72000.0F;
         }
         double multiplier = Math.pow(2.0D, signedUnit(hash ^ 0x4D554C54L) * intensity * 7.0D);
-        if (surfaceActive(stack, CorruptionSurface.TICK_SPEED, MIN_DAY_TIME_INTENSITY)) {
-            multiplier *= Mth.clamp(1.0D / gameSpeedMultiplier(stack, targetId + ":speed"), 0.05D, 20.0D);
-        }
         return (float) Mth.clamp(original * multiplier, 0.05D, 72000.0D);
     }
 
@@ -636,24 +613,23 @@ public final class CorruptionMechanicsManager {
         }
         CorruptionEffectStack stack = activeStackFor(entity);
         String targetId = "air_supply_speed:" + (decreasing ? "drain:" : "refill:") + entityTargetId(entity);
-        if (!surfaceActive(stack, CorruptionSurface.TICK_SPEED, MIN_DAY_TIME_INTENSITY)
-                && !targetActive(stack, CorruptionSurface.TICK_SPEED, targetId, MIN_DAY_TIME_INTENSITY)) {
+        boolean player = entity instanceof Player;
+        if (!airSupplyMechanicsActive(stack, targetId, player)) {
             return after;
         }
 
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.TICK_SPEED) ? 1.0F : stack.intensity(CorruptionSurface.TICK_SPEED),
-                stack.targetIntensity(CorruptionSurface.TICK_SPEED, targetId)
-        ), 0.0F, 1.0F);
-        double speed = gameSpeedMultiplier(stack, targetId);
-        long hash = stack.stableLong(CorruptionSurface.TICK_SPEED, targetId, entity.getId() ^ before ^ 0x414952);
-        if (unitHash(hash ^ 0x5354414CL) < 0.10F + intensity * 0.34F) {
-            int mode = Math.floorMod((int) (hash >>> 25), 5);
+        CorruptionSurface surface = airSupplySurface(stack, targetId, player);
+        float intensity = airSupplyIntensity(stack, targetId, player);
+        double speed = airSupplySpeedMultiplier(stack, surface, targetId, player, intensity);
+        long hash = stack.stableLong(surface, targetId, entity.getId() ^ before ^ 0x414952);
+        if (unitHash(hash ^ 0x5354414CL) < 0.08F + intensity * (stack.extreme(surface) ? 0.74F : 0.44F)) {
+            int mode = Math.floorMod((int) (hash >>> 25), 6);
             speed = switch (mode) {
                 case 0 -> 0.0D;
-                case 1 -> 12.0D + unitHash(hash ^ 0x46415354L) * 84.0D;
-                case 2 -> 0.03D + unitHash(hash ^ 0x534C4F57L) * 0.18D;
-                case 3 -> -1.0D * (0.25D + intensity * 5.0D);
+                case 1 -> 8.0D + unitHash(hash ^ 0x46415354L) * (48.0D + intensity * 180.0D);
+                case 2 -> 0.01D + unitHash(hash ^ 0x534C4F57L) * 0.18D;
+                case 3 -> -1.0D * (0.20D + intensity * (stack.extreme(surface) ? 32.0D : 8.0D));
+                case 4 -> speed * (unitHash(hash ^ 0x42555253L) < 0.50F ? -12.0D : 12.0D);
                 default -> speed;
             };
         }
@@ -661,9 +637,74 @@ public final class CorruptionMechanicsManager {
         int delta = Math.abs(after - before);
         int mutatedDelta = Math.max(0, (int) Math.round(delta * Math.abs(speed)));
         if (speed < 0.0D) {
-            return Mth.clamp(before + (decreasing ? mutatedDelta : -mutatedDelta), -80, entity.getMaxAirSupply() + 120);
+            return Mth.clamp(before + (decreasing ? mutatedDelta : -mutatedDelta), -160, entity.getMaxAirSupply() + 240);
         }
-        return Mth.clamp(before + (decreasing ? -mutatedDelta : mutatedDelta), -80, entity.getMaxAirSupply() + 120);
+        return Mth.clamp(before + (decreasing ? -mutatedDelta : mutatedDelta), -160, entity.getMaxAirSupply() + 240);
+    }
+
+    private static void mutateAirSupplyTick(LivingEntity entity, CorruptionEffectStack stack) {
+        if (entity == null || entity.level() == null || entity.level().isClientSide || entity.isSpectator()) {
+            return;
+        }
+
+        String targetId = "air_supply_tick:" + entityTargetId(entity);
+        boolean player = entity instanceof Player;
+        if (!airSupplyMechanicsActive(stack, targetId, player)) {
+            return;
+        }
+
+        CorruptionSurface surface = airSupplySurface(stack, targetId, player);
+        float intensity = airSupplyIntensity(stack, targetId, player);
+        if (intensity <= MIN_AIR_MECHANICS_INTENSITY) {
+            return;
+        }
+
+        boolean inWater = entity.isInWater() || isEyeTouchingFluid(entity, FluidTags.WATER);
+        boolean inLava = entity.isInLava() || isEyeTouchingFluid(entity, FluidTags.LAVA);
+        int maxAir = Math.max(1, entity.getMaxAirSupply());
+        int currentAir = entity.getAirSupply();
+        boolean recoveringAir = currentAir < maxAir;
+        long seed = stack.stableLong(surface, targetId, entity.getId() ^ currentAir ^ 0x41495254);
+        float falseContextChance = stack.extreme(surface)
+                ? 0.82F
+                : Mth.clamp(0.01F + intensity * 0.24F + visibleCorruptionPressure(stack) * 0.20F + stack.instability() * 0.10F, 0.0F, 0.56F);
+        boolean falseAirContext = stack.unit(surface, targetId + ":detector_fault", entity.tickCount >> 3) < falseContextChance;
+        if (!inWater && !inLava && !recoveringAir && !falseAirContext) {
+            return;
+        }
+
+        int cadence = stack.extreme(surface) ? 1 : Mth.clamp(Math.round(10.0F - intensity * 8.0F), 1, 10);
+        if (entity.tickCount % cadence != 0) {
+            return;
+        }
+
+        double speed = Math.max(0.02D, Math.abs(airSupplySpeedMultiplier(stack, surface, targetId, player, intensity)));
+        int amount = Mth.clamp((int) Math.round((1.0D + intensity * (stack.extreme(surface) ? 18.0D : 8.0D)) * Math.sqrt(speed)), 1, maxAir + 120);
+        int mode = Math.floorMod((int) (seed >>> 27), 7);
+        int nextAir;
+        if (inWater || inLava || recoveringAir) {
+            nextAir = switch (mode) {
+                case 0 -> currentAir == maxAir ? currentAir - amount : currentAir;
+                case 1 -> currentAir - amount;
+                case 2 -> currentAir - amount * (2 + Math.round(intensity * 5.0F));
+                case 3 -> currentAir + (currentAir >= maxAir ? -amount : amount);
+                case 4 -> Math.round(-20.0F - intensity * (20.0F + unitHash(seed ^ 0x44524F50L) * 120.0F));
+                case 5 -> Math.round(maxAir * (0.05F + unitHash(seed ^ 0x434150L) * (0.55F - intensity * 0.35F)));
+                default -> currentAir + (unitHash(seed ^ 0x524556L) < 0.45F ? amount : -amount);
+            };
+        } else {
+            nextAir = switch (mode) {
+                case 0, 1, 4 -> currentAir - Math.max(1, amount / 2);
+                case 2 -> Math.round(maxAir * (0.10F + unitHash(seed ^ 0x46414C53L) * 0.42F));
+                case 3 -> currentAir + amount;
+                default -> currentAir;
+            };
+        }
+
+        nextAir = Mth.clamp(nextAir, -180, maxAir + 240);
+        if (nextAir != currentAir) {
+            entity.setAirSupply(nextAir);
+        }
     }
 
     public static float corruptJumpPower(LivingEntity entity, float original) {
@@ -727,19 +768,12 @@ public final class CorruptionMechanicsManager {
         if (player == null || target == null || player.level() == null) {
             return false;
         }
-        if (shouldDisableEntityTargeting(target, "player_attack")) {
-            return true;
-        }
         CorruptionEffectStack stack = activeStackFor(player);
         String targetId = "attack_routing:" + entityTargetId(target);
-        if (!targetActive(stack, CorruptionSurface.INTERACTION_ROUTING, targetId, MIN_PLAYER_MECHANICS_INTENSITY)
-                && !surfaceActive(stack, CorruptionSurface.ENTITY_STATE, MIN_ENTITY_MECHANICS_INTENSITY)) {
+        if (!targetActive(stack, CorruptionSurface.INTERACTION_ROUTING, targetId, MIN_PLAYER_MECHANICS_INTENSITY)) {
             return false;
         }
-        float intensity = Mth.clamp(Math.max(
-                stack.targetIntensity(CorruptionSurface.INTERACTION_ROUTING, targetId),
-                Math.max(stack.intensity(CorruptionSurface.INTERACTION_ROUTING), stack.intensity(CorruptionSurface.ENTITY_STATE) * 0.72F)
-        ), 0.0F, 1.0F);
+        float intensity = Mth.clamp(Math.max(stack.targetIntensity(CorruptionSurface.INTERACTION_ROUTING, targetId), stack.intensity(CorruptionSurface.INTERACTION_ROUTING)), 0.0F, 1.0F);
         long hash = stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, targetId, player.getId() ^ target.getId() ^ 0x4154544B);
         return unitHash(hash ^ 0x43414E43L) < Mth.clamp(0.04F + intensity * 0.78F + stack.instability() * 0.10F, 0.0F, 0.96F);
     }
@@ -817,16 +851,11 @@ public final class CorruptionMechanicsManager {
         }
         CorruptionEffectStack stack = activeStackFor(entity);
         String targetId = "entity_hitbox_failure:" + phase + ":" + entityTargetId(entity);
-        boolean active = surfaceActive(stack, CorruptionSurface.ENTITY_STATE, MIN_ENTITY_MECHANICS_INTENSITY)
-                || targetActive(stack, CorruptionSurface.INTERACTION_ROUTING, targetId, MIN_ENTITY_MECHANICS_INTENSITY);
-        if (!active) {
+        if (!surfaceActive(stack, CorruptionSurface.ENTITY_STATE, MIN_ENTITY_MECHANICS_INTENSITY)) {
             return false;
         }
 
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.ENTITY_STATE) ? 1.0F : stack.intensity(CorruptionSurface.ENTITY_STATE),
-                (stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING)) * 0.82F
-        ), 0.0F, 1.0F);
+        float intensity = Mth.clamp(stack.extreme(CorruptionSurface.ENTITY_STATE) ? 1.0F : stack.intensity(CorruptionSurface.ENTITY_STATE), 0.0F, 1.0F);
         String globalId = "entity_hitbox_failure:global:" + entity.level().dimension().location();
         long globalHash = stack.stableLong(CorruptionSurface.ENTITY_STATE, globalId, 0x474C4F42);
         if (stack.level() >= 85 && unitHash(globalHash ^ 0x414C4CL) < 0.18F + intensity * 0.62F) {
@@ -871,7 +900,26 @@ public final class CorruptionMechanicsManager {
     }
 
     public static int entityHitboxMutationSignature(Entity entity) {
-        return entityHitboxMutation(entity).signature();
+        if (entity == null || entity.level() == null) {
+            return EntityHitboxMutation.PASS.signature();
+        }
+        CorruptionEffectStack stack = activeStackFor(entity);
+        int profileSignature = entityHitboxProfileSignature(stack);
+        HitboxSignatureCache cached = ENTITY_HITBOX_SIGNATURE_CACHE.get(entity);
+        if (cached != null
+                && cached.profileSignature() == profileSignature
+                && entity.tickCount < cached.nextCheckTick()) {
+            return cached.signature();
+        }
+
+        int signature = entityHitboxMutation(entity, stack).signature();
+        int cadence = stack.level() <= 0 ? 20 : stack.extreme(CorruptionSurface.ENTITY_STATE) || stack.extreme(CorruptionSurface.ANIMATION_TIMING) ? 5 : 10;
+        ENTITY_HITBOX_SIGNATURE_CACHE.put(entity, new HitboxSignatureCache(
+                profileSignature,
+                signature,
+                entity.tickCount + cadence + Math.floorMod(entity.getId(), Math.max(1, cadence))
+        ));
+        return signature;
     }
 
     public static void beginEntityHitboxDimensionBypass() {
@@ -1143,20 +1191,19 @@ public final class CorruptionMechanicsManager {
     }
 
     private static boolean craftingMechanicsActive(CorruptionEffectStack stack) {
-        return surfaceActive(stack, CorruptionSurface.INTERACTION_ROUTING, MIN_WORLD_PROCESS_INTENSITY)
-                || surfaceActive(stack, CorruptionSurface.GUI_SURFACE, MIN_WORLD_PROCESS_INTENSITY);
+        return surfaceActive(stack, CorruptionSurface.INTERACTION_ROUTING, MIN_WORLD_PROCESS_INTENSITY);
     }
 
     private static float craftingIntensity(CorruptionEffectStack stack) {
-        float interactionIntensity = stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING);
-        float guiIntensity = stack.extreme(CorruptionSurface.GUI_SURFACE) ? 1.0F : stack.intensity(CorruptionSurface.GUI_SURFACE);
-        return Mth.clamp(Math.max(
-                interactionIntensity,
-                guiIntensity * 0.70F
-        ), 0.0F, 1.0F);
+        return Mth.clamp(stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING), 0.0F, 1.0F);
     }
 
     private static void mutateDamageEvent(LivingHurtEvent event, CorruptionEffectStack stack) {
+        boolean drowningMutated = mutateDrowningDamageEvent(event, stack);
+        if (event.isCanceled()) {
+            return;
+        }
+
         LivingEntity entity = event.getEntity();
         String targetId = "damage_resolution:" + event.getSource().getMsgId() + ":" + entityTargetId(entity);
         if (!targetActive(stack, CorruptionSurface.INTERACTION_ROUTING, targetId, MIN_WORLD_PROCESS_INTENSITY)) {
@@ -1172,15 +1219,59 @@ public final class CorruptionMechanicsManager {
 
         float span = event.getAmount() * (0.45F + intensity * 1.60F) + intensity * 5.0F;
         float amount = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.INTERACTION_ROUTING, targetId + ":amount", event.getAmount(), span, 0.0F, 512.0F, 0x4447, clock);
+        if (drowningMutated && "drown".equals(event.getSource().getMsgId())) {
+            amount = Mth.clamp(amount, 0.0F, 768.0F);
+        }
         event.setAmount(amount);
     }
 
-    @SuppressWarnings("deprecation")
+    private static boolean mutateDrowningDamageEvent(LivingHurtEvent event, CorruptionEffectStack stack) {
+        if (!"drown".equals(event.getSource().getMsgId())) {
+            return false;
+        }
+
+        LivingEntity entity = event.getEntity();
+        boolean player = entity instanceof Player;
+        String targetId = "drowning_rate:" + entityTargetId(entity);
+        if (!airSupplyMechanicsActive(stack, targetId, player)) {
+            return false;
+        }
+
+        CorruptionSurface surface = airSupplySurface(stack, targetId, player);
+        float intensity = airSupplyIntensity(stack, targetId, player);
+        if (intensity <= MIN_AIR_MECHANICS_INTENSITY) {
+            return false;
+        }
+
+        long hash = stack.stableLong(surface, targetId, entity.getId() ^ entity.getAirSupply() ^ 0x44524F57);
+        double multiplier = Math.pow(2.0D, signedUnit(hash ^ 0x4D554C54L) * (0.20D + intensity * (stack.extreme(surface) ? 8.0D : 5.4D)));
+
+        if (unitHash(hash ^ 0x5354414CL) < 0.10F + intensity * (stack.extreme(surface) ? 0.78F : 0.48F)) {
+            int mode = Math.floorMod((int) (hash >>> 26), 6);
+            multiplier = switch (mode) {
+                case 0 -> 0.0D;
+                case 1 -> 0.02D + unitHash(hash ^ 0x534C4F57L) * 0.18D;
+                case 2 -> 6.0D + unitHash(hash ^ 0x46415354L) * (34.0D + intensity * 140.0D);
+                case 3 -> Mth.clamp(multiplier * (0.05D + unitHash(hash ^ 0x53544152L) * 0.35D), 0.0D, 4.0D);
+                case 4 -> Mth.clamp(multiplier * (4.0D + unitHash(hash ^ 0x42555253L) * 48.0D), 0.0D, 256.0D);
+                default -> multiplier;
+            };
+        }
+
+        float amount = (float) Mth.clamp(event.getAmount() * multiplier, 0.0D, stack.extreme(surface) ? 768.0D : 256.0D);
+        if (amount <= 0.0F) {
+            event.setCanceled(true);
+        } else {
+            event.setAmount(amount);
+        }
+        return true;
+    }
+
     private static void mutateLiquidMechanics(ServerPlayer player, CorruptionEffectStack stack) {
         boolean actualWater = isTouchingFluid(player, FluidTags.WATER);
         boolean actualLava = isTouchingFluid(player, FluidTags.LAVA);
-        boolean detectedWater = player.isInWater() || player.isEyeInFluid(FluidTags.WATER);
-        boolean detectedLava = player.isInLava() || player.isEyeInFluid(FluidTags.LAVA);
+        boolean detectedWater = player.isInWater() || isEyeTouchingFluid(player, FluidTags.WATER);
+        boolean detectedLava = player.isInLava() || isEyeTouchingFluid(player, FluidTags.LAVA);
         boolean lava = actualLava || detectedLava;
         String fluid = lava ? "lava" : "water";
         String targetId = "liquid_mechanics:" + fluid + ":" + playerTargetId(player);
@@ -1307,51 +1398,51 @@ public final class CorruptionMechanicsManager {
         return false;
     }
 
+    private static boolean isEyeTouchingFluid(Entity entity, TagKey<Fluid> fluidTag) {
+        if (entity == null || entity.level() == null || fluidTag == null) {
+            return false;
+        }
+
+        Level level = entity.level();
+        double eyeY = entity.getEyeY() - 0.11111111D;
+        BlockPos pos = BlockPos.containing(entity.getX(), eyeY, entity.getZ());
+        FluidState state = loadedFluidState(level, pos);
+        return state.is(fluidTag) && eyeY < pos.getY() + state.getHeight(level, pos);
+    }
+
     private static void mutateDayTime(ServerLevel level, CorruptionEffectStack stack) {
         String targetId = "day_time:" + level.dimension().location();
-        boolean worldgenActive = targetActive(stack, CorruptionSurface.WORLDGEN_SURFACE, targetId, MIN_DAY_TIME_INTENSITY);
         boolean tickSpeedActive = targetActive(stack, CorruptionSurface.TICK_SPEED, targetId, MIN_DAY_TIME_INTENSITY);
-        if (!worldgenActive && !tickSpeedActive) {
-            return;
-        }
-        CorruptionSurface surface = tickSpeedActive ? CorruptionSurface.TICK_SPEED : CorruptionSurface.WORLDGEN_SURFACE;
-        if (tickSpeedActive) {
-            double speed = gameSpeedMultiplier(stack, targetId);
-            long offset = Math.round((speed - 1.0D) * 5.0D);
-            if (offset != 0L) {
-                level.setDayTime(level.getDayTime() + offset);
-            }
-            return;
-        }
-        float decisionChance = tickSpeedActive ? 0.94F : 0.28F;
-        if (!CorruptionValueMutator.decision(stack, surface, targetId + ":tick", (int) level.getDayTime(), decisionChance)) {
+        if (!tickSpeedActive) {
             return;
         }
 
-        float intensity = tickSpeedActive
-                ? Math.max(stack.targetIntensity(CorruptionSurface.TICK_SPEED, targetId), stack.intensity(CorruptionSurface.TICK_SPEED))
-                : stack.targetIntensity(CorruptionSurface.WORLDGEN_SURFACE, targetId);
-        double span = tickSpeedActive ? 800.0D + intensity * 8400.0D : 200.0D + intensity * 3200.0D;
-        double min = tickSpeedActive ? -12000.0D : -6000.0D;
-        double max = tickSpeedActive ? 12000.0D : 6000.0D;
-        long offset = Math.round(CorruptionValueMutator.mutateScalar(stack, surface, targetId + ":offset", 0.0D, span, min, max, 0x5449, level.getGameTime()));
-        if (Math.abs(offset) >= 20L) {
+        double speed = gameSpeedMultiplier(stack, targetId);
+        long offset = Math.round((speed - 1.0D) * 5.0D);
+        if (offset != 0L) {
             level.setDayTime(level.getDayTime() + offset);
+            return;
+        }
+
+        if (!CorruptionValueMutator.decision(stack, CorruptionSurface.TICK_SPEED, targetId + ":tick", (int) level.getDayTime(), 0.94F)) {
+            return;
+        }
+
+        float intensity = Math.max(stack.targetIntensity(CorruptionSurface.TICK_SPEED, targetId), stack.intensity(CorruptionSurface.TICK_SPEED));
+        long mutatedOffset = Math.round(CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.TICK_SPEED, targetId + ":offset", 0.0D, 800.0D + intensity * 8400.0D, -12000.0D, 12000.0D, 0x5449, level.getGameTime()));
+        if (Math.abs(mutatedOffset) >= 20L) {
+            level.setDayTime(level.getDayTime() + mutatedOffset);
         }
     }
 
     private static void mutateWeather(ServerLevel level, CorruptionEffectStack stack) {
         String targetId = "weather_system:" + level.dimension().location();
         boolean worldRenderActive = targetActive(stack, CorruptionSurface.WORLD_RENDER, targetId, MIN_WORLD_PROCESS_INTENSITY);
-        boolean tickSpeedActive = targetActive(stack, CorruptionSurface.TICK_SPEED, targetId, MIN_DAY_TIME_INTENSITY);
-        if (!worldRenderActive && !tickSpeedActive) {
+        if (!worldRenderActive) {
             return;
         }
 
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.WORLD_RENDER) ? 1.0F : stack.intensity(CorruptionSurface.WORLD_RENDER),
-                (stack.extreme(CorruptionSurface.TICK_SPEED) ? 1.0F : stack.intensity(CorruptionSurface.TICK_SPEED)) * 0.66F
-        ), 0.0F, 1.0F);
+        float intensity = Mth.clamp(stack.extreme(CorruptionSurface.WORLD_RENDER) ? 1.0F : stack.intensity(CorruptionSurface.WORLD_RENDER), 0.0F, 1.0F);
         long hash = stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId, (int) level.getGameTime() ^ 0x57454154);
         float chance = Mth.clamp(0.04F + intensity * 0.72F + stack.instability() * 0.10F, 0.0F, 0.96F);
         if (!stack.extreme(CorruptionSurface.WORLD_RENDER) && unitHash(hash ^ 0x5449434BL) > chance) {
@@ -1455,6 +1546,35 @@ public final class CorruptionMechanicsManager {
         data.setLastSeedRandomizerGameTime(Math.max(0L, server.overworld().getGameTime()));
     }
 
+    private static boolean shouldSyncEntityMechanics(LivingEntity entity, CorruptionEffectStack stack, boolean player) {
+        if (entity == null || stack == null) {
+            return false;
+        }
+        int signature = entityMechanicsSyncSignature(stack);
+        Integer previous = ENTITY_MECHANICS_SYNC_SIGNATURES.get(entity);
+        if (previous == null || previous != signature) {
+            ENTITY_MECHANICS_SYNC_SIGNATURES.put(entity, signature);
+            return true;
+        }
+        int cadence = stack.level() <= 0 ? 80 : player ? 10 : 20;
+        return Math.floorMod(entity.tickCount + entity.getId(), cadence) == 0;
+    }
+
+    private static int entityMechanicsSyncSignature(CorruptionEffectStack stack) {
+        int signature = 23;
+        signature = signature * 31 + stack.level();
+        signature = signature * 31 + stack.previousLevel();
+        signature = signature * 31 + stack.delta();
+        signature = signature * 31 + stack.enabledTargetsMask();
+        signature = signature * 31 + (int) (stack.fixedSeed() ^ (stack.fixedSeed() >>> 32));
+        signature = signature * 31 + Math.round(stack.instability() * 1000.0F);
+        signature = signature * 31 + Math.round(stack.intensity(CorruptionSurface.ENTITY_KINEMATICS) * 1000.0F);
+        signature = signature * 31 + Math.round(stack.intensity(CorruptionSurface.ENTITY_STATE) * 1000.0F);
+        signature = signature * 31 + Math.round(stack.intensity(CorruptionSurface.ANIMATION_TIMING) * 1000.0F);
+        signature = signature * 31 + Math.round(stack.intensity(CorruptionSurface.TICK_SPEED) * 1000.0F);
+        return signature == 0 ? 1 : signature;
+    }
+
     private static void syncEntityMechanics(LivingEntity entity, CorruptionEffectStack stack, String entityTargetId) {
         if (entity == null) {
             return;
@@ -1505,10 +1625,6 @@ public final class CorruptionMechanicsManager {
         double span = mechanic.span() * (0.55D + intensity * 1.45D + stack.instability() * 0.60D);
         if (mechanic.operation() == AttributeModifier.Operation.MULTIPLY_TOTAL) {
             double exponent = signedUnit(hash ^ 0x4D554C54L) * span;
-            if (surfaceActive(stack, CorruptionSurface.TICK_SPEED, MIN_DAY_TIME_INTENSITY)
-                    && ("movement_speed".equals(mechanic.id()) || "flying_speed".equals(mechanic.id()) || "attack_speed".equals(mechanic.id()))) {
-                exponent += Math.log(Mth.clamp(gameSpeedMultiplier(stack, targetId + ":tick"), 0.04D, 12.0D)) / Math.log(2.0D) * 0.45D;
-            }
             if (unitHash(hash ^ 0x5354414CL) < 0.08F + intensity * 0.28F) {
                 exponent = unitHash(hash ^ 0x46524545L) < 0.42F
                         ? -8.0D * (0.35D + intensity * 0.65D)
@@ -1518,11 +1634,19 @@ public final class CorruptionMechanicsManager {
             return Mth.clamp(amount, mechanic.minAmount(), high);
         }
 
-        double amount = CorruptionValueMutator.mutateScalar(stack, surface, targetId, 0.0D, span, mechanic.minAmount(), high, mechanic.id().hashCode(), entity.tickCount);
+        long mechanicClock = entityMechanicClock(entity, stack, targetId, mechanic, intensity);
+        double amount = CorruptionValueMutator.mutateScalar(stack, surface, targetId, 0.0D, span, mechanic.minAmount(), high, mechanic.id().hashCode(), mechanicClock);
         if (unitHash(hash ^ 0x42495446L) < 0.06F + intensity * 0.22F) {
             amount = unitHash(hash ^ 0x4D41584DL) < 0.5F ? mechanic.minAmount() : high;
         }
         return Mth.clamp(amount, mechanic.minAmount(), high);
+    }
+
+    private static long entityMechanicClock(LivingEntity entity, CorruptionEffectStack stack, String targetId, EntityMechanic mechanic, float intensity) {
+        long seed = stack.stableLong(CorruptionSurface.ENTITY_STATE, targetId + ":mechanic_clock", mechanic.id().hashCode());
+        int cadence = Mth.clamp(Math.round(34.0F - intensity * 24.0F), stack.extreme(CorruptionSurface.ENTITY_STATE) ? 5 : 8, 40);
+        int bucket = Math.floorDiv(entity.tickCount + Math.floorMod(entity.getId(), cadence), cadence);
+        return seed ^ ((long) bucket * 0x9E3779B97F4A7C15L);
     }
 
     private static float entityMechanicIntensity(CorruptionEffectStack stack, String targetId, boolean player) {
@@ -1530,10 +1654,6 @@ public final class CorruptionMechanicsManager {
                 stack.extreme(CorruptionSurface.ENTITY_KINEMATICS) ? 1.0F : stack.targetIntensity(CorruptionSurface.ENTITY_KINEMATICS, targetId),
                 (stack.extreme(CorruptionSurface.ENTITY_STATE) ? 1.0F : stack.targetIntensity(CorruptionSurface.ENTITY_STATE, targetId)) * 0.82F
         );
-        intensity = Math.max(intensity, (stack.extreme(CorruptionSurface.TICK_SPEED) ? 1.0F : stack.intensity(CorruptionSurface.TICK_SPEED)) * 0.44F);
-        if (player) {
-            intensity = Math.max(intensity, (stack.extreme(CorruptionSurface.PLAYER_PHYSICS) ? 1.0F : stack.targetIntensity(CorruptionSurface.PLAYER_PHYSICS, targetId)) * 0.92F);
-        }
         return Mth.clamp(intensity, 0.0F, 1.0F);
     }
 
@@ -1545,26 +1665,33 @@ public final class CorruptionMechanicsManager {
             best = CorruptionSurface.ENTITY_STATE;
             bestIntensity = stateIntensity;
         }
-        float tickIntensity = (stack.extreme(CorruptionSurface.TICK_SPEED) ? 1.0F : stack.intensity(CorruptionSurface.TICK_SPEED)) * 0.44F;
-        if (tickIntensity > bestIntensity) {
-            best = CorruptionSurface.TICK_SPEED;
-            bestIntensity = tickIntensity;
-        }
-        if (player) {
-            float playerIntensity = (stack.extreme(CorruptionSurface.PLAYER_PHYSICS) ? 1.0F : stack.targetIntensity(CorruptionSurface.PLAYER_PHYSICS, targetId)) * 0.92F;
-            if (playerIntensity > bestIntensity) {
-                best = CorruptionSurface.PLAYER_PHYSICS;
-            }
-        }
         return best;
     }
 
+    private static int entityHitboxProfileSignature(CorruptionEffectStack stack) {
+        int signature = 29;
+        signature = signature * 31 + stack.level();
+        signature = signature * 31 + stack.previousLevel();
+        signature = signature * 31 + stack.delta();
+        signature = signature * 31 + stack.enabledTargetsMask();
+        signature = signature * 31 + (int) (stack.fixedSeed() ^ (stack.fixedSeed() >>> 32));
+        signature = signature * 31 + Math.round(stack.intensity(CorruptionSurface.ENTITY_STATE) * 1000.0F);
+        signature = signature * 31 + Math.round(stack.intensity(CorruptionSurface.ANIMATION_TIMING) * 1000.0F);
+        return signature == 0 ? 1 : signature;
+    }
+
     private static EntityHitboxMutation entityHitboxMutation(Entity entity) {
+        if (entity == null) {
+            return EntityHitboxMutation.PASS;
+        }
+        return entityHitboxMutation(entity, activeStackFor(entity));
+    }
+
+    private static EntityHitboxMutation entityHitboxMutation(Entity entity, CorruptionEffectStack stack) {
         if (entity == null || entity.level() == null) {
             return EntityHitboxMutation.PASS;
         }
 
-        CorruptionEffectStack stack = activeStackFor(entity);
         if (stack.level() <= 0) {
             return EntityHitboxMutation.PASS;
         }
@@ -1719,19 +1846,6 @@ public final class CorruptionMechanicsManager {
         return Mth.clamp(multiplier, 0.02D, 160.0D);
     }
 
-    private static Vec3 applyGameSpeedToVelocity(CorruptionEffectStack stack, String targetId, Vec3 motion, double maxMagnitude) {
-        if (!surfaceActive(stack, CorruptionSurface.TICK_SPEED, MIN_DAY_TIME_INTENSITY)) {
-            return motion;
-        }
-        double speed = Mth.clamp(gameSpeedMultiplier(stack, targetId + ":velocity"), 0.04D, 8.0D);
-        Vec3 scaled = motion.scale(speed);
-        double maxSqr = maxMagnitude * maxMagnitude;
-        if (maxSqr > 0.0D && scaled.lengthSqr() > maxSqr) {
-            scaled = scaled.normalize().scale(maxMagnitude);
-        }
-        return scaled;
-    }
-
     private static void mutateLivingState(LivingEntity entity, CorruptionEffectStack stack, String targetId) {
         if (!targetActive(stack, CorruptionSurface.ENTITY_STATE, targetId, MIN_ENTITY_MECHANICS_INTENSITY)) {
             return;
@@ -1770,8 +1884,6 @@ public final class CorruptionMechanicsManager {
             double precision = 0.015625D + unitHash(seed ^ 0x5155414EL) * intensity * 0.34D;
             mutated = new Vec3(quantize(mutated.x, precision), quantize(mutated.y, precision), quantize(mutated.z, precision));
         }
-        mutated = applyGameSpeedToVelocity(stack, targetId, mutated, 6.0D);
-
         if (mutated.distanceToSqr(motion) > 1.0E-7D) {
             player.setDeltaMovement(mutated);
             player.hasImpulse = true;
@@ -1779,25 +1891,23 @@ public final class CorruptionMechanicsManager {
     }
 
     private static void mutatePlayerCollision(Player player, CorruptionEffectStack stack) {
-        mutateSharedBlockCollision(player, stack, "collision:" + playerTargetId(player), MIN_PLAYER_MECHANICS_INTENSITY);
+        mutateSharedBlockCollision(player, stack, "collision:" + playerTargetId(player), MIN_COLLISION_MECHANICS_INTENSITY);
     }
 
     private static void mutateSharedBlockCollision(Entity entity, CorruptionEffectStack stack, String targetId, float minimumIntensity) {
-        if (!surfaceActive(stack, CorruptionSurface.BLOCK_COLLISION, minimumIntensity) || entity.isSpectator()) {
+        if (!collisionMechanicsActive(stack, targetId) || entity.isSpectator()) {
             return;
         }
 
-        float intensity = Math.max(
-                stack.targetIntensity(CorruptionSurface.BLOCK_COLLISION, targetId),
-                stack.intensity(CorruptionSurface.BLOCK_COLLISION) * 0.78F
-        );
+        float intensity = collisionMechanicsIntensity(stack, targetId, 0.78F);
         long seed = stack.stableLong(CorruptionSurface.BLOCK_COLLISION, targetId, entity.getId() ^ 0x434F4C4C);
         int bucket = collisionPositionBucket(entity, seed, intensity);
         float phase = unitHash(seed ^ bucket);
         float pulse = collisionPulse(seed, phase);
+        float collisionPressure = progressiveCollisionPressure(stack, intensity);
 
         Vec3 motion = entity.getDeltaMovement();
-        boolean push = stack.unit(CorruptionSurface.BLOCK_COLLISION, targetId + ":push", bucket) < Math.min(0.86F, 0.14F + intensity * 0.46F + Math.abs(pulse) * 0.24F);
+        boolean push = stack.unit(CorruptionSurface.BLOCK_COLLISION, targetId + ":push", bucket) < Math.min(0.86F, 0.03F + collisionPressure * 0.56F + Math.abs(pulse) * intensity * 0.24F);
         if (push) {
             double span = 0.018D + intensity * (0.22D + Math.abs(pulse) * 0.32D);
             Vec3 mutated = CorruptionValueMutator.mutateVector(stack, CorruptionSurface.BLOCK_COLLISION, targetId + ":motion", motion, span, 4.2D, entity.getId(), stack.stableLong(CorruptionSurface.BLOCK_COLLISION, targetId + ":motion_clock", bucket));
@@ -1814,7 +1924,7 @@ public final class CorruptionMechanicsManager {
 
         float phaseSlipChance = stack.extreme(CorruptionSurface.BLOCK_COLLISION)
                 ? 0.58F
-                : Mth.clamp(Math.max(0.0F, intensity - 0.34F) * 0.78F + Math.abs(pulse) * intensity * 0.18F, 0.0F, 0.54F);
+                : Mth.clamp(collisionPhaseChance(stack, intensity) * 0.72F + Math.abs(pulse) * intensity * 0.18F, 0.0F, 0.62F);
         if (stack.unit(CorruptionSurface.BLOCK_COLLISION, targetId + ":phase_slip", bucket ^ 0x534C4950) < phaseSlipChance) {
             double down = 0.04D + intensity * (0.32D + unitHash(seed ^ 0x444F574EL) * 0.90D);
             double side = intensity * (0.02D + unitHash(seed ^ 0x53494445L) * 0.18D);
@@ -2075,24 +2185,76 @@ public final class CorruptionMechanicsManager {
         return stack.extreme(surface) || (stack.intensity(surface) >= minimumIntensity && stack.active(surface, targetId));
     }
 
+    private static boolean collisionMechanicsActive(CorruptionEffectStack stack, String targetId) {
+        return surfaceActive(stack, CorruptionSurface.BLOCK_COLLISION, MIN_COLLISION_MECHANICS_INTENSITY)
+                || targetActive(stack, CorruptionSurface.BLOCK_COLLISION, targetId, MIN_COLLISION_MECHANICS_INTENSITY);
+    }
+
+    private static float collisionMechanicsIntensity(CorruptionEffectStack stack, String targetId, float surfaceWeight) {
+        if (stack.extreme(CorruptionSurface.BLOCK_COLLISION)) {
+            return 1.0F;
+        }
+        return Mth.clamp(Math.max(
+                stack.targetIntensity(CorruptionSurface.BLOCK_COLLISION, targetId),
+                stack.intensity(CorruptionSurface.BLOCK_COLLISION) * surfaceWeight
+        ), 0.0F, 1.0F);
+    }
+
+    private static float progressiveCollisionPressure(CorruptionEffectStack stack, float intensity) {
+        float visiblePressure = visibleCorruptionPressure(stack);
+        float lowEndFloor = stack.level() > 5 ? 0.10F + visiblePressure * 0.24F : 0.0F;
+        float curved = (float) Math.sqrt(Math.max(0.0F, intensity));
+        return Mth.clamp(lowEndFloor + curved * 0.68F + intensity * 0.26F, 0.0F, 1.0F);
+    }
+
+    private static float collisionPhaseChance(CorruptionEffectStack stack, float intensity) {
+        float pressure = progressiveCollisionPressure(stack, intensity);
+        float floor = stack.level() > 5 ? 0.08F + visibleCorruptionPressure(stack) * 0.18F : 0.0F;
+        return Mth.clamp(floor + pressure * 0.78F, 0.0F, 0.92F);
+    }
+
+    private static float visibleCorruptionPressure(CorruptionEffectStack stack) {
+        if (stack == null || stack.level() <= 0) {
+            return 0.0F;
+        }
+        float visible = Mth.clamp(stack.level() / 100.0F, 0.0F, 1.0F);
+        return visible * visible * (3.0F - 2.0F * visible);
+    }
+
+    private static boolean airSupplyMechanicsActive(CorruptionEffectStack stack, String targetId, boolean player) {
+        return airSurfaceActive(stack, CorruptionSurface.ENTITY_STATE, targetId);
+    }
+
+    private static boolean airSurfaceActive(CorruptionEffectStack stack, CorruptionSurface surface, String targetId) {
+        return surfaceActive(stack, surface, MIN_AIR_MECHANICS_INTENSITY)
+                || targetActive(stack, surface, targetId, MIN_AIR_MECHANICS_INTENSITY);
+    }
+
+    private static float airSupplyIntensity(CorruptionEffectStack stack, String targetId, boolean player) {
+        return Mth.clamp(weightedSurfaceIntensity(stack, CorruptionSurface.ENTITY_STATE, targetId, 1.0F), 0.0F, 1.0F);
+    }
+
+    private static CorruptionSurface airSupplySurface(CorruptionEffectStack stack, String targetId, boolean player) {
+        return CorruptionSurface.ENTITY_STATE;
+    }
+
+    private static double airSupplySpeedMultiplier(CorruptionEffectStack stack, CorruptionSurface surface, String targetId, boolean player, float intensity) {
+        long hash = stack.stableLong(surface, "air_supply_multiplier:" + targetId, 0x41495253);
+        double multiplier = Math.pow(2.0D, signedUnit(hash ^ 0x43555256L) * (0.12D + intensity * (stack.extreme(surface) ? 8.0D : 5.2D)));
+        if (airSurfaceActive(stack, CorruptionSurface.ENTITY_STATE, targetId)) {
+            long entityStateHash = stack.stableLong(CorruptionSurface.ENTITY_STATE, targetId + ":state_clock", 0x4C554E47);
+            multiplier *= Math.pow(2.0D, signedUnit(entityStateHash) * intensity * 3.4D);
+        }
+        return Mth.clamp(multiplier, 0.0D, stack.extreme(surface) ? 4096.0D : 512.0D);
+    }
+
     private static boolean liquidMechanicsActive(CorruptionEffectStack stack, String targetId) {
-        return surfaceActive(stack, CorruptionSurface.WORLDGEN_SURFACE, MIN_LIQUID_MECHANICS_INTENSITY)
-                || surfaceActive(stack, CorruptionSurface.PLAYER_PHYSICS, MIN_LIQUID_MECHANICS_INTENSITY)
-                || surfaceActive(stack, CorruptionSurface.BLOCK_COLLISION, MIN_LIQUID_MECHANICS_INTENSITY)
-                || surfaceActive(stack, CorruptionSurface.ENTITY_KINEMATICS, MIN_LIQUID_MECHANICS_INTENSITY)
-                || targetActive(stack, CorruptionSurface.WORLDGEN_SURFACE, targetId, MIN_LIQUID_MECHANICS_INTENSITY)
-                || targetActive(stack, CorruptionSurface.PLAYER_PHYSICS, targetId, MIN_LIQUID_MECHANICS_INTENSITY)
-                || targetActive(stack, CorruptionSurface.BLOCK_COLLISION, targetId, MIN_LIQUID_MECHANICS_INTENSITY)
-                || targetActive(stack, CorruptionSurface.ENTITY_KINEMATICS, targetId, MIN_LIQUID_MECHANICS_INTENSITY);
+        return surfaceActive(stack, CorruptionSurface.PLAYER_PHYSICS, MIN_LIQUID_MECHANICS_INTENSITY)
+                || targetActive(stack, CorruptionSurface.PLAYER_PHYSICS, targetId, MIN_LIQUID_MECHANICS_INTENSITY);
     }
 
     private static float liquidMechanicsIntensity(CorruptionEffectStack stack, String targetId) {
-        return Mth.clamp(Math.max(
-                Math.max(weightedSurfaceIntensity(stack, CorruptionSurface.WORLDGEN_SURFACE, targetId, 1.0F),
-                        weightedSurfaceIntensity(stack, CorruptionSurface.PLAYER_PHYSICS, targetId, 0.88F)),
-                Math.max(weightedSurfaceIntensity(stack, CorruptionSurface.BLOCK_COLLISION, targetId, 0.74F),
-                        weightedSurfaceIntensity(stack, CorruptionSurface.ENTITY_KINEMATICS, targetId, 0.64F))
-        ), 0.0F, 1.0F);
+        return Mth.clamp(weightedSurfaceIntensity(stack, CorruptionSurface.PLAYER_PHYSICS, targetId, 1.0F), 0.0F, 1.0F);
     }
 
     private static float weightedSurfaceIntensity(CorruptionEffectStack stack, CorruptionSurface surface, String targetId, float weight) {
@@ -2106,23 +2268,7 @@ public final class CorruptionMechanicsManager {
     }
 
     private static CorruptionSurface liquidSurface(CorruptionEffectStack stack, String targetId) {
-        CorruptionSurface best = CorruptionSurface.WORLDGEN_SURFACE;
-        float bestIntensity = weightedSurfaceIntensity(stack, best, targetId, 1.0F);
-        best = strongerLiquidSurface(stack, targetId, best, bestIntensity, CorruptionSurface.PLAYER_PHYSICS, 0.88F);
-        bestIntensity = weightedSurfaceIntensity(stack, best, targetId, best == CorruptionSurface.PLAYER_PHYSICS ? 0.88F : 1.0F);
-        best = strongerLiquidSurface(stack, targetId, best, bestIntensity, CorruptionSurface.BLOCK_COLLISION, 0.74F);
-        bestIntensity = best == CorruptionSurface.BLOCK_COLLISION
-                ? weightedSurfaceIntensity(stack, best, targetId, 0.74F)
-                : weightedSurfaceIntensity(stack, best, targetId, best == CorruptionSurface.PLAYER_PHYSICS ? 0.88F : 1.0F);
-        return strongerLiquidSurface(stack, targetId, best, bestIntensity, CorruptionSurface.ENTITY_KINEMATICS, 0.64F);
-    }
-
-    private static CorruptionSurface strongerLiquidSurface(CorruptionEffectStack stack, String targetId, CorruptionSurface current, float currentIntensity, CorruptionSurface candidate, float weight) {
-        if (stack.extreme(candidate)) {
-            return candidate;
-        }
-        float candidateIntensity = weightedSurfaceIntensity(stack, candidate, targetId, weight);
-        return candidateIntensity > currentIntensity ? candidate : current;
+        return CorruptionSurface.PLAYER_PHYSICS;
     }
 
     private static FluidFeatureFault fluidFeatureFault(CorruptionEffectStack stack, CorruptionSurface surface, String targetId, float intensity) {
@@ -2197,7 +2343,7 @@ public final class CorruptionMechanicsManager {
             double precision = 0.015625D + unitHash(seed ^ 0x51564C53L) * intensity * 0.28D;
             mutated = new Vec3(quantize(mutated.x, precision), quantize(mutated.y, precision), quantize(mutated.z, precision));
         }
-        return applyGameSpeedToVelocity(stack, targetId, mutated, maxMagnitude);
+        return clampVector(mutated, maxMagnitude);
     }
 
     private static Vec3 clampVector(Vec3 value, double maxMagnitude) {
@@ -2368,6 +2514,11 @@ public final class CorruptionMechanicsManager {
         cachedServerIdentity = 0;
         cachedServerStackTick = Long.MIN_VALUE;
         cachedServerStack = CorruptionEffectStack.local(0);
+    }
+
+    private static synchronized void clearEntityRuntimeCaches() {
+        ENTITY_MECHANICS_SYNC_SIGNATURES.clear();
+        ENTITY_HITBOX_SIGNATURE_CACHE.clear();
     }
 
     private static synchronized void resetTerrainMutationBudget() {
@@ -2578,6 +2729,9 @@ public final class CorruptionMechanicsManager {
 
     private record EntityHitboxMutation(float widthScale, float heightScale, int signature) {
         private static final EntityHitboxMutation PASS = new EntityHitboxMutation(1.0F, 1.0F, 0);
+    }
+
+    private record HitboxSignatureCache(int profileSignature, int signature, int nextCheckTick) {
     }
 
     private record TerrainMutationRequest(ServerLevel level, ChunkPos chunkPos, String key, CorruptionEffectStack stack) {

@@ -14,8 +14,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(EntityRenderDispatcher.class)
 @SuppressWarnings("target")
 public abstract class EntityRenderDispatcherMixin {
-    private static final ThreadLocal<Boolean> RMC$SHADOW_POSE_APPLIED = ThreadLocal.withInitial(() -> false);
-
     @Inject(
             method = {
                     "render(Lnet/minecraft/world/entity/Entity;DDDFFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
@@ -35,24 +33,13 @@ public abstract class EntityRenderDispatcherMixin {
                     "m_114457_(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/world/entity/Entity;FFLnet/minecraft/world/level/LevelReader;F)V"
             },
             at = @At("HEAD"),
+            cancellable = true,
             remap = false,
             require = 0
     )
     private static void rmc$beginCorruptedEntityShadow(PoseStack poseStack, MultiBufferSource bufferSource, Entity entity, float opacity, float partialTick, LevelReader level, float radius, CallbackInfo callback) {
-        RMC$SHADOW_POSE_APPLIED.set(ModelRenderCorruptionHooks.beginShadowRender(poseStack, entity, partialTick, radius));
-    }
-
-    @Inject(
-            method = {
-                    "renderShadow(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/world/entity/Entity;FFLnet/minecraft/world/level/LevelReader;F)V",
-                    "m_114457_(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/world/entity/Entity;FFLnet/minecraft/world/level/LevelReader;F)V"
-            },
-            at = @At("RETURN"),
-            remap = false,
-            require = 0
-    )
-    private static void rmc$endCorruptedEntityShadow(PoseStack poseStack, MultiBufferSource bufferSource, Entity entity, float opacity, float partialTick, LevelReader level, float radius, CallbackInfo callback) {
-        ModelRenderCorruptionHooks.endShadowRender(poseStack, RMC$SHADOW_POSE_APPLIED.get());
-        RMC$SHADOW_POSE_APPLIED.remove();
+        if (ModelRenderCorruptionHooks.shouldSkipShadowRender(entity, opacity, radius)) {
+            callback.cancel();
+        }
     }
 }

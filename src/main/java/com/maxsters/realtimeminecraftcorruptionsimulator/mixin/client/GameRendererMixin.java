@@ -1,6 +1,8 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.CameraRenderCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.InteractionCorruptionHooks;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import org.spongepowered.asm.mixin.Dynamic;
@@ -24,5 +26,33 @@ public abstract class GameRendererMixin {
     @Dynamic("Targets both mapped dev names and SRG runtime aliases for GameRenderer#pick.")
     private void rmc$corruptPickResult(float partialTick, CallbackInfo callback) {
         InteractionCorruptionHooks.corruptPick(Minecraft.getInstance(), partialTick);
+    }
+
+    @Inject(
+            method = {
+                    "bobView(Lcom/mojang/blaze3d/vertex/PoseStack;F)V",
+                    "m_109138_(Lcom/mojang/blaze3d/vertex/PoseStack;F)V"
+            },
+            at = @At("RETURN"),
+            remap = false,
+            require = 0
+    )
+    @Dynamic("Targets both mapped dev names and SRG runtime aliases for GameRenderer#bobView.")
+    private void rmc$corruptViewBob(PoseStack poseStack, float partialTick, CallbackInfo callback) {
+        CameraRenderCorruptionHooks.mutateViewBob(poseStack, partialTick, false);
+    }
+
+    @Inject(
+            method = {
+                    "bobHurt(Lcom/mojang/blaze3d/vertex/PoseStack;F)V",
+                    "m_109117_(Lcom/mojang/blaze3d/vertex/PoseStack;F)V"
+            },
+            at = @At("RETURN"),
+            remap = false,
+            require = 0
+    )
+    @Dynamic("Targets both mapped dev names and SRG runtime aliases for GameRenderer#bobHurt.")
+    private void rmc$corruptHurtBob(PoseStack poseStack, float partialTick, CallbackInfo callback) {
+        CameraRenderCorruptionHooks.mutateViewBob(poseStack, partialTick, true);
     }
 }

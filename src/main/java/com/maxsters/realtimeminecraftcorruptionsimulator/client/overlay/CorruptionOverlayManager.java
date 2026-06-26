@@ -6,6 +6,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruption
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.CorruptionAchievementManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.AudioCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.FontTextureCorruptionManager;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.GuiTextureCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ItemTextureCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.TextureMutationManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.VisualCorruptionManager;
@@ -934,6 +935,7 @@ public final class CorruptionOverlayManager {
     private static void notifyLocalSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
         TextureMutationManager.onSettingsChanged(previous, current);
         FontTextureCorruptionManager.onSettingsChanged(previous, current);
+        GuiTextureCorruptionManager.onSettingsChanged(previous, current);
         ItemTextureCorruptionManager.onSettingsChanged(previous, current);
         VisualCorruptionManager.onSettingsChanged(previous, current);
         AudioCorruptionManager.onSettingsChanged(previous, current);

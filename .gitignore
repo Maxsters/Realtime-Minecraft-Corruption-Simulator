@@ -1,4 +1,5 @@
 # IDE
+.vscode
 .classpath
 .metadata
 .project

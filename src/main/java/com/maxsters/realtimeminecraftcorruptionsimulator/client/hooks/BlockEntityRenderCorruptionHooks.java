@@ -25,26 +25,18 @@ public final class BlockEntityRenderCorruptionHooks {
             return false;
         }
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
-        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)
-                && !stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)
-                && !stack.activeOrExtreme(CorruptionSurface.ANIMATION_TIMING)) {
+        if (!stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)) {
             return false;
         }
 
         String targetId = "block_entity_render:" + blockEntityId(blockEntity);
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.WORLD_RENDER) ? 1.0F : stack.intensity(CorruptionSurface.WORLD_RENDER),
-                Math.max(
-                        (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 1.0F : stack.intensity(CorruptionSurface.MODEL_GEOMETRY)) * 0.86F,
-                        (stack.extreme(CorruptionSurface.ANIMATION_TIMING) ? 1.0F : stack.intensity(CorruptionSurface.ANIMATION_TIMING)) * 0.54F
-                )
-        ), 0.0F, 1.0F);
+        float intensity = Mth.clamp(stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 1.0F : stack.intensity(CorruptionSurface.MODEL_GEOMETRY), 0.0F, 1.0F);
         if (intensity <= 0.012F) {
             return false;
         }
-        long seed = stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId, blockEntity.getBlockPos().hashCode() ^ 0x42455244);
+        long seed = stack.stableLong(CorruptionSurface.MODEL_GEOMETRY, targetId, blockEntity.getBlockPos().hashCode() ^ 0x42455244);
         float chance = Mth.clamp(0.06F + intensity * 0.78F + stack.instability() * 0.10F, 0.0F, 0.95F);
-        if (!stack.extreme(CorruptionSurface.WORLD_RENDER) && unit(seed ^ 0x454E4142L) > chance) {
+        if (!stack.extreme(CorruptionSurface.MODEL_GEOMETRY) && unit(seed ^ 0x454E4142L) > chance) {
             return false;
         }
 

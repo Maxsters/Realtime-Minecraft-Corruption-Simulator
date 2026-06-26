@@ -2,7 +2,9 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.LightingCorruptionHooks;
 import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import org.spongepowered.asm.mixin.Dynamic;
 import net.minecraft.world.level.dimension.DimensionType;
 import org.spongepowered.asm.mixin.Mixin;
@@ -17,6 +19,8 @@ import java.lang.reflect.Field;
 @Mixin(LightTexture.class)
 public abstract class LightTextureMixin {
     private static Field rmc$updateLightTextureField;
+    private static Field rmc$lightTextureField;
+    private static Field rmc$lightPixelsField;
 
     @Inject(
             method = {
@@ -29,6 +33,9 @@ public abstract class LightTextureMixin {
     )
     @Dynamic("Targets both mapped dev names and SRG runtime aliases for LightTexture#tick.")
     private void rmc$markLightTextureDirtyFromTick(CallbackInfo callback) {
+        if (LightingCorruptionHooks.consumeLightTextureResetRequest()) {
+            rmc$restoreDefaultLightTexture();
+        }
         if (LightingCorruptionHooks.consumeLightTextureRefreshRequest()) {
             rmc$markLightTextureDirty();
         }
@@ -45,6 +52,9 @@ public abstract class LightTextureMixin {
     )
     @Dynamic("Targets both mapped dev names and SRG runtime aliases for LightTexture#updateLightTexture.")
     private void rmc$markLightTextureDirtyFromUpdate(float partialTick, CallbackInfo callback) {
+        if (LightingCorruptionHooks.consumeLightTextureResetRequest()) {
+            rmc$restoreDefaultLightTexture();
+        }
         if (LightingCorruptionHooks.consumeLightTextureRefreshRequest()) {
             rmc$markLightTextureDirty();
         }
@@ -105,8 +115,61 @@ public abstract class LightTextureMixin {
         }
     }
 
+    private void rmc$restoreDefaultLightTexture() {
+        NativeImage pixels = rmc$lightPixels();
+        DynamicTexture texture = rmc$lightTexture();
+        if (pixels == null || texture == null) {
+            return;
+        }
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                pixels.setPixelRGBA(x, y, -1);
+            }
+        }
+        texture.upload();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+    }
+
+    private DynamicTexture rmc$lightTexture() {
+        Field field = rmc$lightTextureField;
+        if (field == null) {
+            field = rmc$findField("lightTexture", "f_109870_");
+            rmc$lightTextureField = field;
+        }
+        if (field == null) {
+            return null;
+        }
+        try {
+            Object value = field.get(this);
+            return value instanceof DynamicTexture texture ? texture : null;
+        } catch (IllegalAccessException ignored) {
+            return null;
+        }
+    }
+
+    private NativeImage rmc$lightPixels() {
+        Field field = rmc$lightPixelsField;
+        if (field == null) {
+            field = rmc$findField("lightPixels", "f_109871_");
+            rmc$lightPixelsField = field;
+        }
+        if (field == null) {
+            return null;
+        }
+        try {
+            Object value = field.get(this);
+            return value instanceof NativeImage pixels ? pixels : null;
+        } catch (IllegalAccessException ignored) {
+            return null;
+        }
+    }
+
     private static Field rmc$findUpdateLightTextureField() {
-        for (String name : new String[]{"updateLightTexture", "f_109873_"}) {
+        return rmc$findField("updateLightTexture", "f_109873_");
+    }
+
+    private static Field rmc$findField(String... names) {
+        for (String name : names) {
             try {
                 Field field = LightTexture.class.getDeclaredField(name);
                 field.setAccessible(true);

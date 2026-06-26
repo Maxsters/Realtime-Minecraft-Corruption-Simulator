@@ -9,11 +9,19 @@ import java.util.Collections;
 import java.util.List;
 
 public final class CorruptionEffectStack {
-    private static final float ACTIVE_THRESHOLD = 0.006F;
+    private static final float ACTIVE_THRESHOLD = 0.00025F;
+    private static final float LOG_RESPONSE_CURVE = 9.0F;
+    private static final float EFFECTIVE_DELTA_SATURATION = mappedPercent(70);
 
     private final int corruptionLevel;
     private final int previousCorruptionLevel;
     private final int corruptionDelta;
+    private final float effectiveLevel;
+    private final float effectivePreviousLevel;
+    private final float effectiveDelta;
+    private final int effectiveLevelBucket;
+    private final int effectivePreviousLevelBucket;
+    private final int effectiveDeltaBucket;
     private final int calibrationConfidence;
     private final int stabilityDebt;
     private final int profileCoherence;
@@ -27,12 +35,18 @@ public final class CorruptionEffectStack {
         this.corruptionLevel = clampPercent(corruptionLevel);
         this.previousCorruptionLevel = clampPercent(previousCorruptionLevel);
         this.corruptionDelta = clampPercent(corruptionDelta);
+        this.effectiveLevel = mappedPercent(this.corruptionLevel);
+        this.effectivePreviousLevel = mappedPercent(this.previousCorruptionLevel);
+        this.effectiveDelta = clamp01(Math.max(Math.abs(this.effectiveLevel - this.effectivePreviousLevel), mappedPercent(this.corruptionDelta)));
+        this.effectiveLevelBucket = Math.round(this.effectiveLevel * 100.0F);
+        this.effectivePreviousLevelBucket = Math.round(this.effectivePreviousLevel * 100.0F);
+        this.effectiveDeltaBucket = Math.round(this.effectiveDelta * 100.0F);
         this.calibrationConfidence = clampPercent(calibrationConfidence);
         this.stabilityDebt = clampPercent(stabilityDebt);
         this.profileCoherence = clampPercent(profileCoherence);
         this.fixedSeed = fixedSeed;
         this.enabledTargetsMask = CorruptionTarget.normalizeMask(enabledTargetsMask);
-        this.layerCount = computeLayerCount(this.corruptionLevel);
+        this.layerCount = computeLayerCount(this.effectiveLevel);
         this.instability = computeInstability(this.calibrationConfidence, this.stabilityDebt, this.profileCoherence);
         this.intensityCache = new float[CorruptionSurface.values().length];
         Arrays.fill(this.intensityCache, Float.NaN);
@@ -100,6 +114,10 @@ public final class CorruptionEffectStack {
         return corruptionDelta;
     }
 
+    public float effectiveLevel() {
+        return effectiveLevel;
+    }
+
     public int calibrationConfidence() {
         return calibrationConfidence;
     }
@@ -132,8 +150,8 @@ public final class CorruptionEffectStack {
         if (corruptionLevel < 92 || !surfaceEnabled(surface)) {
             return false;
         }
-        float level = corruptionLevel / 100.0F;
         float pressure = intensity(surface) * 0.68F + instability() * 0.22F + layerCount() / 24.0F * 0.10F;
+        float level = effectiveLevel;
         float threshold = 0.72F - smoothstep(level) * 0.18F;
         return pressure >= threshold;
     }
@@ -176,11 +194,11 @@ public final class CorruptionEffectStack {
             return cached;
         }
 
-        float level = corruptionLevel / 100.0F;
+        float level = effectiveLevel;
         float levelPressure = (float) Math.pow(level, 1.18F);
         float layerPressure = layerPressure(surface);
         float disorder = instability;
-        float deltaPressure = smoothstep(clamp01(corruptionDelta / 70.0F)) * level;
+        float deltaPressure = smoothstep(clamp01(effectiveDelta / EFFECTIVE_DELTA_SATURATION)) * level;
         float coherenceDamping = 0.74F + profileCoherence / 100.0F * 0.26F;
         float raw = levelPressure * (0.64F + layerPressure * 0.46F) * coherenceDamping;
         raw += disorder * surface.instabilityBias() * (0.28F + level * 0.72F);
@@ -319,11 +337,11 @@ public final class CorruptionEffectStack {
     }
 
     private float layerPressure(CorruptionSurface surface) {
-        if (corruptionLevel <= 0) {
+        if (effectiveLevel <= 0.0F) {
             return 0.0F;
         }
 
-        float level = corruptionLevel / 100.0F;
+        float level = effectiveLevel;
         long hash = mix(fixedSeed ^ surface.salt() * 0x9E37_79B9_7F4A_7C15L);
         float seedGain = 0.58F + unit(hash) * 0.84F;
         float affinityGain = 0.28F + surface.affinity() * 0.72F;
@@ -333,7 +351,7 @@ public final class CorruptionEffectStack {
     private float layerProgress(int layer) {
         int layers = Math.max(1, layerCount());
         float layerPosition = (layer + 1.0F) / layers;
-        float level = corruptionLevel / 100.0F;
+        float level = effectiveLevel;
         return clamp01((0.38F + layerPosition * 0.62F) * (0.25F + level * 0.75F));
     }
 
@@ -351,9 +369,9 @@ public final class CorruptionEffectStack {
         if (targetId != null && !targetId.isBlank()) {
             value ^= stableString(targetId) * 0x94D0_49BB_1331_11EBL;
         }
-        value ^= (long) corruptionLevel << 32;
-        value ^= (long) previousCorruptionLevel << 17;
-        value ^= (long) corruptionDelta << 9;
+        value ^= (long) effectiveLevelBucket << 32;
+        value ^= (long) effectivePreviousLevelBucket << 17;
+        value ^= (long) effectiveDeltaBucket << 9;
         return value;
     }
 
@@ -372,12 +390,26 @@ public final class CorruptionEffectStack {
         return clamped * clamped * (3.0F - 2.0F * clamped);
     }
 
-    private static int computeLayerCount(int corruptionLevel) {
-        if (corruptionLevel <= 0) {
+    private static int computeLayerCount(float effectiveLevel) {
+        if (effectiveLevel <= 0.0F) {
             return 0;
         }
-        float level = corruptionLevel / 100.0F;
+        float level = clamp01(effectiveLevel);
         return Math.max(1, Math.min(24, Math.round(1.0F + (float) Math.pow(level, 0.82F) * 23.0F)));
+    }
+
+    // Keep the visible percent linear, but use a mirrored logarithmic backend response for playability at low levels.
+    private static float mappedPercent(int visiblePercent) {
+        if (visiblePercent <= 0) {
+            return 0.0F;
+        }
+        if (visiblePercent >= 100) {
+            return 1.0F;
+        }
+        float visible = visiblePercent / 100.0F;
+        double denominator = Math.log1p(LOG_RESPONSE_CURVE);
+        double mapped = 1.0D - Math.log1p(LOG_RESPONSE_CURVE * (1.0D - visible)) / denominator;
+        return clamp01((float) mapped);
     }
 
     private static float computeInstability(int calibrationConfidence, int stabilityDebt, int profileCoherence) {

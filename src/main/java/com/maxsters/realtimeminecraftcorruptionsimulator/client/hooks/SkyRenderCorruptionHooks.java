@@ -95,8 +95,7 @@ public final class SkyRenderCorruptionHooks {
 
     private static boolean starMutationActive(CorruptionEffectStack stack) {
         return stack.activeOrExtreme(CorruptionSurface.LIGHT_FIELD)
-                || stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)
-                || stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY);
+                || stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER);
     }
 
     private static float starIntensity(CorruptionEffectStack stack, int star) {
@@ -106,8 +105,7 @@ public final class SkyRenderCorruptionHooks {
         String targetId = "sky_star:" + star;
         float light = Math.max(stack.targetIntensity(CorruptionSurface.LIGHT_FIELD, targetId), stack.intensity(CorruptionSurface.LIGHT_FIELD) * 0.86F);
         float world = Math.max(stack.targetIntensity(CorruptionSurface.WORLD_RENDER, targetId), stack.intensity(CorruptionSurface.WORLD_RENDER) * 0.72F);
-        float texture = stack.intensity(CorruptionSurface.TEXTURE_MEMORY) * 0.36F;
-        return Mth.clamp(Math.max(light, Math.max(world, texture)), 0.0F, 1.0F);
+        return Mth.clamp(Math.max(light, world), 0.0F, 1.0F);
     }
 
     private static String starSignature(CorruptionEffectStack stack) {
@@ -115,8 +113,7 @@ public final class SkyRenderCorruptionHooks {
                 + ":" + stack.fixedSeed()
                 + ":" + stack.enabledTargetsMask()
                 + ":" + stack.bucket(CorruptionSurface.LIGHT_FIELD, 0x53544152, 64)
-                + ":" + stack.bucket(CorruptionSurface.WORLD_RENDER, 0x574F524C, 64)
-                + ":" + stack.bucket(CorruptionSurface.TEXTURE_MEMORY, 0x544558, 64);
+                + ":" + stack.bucket(CorruptionSurface.WORLD_RENDER, 0x574F524C, 64);
     }
 
     private static Method createStarsMethod() {

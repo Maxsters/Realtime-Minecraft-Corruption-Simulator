@@ -74,6 +74,7 @@ public final class ClientCorruptionProtection {
                 || name.endsWith("ReceivingLevelScreen")
                 || name.endsWith("GenericDirtMessageScreen")
                 || name.endsWith("LevelLoadingScreen")
+                || name.endsWith("DeathScreen")
                 || name.endsWith("DisconnectedScreen");
     }
 

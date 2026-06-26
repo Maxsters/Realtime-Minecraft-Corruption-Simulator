@@ -23,8 +23,7 @@ public final class BreakingTextureCorruptionHooks {
         }
 
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
-        if (!stack.activeOrExtreme(CorruptionSurface.ANIMATION_TIMING)
-                && !stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)) {
+        if (!stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)) {
             return list.get(stage);
         }
 
@@ -34,8 +33,7 @@ public final class BreakingTextureCorruptionHooks {
 
     public static VertexConsumer uv(VertexConsumer consumer, float u, float v) {
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
-        if (!stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)
-                && !stack.activeOrExtreme(CorruptionSurface.ANIMATION_TIMING)) {
+        if (!stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)) {
             return consumer.uv(u, v);
         }
 
@@ -59,8 +57,7 @@ public final class BreakingTextureCorruptionHooks {
 
     public static VertexConsumer color(VertexConsumer consumer, float red, float green, float blue, float alpha) {
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
-        if (!stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)
-                && !stack.activeOrExtreme(CorruptionSurface.ANIMATION_TIMING)) {
+        if (!stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)) {
             return consumer.color(red, green, blue, alpha);
         }
         float intensity = destroyIntensity(stack);
@@ -82,9 +79,9 @@ public final class BreakingTextureCorruptionHooks {
         }
 
         long gameTime = Minecraft.getInstance().level == null ? 0L : Minecraft.getInstance().level.getGameTime();
-        long seed = stack.stableLong(CorruptionSurface.ANIMATION_TIMING, "destroy_stage", stage ^ 0x44535452);
-        if (!stack.extreme(CorruptionSurface.ANIMATION_TIMING)
-                && stack.unit(CorruptionSurface.ANIMATION_TIMING, "destroy_stage", stage ^ (int) gameTime) > 0.18F + intensity * 0.74F) {
+        long seed = stack.stableLong(CorruptionSurface.TEXTURE_MEMORY, "destroy_stage", stage ^ 0x44535452);
+        if (!stack.extreme(CorruptionSurface.TEXTURE_MEMORY)
+                && stack.unit(CorruptionSurface.TEXTURE_MEMORY, "destroy_stage", stage ^ (int) gameTime) > 0.18F + intensity * 0.74F) {
             return Math.floorMod(stage, bound);
         }
 
@@ -95,13 +92,10 @@ public final class BreakingTextureCorruptionHooks {
     }
 
     private static float destroyIntensity(CorruptionEffectStack stack) {
-        float animation = stack.extreme(CorruptionSurface.ANIMATION_TIMING)
-                ? 1.0F
-                : stack.intensity(CorruptionSurface.ANIMATION_TIMING);
         float texture = stack.extreme(CorruptionSurface.TEXTURE_MEMORY)
                 ? 1.0F
-                : stack.intensity(CorruptionSurface.TEXTURE_MEMORY) * 0.82F;
-        return Mth.clamp(Math.max(animation, texture), 0.0F, 1.0F);
+                : stack.intensity(CorruptionSurface.TEXTURE_MEMORY);
+        return Mth.clamp(texture, 0.0F, 1.0F);
     }
 
     private static float signed(long value, float amplitude) {

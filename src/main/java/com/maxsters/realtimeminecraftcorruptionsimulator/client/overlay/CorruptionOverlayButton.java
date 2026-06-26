@@ -19,7 +19,7 @@ public final class CorruptionOverlayButton {
         drawCircle(graphics, centerX, centerY, radius, hovered ? 0xFFE6EEF0 : 0xFF7D8A8F);
         drawCircle(graphics, centerX, centerY, radius - 2, 0xEE11181B);
         drawCircle(graphics, centerX, centerY, Math.max(3, radius - 8), accent);
-        String label = "RC";
+        String label = snapshot == null ? "--%" : snapshot.getCorruptionLevel() + "%";
         ProtectedTextRenderer.drawString(graphics, label, centerX - ProtectedTextRenderer.width(label) / 2, centerY - 4, 0xFFEAF4F7);
     }
 

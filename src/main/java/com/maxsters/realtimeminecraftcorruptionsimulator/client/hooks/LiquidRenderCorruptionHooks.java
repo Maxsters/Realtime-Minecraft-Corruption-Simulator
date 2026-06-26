@@ -58,13 +58,8 @@ public final class LiquidRenderCorruptionHooks {
         }
 
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
-        float world = stack.intensity(CorruptionSurface.WORLD_RENDER) * 0.52F;
-        float texture = stack.intensity(CorruptionSurface.TEXTURE_MEMORY) * 0.64F;
-        float model = stack.intensity(CorruptionSurface.MODEL_GEOMETRY) * 0.70F;
-        float intensity = Mth.clamp(Math.max(Math.max(world, texture), model), 0.0F, 1.0F);
-        boolean extreme = stack.extreme(CorruptionSurface.WORLD_RENDER)
-                || stack.extreme(CorruptionSurface.TEXTURE_MEMORY)
-                || stack.extreme(CorruptionSurface.MODEL_GEOMETRY);
+        float intensity = Mth.clamp(stack.extreme(CorruptionSurface.WORLD_RENDER) ? 1.0F : stack.intensity(CorruptionSurface.WORLD_RENDER), 0.0F, 1.0F);
+        boolean extreme = stack.extreme(CorruptionSurface.WORLD_RENDER);
         if (intensity <= 0.045F && !extreme) {
             return false;
         }
@@ -74,10 +69,7 @@ public final class LiquidRenderCorruptionHooks {
         float chance = extreme
                 ? 0.72F
                 : Mth.clamp(0.018F + intensity * 0.46F + stack.instability() * 0.08F, 0.0F, 0.74F);
-        CorruptionSurface surface = stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)
-                ? CorruptionSurface.MODEL_GEOMETRY
-                : CorruptionSurface.WORLD_RENDER;
-        return stack.unit(surface, targetId, 0x4C495155) < chance;
+        return stack.unit(CorruptionSurface.WORLD_RENDER, targetId, 0x4C495155) < chance;
     }
 
     private static final class LiquidGeometryContext {

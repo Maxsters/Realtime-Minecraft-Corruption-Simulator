@@ -19,6 +19,10 @@ import net.minecraft.world.level.levelgen.DensityFunction;
 import net.minecraft.world.level.levelgen.feature.Feature;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
 public final class WorldgenCorruptionHooks {
     private static final ThreadLocal<Boolean> FEATURE_ORIGIN_REROUTE_ACTIVE = ThreadLocal.withInitial(() -> false);
     private static final float FEATURE_SKIP_MIN_INTENSITY = 0.14F;
@@ -26,6 +30,34 @@ public final class WorldgenCorruptionHooks {
     private static final float CLIMATE_SAMPLE_MIN_INTENSITY = 0.12F;
     private static final float DENSITY_SAMPLE_MIN_STRENGTH = 0.12F;
     private static final float DENSITY_COORDINATE_MIN_STRENGTH = 0.24F;
+    private static final Block[] DIRT_SURFACES = {
+            Blocks.GRASS_BLOCK, Blocks.DIRT, Blocks.COARSE_DIRT, Blocks.ROOTED_DIRT, Blocks.PODZOL, Blocks.MYCELIUM, Blocks.MUD
+    };
+    private static final Block[] SAND_SURFACES = {
+            Blocks.SAND, Blocks.RED_SAND, Blocks.GRAVEL, Blocks.CLAY, Blocks.MUD
+    };
+    private static final Block[] STONE_SURFACES = {
+            Blocks.STONE, Blocks.DEEPSLATE, Blocks.TUFF, Blocks.CALCITE, Blocks.ANDESITE, Blocks.DIORITE, Blocks.GRANITE, Blocks.DRIPSTONE_BLOCK
+    };
+    private static final Block[] ICE_SURFACES = {
+            Blocks.SNOW_BLOCK, Blocks.POWDER_SNOW, Blocks.ICE, Blocks.PACKED_ICE, Blocks.BLUE_ICE
+    };
+    private static final Block[] NETHER_SURFACES = {
+            Blocks.NETHERRACK, Blocks.BASALT, Blocks.SMOOTH_BASALT, Blocks.BLACKSTONE, Blocks.SOUL_SAND, Blocks.SOUL_SOIL, Blocks.CRIMSON_NYLIUM, Blocks.WARPED_NYLIUM
+    };
+    private static final Block[] END_SURFACES = {
+            Blocks.END_STONE, Blocks.OBSIDIAN
+    };
+    private static final DensityChannelPlan CONTINENTS_DENSITY = new DensityChannelPlan(stableString("continents"), 1.28F, 1.35D, false, true);
+    private static final DensityChannelPlan EROSION_DENSITY = new DensityChannelPlan(stableString("erosion"), 1.18F, 1.18D, false, true);
+    private static final DensityChannelPlan RIDGES_DENSITY = new DensityChannelPlan(stableString("ridges"), 1.22F, 1.24D, false, true);
+    private static final DensityChannelPlan DEPTH_DENSITY = new DensityChannelPlan(stableString("depth"), 0.98F, 0.92D, true, false);
+    private static final DensityChannelPlan INITIAL_DENSITY = new DensityChannelPlan(stableString("initial_density"), 0.86F, 0.78D, true, false);
+    private static final DensityChannelPlan FINAL_DENSITY = new DensityChannelPlan(stableString("final_density"), 0.72F, 0.54D, true, false);
+    private static final DensityChannelPlan TEMPERATURE_DENSITY = new DensityChannelPlan(stableString("temperature"), 0.62F, 0.34D, false, false);
+    private static final DensityChannelPlan VEGETATION_DENSITY = new DensityChannelPlan(stableString("vegetation"), 0.62F, 0.34D, false, false);
+    private static final ConcurrentMap<Feature<?>, FeatureInfo> FEATURE_INFO_CACHE = new ConcurrentHashMap<>();
+    private static volatile WorldgenState cachedWorldgenState;
 
     private WorldgenCorruptionHooks() {
     }
@@ -36,21 +68,41 @@ public final class WorldgenCorruptionHooks {
         }
     }
 
+    private record WorldgenState(long version, float intensity, long fixedSeed, float instability, long densityDomainSeed) {
+        private static WorldgenState from(GlobalCorruptionSettings.CorruptionRuntimeSnapshot snapshot) {
+            CorruptionEffectStack stack = CorruptionEffectStack.local(snapshot.activeLevel(), snapshot.seed(), snapshot.enabledTargetsMask());
+            long fixedSeed = stack.fixedSeed();
+            return new WorldgenState(
+                    snapshot.version(),
+                    worldgenIntensity(stack),
+                    fixedSeed,
+                    stack.instability(),
+                    mix(fixedSeed ^ 0x574F524C444F4D4CL)
+            );
+        }
+    }
+
+    private record DensityChannelPlan(long hash, float weight, double amplitudeBase, boolean terrainShape, boolean continentalBand) {
+    }
+
+    private record FeatureInfo(String normalizedTarget, long targetHash) {
+    }
+
     public static boolean shouldSkipBiomeDecoration(WorldGenLevel level, ChunkAccess chunk) {
-        CorruptionEffectStack stack = stack();
-        float intensity = worldgenIntensity(stack);
+        WorldgenState state = worldgenState();
+        float intensity = state.intensity();
         if (intensity <= 0.0F || level == null || chunk == null) {
             return false;
         }
 
-        float chance = clamp01((intensity - 0.24F) * 0.32F + stack.instability() * 0.06F);
+        float chance = clamp01((intensity - 0.24F) * 0.32F + state.instability() * 0.06F);
         if (chance <= 0.0F) {
             return false;
         }
 
         ChunkPos pos = chunk.getPos();
         long hash = mix(level.getSeed()
-                ^ stack.fixedSeed()
+                ^ state.fixedSeed()
                 ^ pos.x * 0x9E3779B97F4A7C15L
                 ^ pos.z * 0xBF58476D1CE4E5B9L
                 ^ 0x42494F4D45504153L);
@@ -58,19 +110,19 @@ public final class WorldgenCorruptionHooks {
     }
 
     public static boolean shouldSkipStructures(ChunkGeneratorStructureState state, StructureManager structureManager, ChunkAccess chunk) {
-        CorruptionEffectStack stack = stack();
-        float intensity = worldgenIntensity(stack);
+        WorldgenState worldgenState = worldgenState();
+        float intensity = worldgenState.intensity();
         if (intensity <= 0.0F || chunk == null) {
             return false;
         }
 
-        float chance = clamp01((intensity - 0.30F) * 0.26F + stack.instability() * 0.05F);
+        float chance = clamp01((intensity - 0.30F) * 0.26F + worldgenState.instability() * 0.05F);
         if (chance <= 0.0F) {
             return false;
         }
 
         ChunkPos pos = chunk.getPos();
-        long hash = mix(stack.fixedSeed()
+        long hash = mix(worldgenState.fixedSeed()
                 ^ pos.x * 0xD6E8FEB86659FD93L
                 ^ pos.z * 0x94D049BB133111EBL
                 ^ System.identityHashCode(state) * 0x632BE59BD9B4E019L
@@ -83,20 +135,19 @@ public final class WorldgenCorruptionHooks {
         if (FEATURE_ORIGIN_REROUTE_ACTIVE.get()) {
             return false;
         }
-        CorruptionEffectStack stack = stack();
-        float intensity = worldgenIntensity(stack);
+        WorldgenState state = worldgenState();
+        float intensity = state.intensity();
         if (intensity < FEATURE_SKIP_MIN_INTENSITY || feature == null || level == null || origin == null) {
             return false;
         }
 
-        ResourceLocation featureId = ForgeRegistries.FEATURES.getKey(feature);
-        String target = featureId == null ? feature.getClass().getName() : featureId.toString();
+        FeatureInfo featureInfo = featureInfo(feature);
         long hash = mix(level.getSeed()
-                ^ stack.fixedSeed()
+                ^ state.fixedSeed()
                 ^ origin.asLong()
-                ^ stableString(target) * 0x94D049BB133111EBL
+                ^ featureInfo.targetHash() * 0x94D049BB133111EBL
                 ^ 0x4645415455524550L);
-        float chance = featureSkipChance(target, intensity, stack.instability());
+        float chance = featureSkipChance(featureInfo, intensity, state.instability());
         return unit(hash) < chance;
     }
 
@@ -117,20 +168,19 @@ public final class WorldgenCorruptionHooks {
             return origin;
         }
 
-        CorruptionEffectStack stack = stack();
-        float intensity = worldgenIntensity(stack);
+        WorldgenState state = worldgenState();
+        float intensity = state.intensity();
         if (intensity < FEATURE_REROUTE_MIN_INTENSITY || feature == null || level == null || origin == null) {
             return origin;
         }
 
-        ResourceLocation featureId = ForgeRegistries.FEATURES.getKey(feature);
-        String target = featureId == null ? feature.getClass().getName() : featureId.toString();
+        FeatureInfo featureInfo = featureInfo(feature);
         long seed = mix(level.getSeed()
-                ^ stack.fixedSeed()
+                ^ state.fixedSeed()
                 ^ origin.asLong()
-                ^ stableString(target) * 0xD6E8FEB86659FD93L
+                ^ featureInfo.targetHash() * 0xD6E8FEB86659FD93L
                 ^ 0x4645415455524F52L);
-        float chance = featureRerouteChance(target, intensity, stack.instability());
+        float chance = featureRerouteChance(featureInfo, intensity, state.instability());
         if (unit(seed ^ 0x5245524FL) >= chance) {
             return origin;
         }
@@ -202,30 +252,30 @@ public final class WorldgenCorruptionHooks {
     }
 
     public static boolean shouldCorruptDensity(String channel) {
-        CorruptionEffectStack stack = stack();
-        float intensity = worldgenIntensity(stack);
-        return intensity > 0.0F && densityStrength(channel, intensity) >= DENSITY_SAMPLE_MIN_STRENGTH;
+        WorldgenState state = worldgenState();
+        float intensity = state.intensity();
+        return intensity > 0.0F && densityStrength(densityPlan(channel), intensity) >= DENSITY_SAMPLE_MIN_STRENGTH;
     }
 
     public static boolean shouldUseFastDensityFill(String channel) {
-        CorruptionEffectStack stack = stack();
-        float intensity = worldgenIntensity(stack);
-        return intensity <= 0.0F || densityStrength(channel, intensity) < DENSITY_COORDINATE_MIN_STRENGTH;
+        WorldgenState state = worldgenState();
+        float intensity = state.intensity();
+        return intensity <= 0.0F || densityStrength(densityPlan(channel), intensity) < DENSITY_COORDINATE_MIN_STRENGTH;
     }
 
     public static DensityCoordinates corruptDensityCoordinates(String channel, int x, int y, int z) {
-        CorruptionEffectStack stack = stack();
-        float intensity = worldgenIntensity(stack);
+        WorldgenState state = worldgenState();
+        float intensity = state.intensity();
         if (intensity <= 0.0F) {
-            return new DensityCoordinates(x, y, z);
+            return null;
         }
 
-        float strength = densityStrength(channel, intensity);
+        float strength = densityStrength(densityPlan(channel), intensity);
         if (strength < DENSITY_COORDINATE_MIN_STRENGTH) {
-            return new DensityCoordinates(x, y, z);
+            return null;
         }
 
-        long domainSeed = mix(stack.fixedSeed() ^ 0x574F524C444F4D4CL);
+        long domainSeed = state.densityDomainSeed();
         int mode = Math.floorMod((int) (domainSeed >>> 48), 6);
         int period = Math.max(16, Math.round(24.0F + (1.0F - strength) * 144.0F + unit(domainSeed >>> 6) * 384.0F));
         int precision = Math.max(1, Math.round(1.0F + strength * (3.0F + unit(domainSeed >>> 18) * 17.0F)));
@@ -268,26 +318,25 @@ public final class WorldgenCorruptionHooks {
         }
 
         float blend = clamp01(0.18F + strength * 0.82F);
-        return new DensityCoordinates(
-                safeCoordinate(Math.round(lerp(x, sx, blend))),
-                sy,
-                safeCoordinate(Math.round(lerp(z, sz, blend)))
-        );
+        int resultX = safeCoordinate(Math.round(lerp(x, sx, blend)));
+        int resultZ = safeCoordinate(Math.round(lerp(z, sz, blend)));
+        return resultX == x && sy == y && resultZ == z ? null : new DensityCoordinates(resultX, sy, resultZ);
     }
 
     public static double corruptDensitySample(String channel, double value, int x, int y, int z, double minValue, double maxValue) {
-        CorruptionEffectStack stack = stack();
-        float intensity = worldgenIntensity(stack);
+        WorldgenState state = worldgenState();
+        float intensity = state.intensity();
         if (intensity <= 0.0F || !Double.isFinite(value)) {
             return value;
         }
 
-        float strength = densityStrength(channel, intensity);
+        DensityChannelPlan plan = densityPlan(channel);
+        float strength = densityStrength(plan, intensity);
         if (strength < DENSITY_SAMPLE_MIN_STRENGTH) {
             return value;
         }
 
-        long channelSeed = mix(stack.fixedSeed() ^ stableString(channel));
+        long channelSeed = mix(state.fixedSeed() ^ plan.hash());
         int gateCell = Math.max(8, Math.round(18.0F + (1.0F - strength) * 42.0F + unit(channelSeed ^ 0x47415445L) * 26.0F));
         int gateCellY = Math.max(8, gateCell / 2);
         long gateSeed = mix(channelSeed
@@ -295,14 +344,14 @@ public final class WorldgenCorruptionHooks {
                 ^ floorToCell(y, gateCellY) * 0x94D049BB133111EBL
                 ^ floorToCell(z, gateCell) * 0xBF58476D1CE4E5B9L
                 ^ 0x44454E5347415445L);
-        boolean terrainShape = isTerrainShapeChannel(channel);
-        float activeChance = clamp01((terrainShape ? 0.025F : 0.045F) + strength * (terrainShape ? 0.16F : 0.28F) + stack.instability() * 0.035F);
+        boolean terrainShape = plan.terrainShape();
+        float activeChance = clamp01((terrainShape ? 0.025F : 0.045F) + strength * (terrainShape ? 0.16F : 0.28F) + state.instability() * 0.035F);
         if (unit(gateSeed ^ 0x414354495645L) >= activeChance) {
             return value;
         }
 
         int family = Math.floorMod((int) (channelSeed >>> 17), 6);
-        double amplitude = densityAmplitude(channel, strength, stack.instability()) * (terrainShape ? 0.28D : 0.70D);
+        double amplitude = densityAmplitude(plan, strength, state.instability()) * (terrainShape ? 0.28D : 0.70D);
         double coarse = smoothNoise2D(x, z, channelSeed ^ 0x434F41525345L, 0.002D + unit(channelSeed >>> 11) * 0.006D);
         double folded = smoothNoise2D(foldCoordinate(x, 64 + gateCell, (int) channelSeed), foldCoordinate(z, 64 + gateCell, (int) (channelSeed >>> 32)), channelSeed ^ 0x464F4C444544L, 0.010D + strength * 0.030D);
         double lane = densityScanlinePulse(channelSeed ^ 0x4C414E455354L, x, y, z, strength);
@@ -326,11 +375,11 @@ public final class WorldgenCorruptionHooks {
             result = value + (coarse * 0.30D + folded * 0.22D + shelves * 0.12D) * amplitude;
         }
 
-        if ("continents".equals(channel) || "erosion".equals(channel) || "ridges".equals(channel)) {
+        if (plan.continentalBand()) {
             result += coarse * folded * amplitude * (0.18D + strength * 0.22D);
         }
 
-        result = applyDensityAddressFaults(channel, stack, result, value, x, y, z, strength, amplitude, channelSeed);
+        result = applyDensityAddressFaults(terrainShape, state.instability(), result, value, x, y, z, strength, amplitude, channelSeed);
         if (terrainShape && y > 124 && result > value) {
             result = lerp(result, value, clamp01((y - 124) / 96.0F));
         }
@@ -339,32 +388,34 @@ public final class WorldgenCorruptionHooks {
     }
 
     public static double densityMinValue(String channel, double value) {
-        float intensity = worldgenIntensity(stack());
-        float strength = densityStrength(channel, intensity);
-        return strength < DENSITY_SAMPLE_MIN_STRENGTH ? value : value - densityAmplitude(channel, strength, 0.0F) * 1.6D;
+        float intensity = worldgenState().intensity();
+        DensityChannelPlan plan = densityPlan(channel);
+        float strength = densityStrength(plan, intensity);
+        return strength < DENSITY_SAMPLE_MIN_STRENGTH ? value : value - densityAmplitude(plan, strength, 0.0F) * 1.6D;
     }
 
     public static double densityMaxValue(String channel, double value) {
-        float intensity = worldgenIntensity(stack());
-        float strength = densityStrength(channel, intensity);
-        return strength < DENSITY_SAMPLE_MIN_STRENGTH ? value : value + densityAmplitude(channel, strength, 0.0F) * 1.6D;
+        float intensity = worldgenState().intensity();
+        DensityChannelPlan plan = densityPlan(channel);
+        float strength = densityStrength(plan, intensity);
+        return strength < DENSITY_SAMPLE_MIN_STRENGTH ? value : value + densityAmplitude(plan, strength, 0.0F) * 1.6D;
     }
 
     public static Climate.TargetPoint corruptClimateSample(Climate.TargetPoint point, int quartX, int quartY, int quartZ) {
-        CorruptionEffectStack stack = stack();
-        float intensity = worldgenIntensity(stack);
+        WorldgenState state = worldgenState();
+        float intensity = state.intensity();
         if (point == null || intensity < CLIMATE_SAMPLE_MIN_INTENSITY) {
             return point;
         }
 
-        int cell = Math.max(4, Math.round(16.0F + (1.0F - intensity) * 42.0F + unit(stack.fixedSeed() ^ 0x434C494D4543454CL) * 28.0F));
+        int cell = Math.max(4, Math.round(16.0F + (1.0F - intensity) * 42.0F + unit(state.fixedSeed() ^ 0x434C494D4543454CL) * 28.0F));
         int cellY = Math.max(2, cell / 2);
-        long seed = mix(stack.fixedSeed()
+        long seed = mix(state.fixedSeed()
                 ^ floorToCell(quartX, cell) * 0x9E3779B97F4A7C15L
                 ^ floorToCell(quartY, cellY) * 0x94D049BB133111EBL
                 ^ floorToCell(quartZ, cell) * 0xBF58476D1CE4E5B9L
                 ^ 0x434C494D415445L);
-        float chance = clamp01(0.018F + intensity * 0.24F + stack.instability() * 0.035F);
+        float chance = clamp01(0.018F + intensity * 0.24F + state.instability() * 0.035F);
         if (unit(seed ^ 0x53414D504CL) >= chance) {
             return point;
         }
@@ -413,17 +464,17 @@ public final class WorldgenCorruptionHooks {
     }
 
     public static BlockState corruptSurfaceMaterial(BlockState original, int x, int y, int z) {
-        CorruptionEffectStack stack = stack();
-        float intensity = worldgenIntensity(stack);
+        WorldgenState state = worldgenState();
+        float intensity = state.intensity();
         if (intensity <= 0.0F || original == null) {
             return original;
         }
-        float chance = clamp01(Math.max(0.0F, intensity - 0.18F) * 0.24F + stack.instability() * 0.03F);
+        float chance = clamp01(Math.max(0.0F, intensity - 0.18F) * 0.24F + state.instability() * 0.03F);
         if (chance <= 0.0F) {
             return original;
         }
-        int cell = Math.max(2, Math.round(4.0F + (1.0F - intensity) * 10.0F + unit(stack.fixedSeed() ^ 0x5355524643454CL) * 8.0F));
-        long seed = mix(stack.fixedSeed()
+        int cell = Math.max(2, Math.round(4.0F + (1.0F - intensity) * 10.0F + unit(state.fixedSeed() ^ 0x5355524643454CL) * 8.0F));
+        long seed = mix(state.fixedSeed()
                 ^ floorToCell(x, cell) * 0x9E3779B97F4A7C15L
                 ^ floorToCell(y, 4) * 0x94D049BB133111EBL
                 ^ floorToCell(z, cell) * 0xBF58476D1CE4E5B9L
@@ -438,19 +489,19 @@ public final class WorldgenCorruptionHooks {
     }
 
     public static boolean corruptCarverStart(Object carver, boolean original, RandomSource random) {
-        CorruptionEffectStack stack = stack();
-        float intensity = worldgenIntensity(stack);
+        WorldgenState state = worldgenState();
+        float intensity = state.intensity();
         if (intensity <= 0.0F || random == null) {
             return original;
         }
 
-        long seed = mix(stack.fixedSeed()
+        long seed = mix(state.fixedSeed()
                 ^ System.identityHashCode(carver) * 0x9E3779B97F4A7C15L
                 ^ random.nextLong()
                 ^ 0x4341525645524741L);
         float flipChance = original
-                ? clamp01(0.012F + intensity * 0.12F + stack.instability() * 0.025F)
-                : clamp01(0.006F + intensity * 0.07F + stack.instability() * 0.02F);
+                ? clamp01(0.012F + intensity * 0.12F + state.instability() * 0.025F)
+                : clamp01(0.006F + intensity * 0.07F + state.instability() * 0.02F);
         if (unit(seed ^ 0x5354415254L) < flipChance) {
             return !original;
         }
@@ -458,12 +509,12 @@ public final class WorldgenCorruptionHooks {
     }
 
     public static boolean afterCarver(Object carver, ChunkAccess chunk, ChunkPos carvingOrigin, boolean original) {
-        CorruptionEffectStack stack = stack();
-        float intensity = worldgenIntensity(stack);
+        WorldgenState state = worldgenState();
+        float intensity = state.intensity();
         if (intensity <= 0.0F || chunk == null || carvingOrigin == null) {
             return original;
         }
-        long seed = mix(stack.fixedSeed()
+        long seed = mix(state.fixedSeed()
                 ^ chunk.getPos().toLong()
                 ^ carvingOrigin.toLong() * 0xD6E8FEB86659FD93L
                 ^ System.identityHashCode(carver)
@@ -478,23 +529,23 @@ public final class WorldgenCorruptionHooks {
         if (original.hasBlockEntity() || !original.getFluidState().isEmpty()) {
             return original;
         }
-        if (isOneOf(original, Blocks.GRASS_BLOCK, Blocks.DIRT, Blocks.COARSE_DIRT, Blocks.ROOTED_DIRT, Blocks.PODZOL, Blocks.MYCELIUM, Blocks.MUD)) {
-            return pickSurface(seed, original, Blocks.GRASS_BLOCK, Blocks.DIRT, Blocks.COARSE_DIRT, Blocks.ROOTED_DIRT, Blocks.PODZOL, Blocks.MYCELIUM, Blocks.MUD);
+        if (isOneOf(original, DIRT_SURFACES)) {
+            return pickSurface(seed, original, DIRT_SURFACES);
         }
-        if (isOneOf(original, Blocks.SAND, Blocks.RED_SAND, Blocks.GRAVEL, Blocks.CLAY, Blocks.MUD)) {
-            return pickSurface(seed, original, Blocks.SAND, Blocks.RED_SAND, Blocks.GRAVEL, Blocks.CLAY, Blocks.MUD);
+        if (isOneOf(original, SAND_SURFACES)) {
+            return pickSurface(seed, original, SAND_SURFACES);
         }
-        if (isOneOf(original, Blocks.STONE, Blocks.DEEPSLATE, Blocks.TUFF, Blocks.CALCITE, Blocks.ANDESITE, Blocks.DIORITE, Blocks.GRANITE, Blocks.DRIPSTONE_BLOCK)) {
-            return pickSurface(seed, original, Blocks.STONE, Blocks.DEEPSLATE, Blocks.TUFF, Blocks.CALCITE, Blocks.ANDESITE, Blocks.DIORITE, Blocks.GRANITE, Blocks.DRIPSTONE_BLOCK);
+        if (isOneOf(original, STONE_SURFACES)) {
+            return pickSurface(seed, original, STONE_SURFACES);
         }
-        if (isOneOf(original, Blocks.SNOW_BLOCK, Blocks.POWDER_SNOW, Blocks.ICE, Blocks.PACKED_ICE, Blocks.BLUE_ICE)) {
-            return pickSurface(seed, original, Blocks.SNOW_BLOCK, Blocks.POWDER_SNOW, Blocks.ICE, Blocks.PACKED_ICE, Blocks.BLUE_ICE);
+        if (isOneOf(original, ICE_SURFACES)) {
+            return pickSurface(seed, original, ICE_SURFACES);
         }
-        if (isOneOf(original, Blocks.NETHERRACK, Blocks.BASALT, Blocks.SMOOTH_BASALT, Blocks.BLACKSTONE, Blocks.SOUL_SAND, Blocks.SOUL_SOIL, Blocks.CRIMSON_NYLIUM, Blocks.WARPED_NYLIUM)) {
-            return pickSurface(seed, original, Blocks.NETHERRACK, Blocks.BASALT, Blocks.SMOOTH_BASALT, Blocks.BLACKSTONE, Blocks.SOUL_SAND, Blocks.SOUL_SOIL, Blocks.CRIMSON_NYLIUM, Blocks.WARPED_NYLIUM);
+        if (isOneOf(original, NETHER_SURFACES)) {
+            return pickSurface(seed, original, NETHER_SURFACES);
         }
-        if (isOneOf(original, Blocks.END_STONE, Blocks.OBSIDIAN)) {
-            return pickSurface(seed, original, Blocks.END_STONE, Blocks.OBSIDIAN);
+        if (isOneOf(original, END_SURFACES)) {
+            return pickSurface(seed, original, END_SURFACES);
         }
         return original;
     }
@@ -514,6 +565,16 @@ public final class WorldgenCorruptionHooks {
         }
         BlockState replacement = blocks[Math.floorMod((int) (seed >>> 24), blocks.length)].defaultBlockState();
         return replacement.equals(original) ? original : replacement;
+    }
+
+    private static FeatureInfo featureInfo(Feature<?> feature) {
+        return FEATURE_INFO_CACHE.computeIfAbsent(feature, WorldgenCorruptionHooks::createFeatureInfo);
+    }
+
+    private static FeatureInfo createFeatureInfo(Feature<?> feature) {
+        ResourceLocation featureId = ForgeRegistries.FEATURES.getKey(feature);
+        String target = featureId == null ? feature.getClass().getName() : featureId.toString();
+        return new FeatureInfo(target.toLowerCase(Locale.ROOT), stableString(target));
     }
 
     private static long corruptClimateComponent(long original, long seed, float intensity) {
@@ -549,8 +610,8 @@ public final class WorldgenCorruptionHooks {
         return wrapped > safePeriod ? safePeriod * 2L - wrapped : wrapped;
     }
 
-    private static float featureSkipChance(String target, float intensity, float instability) {
-        String normalized = target.toLowerCase();
+    private static float featureSkipChance(FeatureInfo featureInfo, float intensity, float instability) {
+        String normalized = featureInfo.normalizedTarget();
         float base;
         if (normalized.contains("tree")
                 || normalized.contains("flower")
@@ -583,8 +644,8 @@ public final class WorldgenCorruptionHooks {
         return clamp01(base + instability * 0.035F);
     }
 
-    private static float featureRerouteChance(String target, float intensity, float instability) {
-        String normalized = target.toLowerCase();
+    private static float featureRerouteChance(FeatureInfo featureInfo, float intensity, float instability) {
+        String normalized = featureInfo.normalizedTarget();
         float base;
         if (normalized.contains("tree")
                 || normalized.contains("flower")
@@ -617,12 +678,15 @@ public final class WorldgenCorruptionHooks {
         return clamp01(base + instability * 0.045F);
     }
 
-    private static CorruptionEffectStack stack() {
-        return CorruptionEffectStack.local(
-                GlobalCorruptionSettings.activeLevel(),
-                GlobalCorruptionSettings.seed(),
-                GlobalCorruptionSettings.enabledTargetsMask()
-        );
+    private static WorldgenState worldgenState() {
+        GlobalCorruptionSettings.CorruptionRuntimeSnapshot snapshot = GlobalCorruptionSettings.runtimeSnapshot();
+        WorldgenState cached = cachedWorldgenState;
+        if (cached != null && cached.version() == snapshot.version()) {
+            return cached;
+        }
+        WorldgenState state = WorldgenState.from(snapshot);
+        cachedWorldgenState = state;
+        return state;
     }
 
     private static float worldgenIntensity(CorruptionEffectStack stack) {
@@ -630,10 +694,6 @@ public final class WorldgenCorruptionHooks {
             return 0.0F;
         }
         return clamp01(Math.max(stack.intensityOrExtreme(CorruptionSurface.WORLDGEN_SURFACE), stack.level() / 100.0F * 0.92F));
-    }
-
-    private static boolean isTerrainShapeChannel(String channel) {
-        return "final_density".equals(channel) || "initial_density".equals(channel) || "depth".equals(channel);
     }
 
     private static int signedFarOffset(long seed, float strength) {
@@ -674,38 +734,32 @@ public final class WorldgenCorruptionHooks {
         return (int) Math.max(-30_000_000L, Math.min(30_000_000L, value));
     }
 
-    private static float densityChannelWeight(String channel) {
+    private static DensityChannelPlan densityPlan(String channel) {
+        if (channel == null) {
+            return new DensityChannelPlan(stableString(""), 0.54F, 0.28D, false, false);
+        }
         return switch (channel) {
-            case "continents" -> 1.28F;
-            case "erosion" -> 1.18F;
-            case "ridges" -> 1.22F;
-            case "depth" -> 0.98F;
-            case "initial_density" -> 0.86F;
-            case "final_density" -> 0.72F;
-            case "temperature", "vegetation" -> 0.62F;
-            default -> 0.54F;
+            case "continents" -> CONTINENTS_DENSITY;
+            case "erosion" -> EROSION_DENSITY;
+            case "ridges" -> RIDGES_DENSITY;
+            case "depth" -> DEPTH_DENSITY;
+            case "initial_density" -> INITIAL_DENSITY;
+            case "final_density" -> FINAL_DENSITY;
+            case "temperature" -> TEMPERATURE_DENSITY;
+            case "vegetation" -> VEGETATION_DENSITY;
+            default -> new DensityChannelPlan(stableString(channel), 0.54F, 0.28D, false, false);
         };
     }
 
-    private static float densityStrength(String channel, float intensity) {
-        return clamp01(intensity * densityChannelWeight(channel));
+    private static float densityStrength(DensityChannelPlan plan, float intensity) {
+        return clamp01(intensity * plan.weight());
     }
 
-    private static double densityAmplitude(String channel, float strength, float instability) {
-        double base = switch (channel) {
-            case "continents" -> 1.35D;
-            case "erosion" -> 1.18D;
-            case "ridges" -> 1.24D;
-            case "depth" -> 0.92D;
-            case "initial_density" -> 0.78D;
-            case "final_density" -> 0.54D;
-            case "temperature", "vegetation" -> 0.34D;
-            default -> 0.28D;
-        };
-        return base * (0.12D + strength * 1.08D + instability * 0.22D);
+    private static double densityAmplitude(DensityChannelPlan plan, float strength, float instability) {
+        return plan.amplitudeBase() * (0.12D + strength * 1.08D + instability * 0.22D);
     }
 
-    private static double applyDensityAddressFaults(String channel, CorruptionEffectStack stack, double result, double original, int x, int y, int z, float strength, double amplitude, long channelSeed) {
+    private static double applyDensityAddressFaults(boolean channelIsShape, float instability, double result, double original, int x, int y, int z, float strength, double amplitude, long channelSeed) {
         double out = result;
         long addressSeed = mix(channelSeed ^ 0x41444452455353L);
         int cell = 2 << Math.floorMod((int) (addressSeed >>> 6), 6);
@@ -717,8 +771,7 @@ public final class WorldgenCorruptionHooks {
                 ^ qy * 0x94D049BB133111EBL
                 ^ qz * 0xBF58476D1CE4E5B9L);
 
-        float chance = clamp01(0.012F + strength * 0.16F + stack.instability() * 0.035F);
-        boolean channelIsShape = "final_density".equals(channel) || "initial_density".equals(channel) || "depth".equals(channel);
+        float chance = clamp01(0.012F + strength * 0.16F + instability * 0.035F);
         if (channelIsShape) {
             chance = clamp01(chance * 0.55F);
         }

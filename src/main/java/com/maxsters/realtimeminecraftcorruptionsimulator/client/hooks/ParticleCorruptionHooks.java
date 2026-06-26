@@ -54,9 +54,7 @@ public final class ParticleCorruptionHooks {
     public static boolean shouldProcessParticle(Particle particle) {
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         String targetId = targetId(particle, "state");
-        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)
-                && !stack.activeOrExtreme(CorruptionSurface.ENTITY_KINEMATICS)
-                && !stack.activeOrExtreme(CorruptionSurface.TICK_SPEED)) {
+        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
             return false;
         }
 
@@ -83,9 +81,7 @@ public final class ParticleCorruptionHooks {
     public static ParticleState mutateParticle(Particle particle, ParticleState original) {
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         String targetId = targetId(particle, "state");
-        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)
-                && !stack.activeOrExtreme(CorruptionSurface.ENTITY_KINEMATICS)
-                && !stack.activeOrExtreme(CorruptionSurface.TICK_SPEED)) {
+        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
             return original;
         }
 
@@ -197,9 +193,7 @@ public final class ParticleCorruptionHooks {
     public static float mutateGravity(Particle particle, float originalGravity) {
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         String targetId = targetId(particle, "gravity");
-        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)
-                && !stack.activeOrExtreme(CorruptionSurface.ENTITY_KINEMATICS)
-                && !stack.activeOrExtreme(CorruptionSurface.TICK_SPEED)) {
+        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
             return originalGravity;
         }
 
@@ -224,8 +218,7 @@ public final class ParticleCorruptionHooks {
     public static double mutateVerticalVelocity(Particle particle, double originalVelocity) {
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         String targetId = targetId(particle, "vertical_velocity");
-        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)
-                && !stack.activeOrExtreme(CorruptionSurface.ENTITY_KINEMATICS)) {
+        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
             return originalVelocity;
         }
 
@@ -247,13 +240,7 @@ public final class ParticleCorruptionHooks {
     }
 
     private static float intensity(CorruptionEffectStack stack, String targetId) {
-        return Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.WORLD_RENDER) ? 1.0F : stack.intensity(CorruptionSurface.WORLD_RENDER),
-                Math.max(
-                        (stack.extreme(CorruptionSurface.ENTITY_KINEMATICS) ? 1.0F : stack.intensity(CorruptionSurface.ENTITY_KINEMATICS)) * 0.72F,
-                        (stack.extreme(CorruptionSurface.TICK_SPEED) ? 1.0F : stack.intensity(CorruptionSurface.TICK_SPEED)) * 0.42F
-                )
-        ), 0.0F, 1.0F);
+        return Mth.clamp(stack.extreme(CorruptionSurface.WORLD_RENDER) ? 1.0F : stack.intensity(CorruptionSurface.WORLD_RENDER), 0.0F, 1.0F);
     }
 
     private static String targetId(Particle particle, String feature) {

@@ -116,11 +116,13 @@ public final class ItemTextureCorruptionManager {
         CorruptionEffectStack stack = state == null ? ClientCorruptionEffects.current() : ClientCorruptionEffects.currentForWorldRendering();
         if (!stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)
                 && !stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)
-                && !stack.activeOrExtreme(CorruptionSurface.LIGHT_FIELD)) {
+                && !stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
             return quads;
         }
 
-        CorruptedItemBakedModel wrapper = runtimeBlockWrapper(model, state);
+        CorruptedItemBakedModel wrapper = stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY) || stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)
+                ? runtimeBlockWrapper(model, state)
+                : null;
         List<BakedQuad> transformed = wrapper == null ? quads : wrapper.transform(quads, stack);
         return BlockRenderCorruptionHooks.corruptBlockFaces(state, side, transformed);
     }

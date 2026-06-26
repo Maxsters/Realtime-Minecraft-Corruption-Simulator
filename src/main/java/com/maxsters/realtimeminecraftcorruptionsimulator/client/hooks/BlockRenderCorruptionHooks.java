@@ -42,25 +42,25 @@ public final class BlockRenderCorruptionHooks {
 
     public static Vec3 currentRenderSpaceOffset() {
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
-        if (!stack.activeOrExtreme(CorruptionSurface.BLOCK_COLLISION)) {
+        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
             return Vec3.ZERO;
         }
 
-        float intensity = stack.extreme(CorruptionSurface.BLOCK_COLLISION)
+        float intensity = stack.extreme(CorruptionSurface.WORLD_RENDER)
                 ? 1.0F
-                : stack.intensity(CorruptionSurface.BLOCK_COLLISION);
+                : stack.intensity(CorruptionSurface.WORLD_RENDER);
         if (intensity <= 0.01F) {
             return Vec3.ZERO;
         }
 
         Minecraft minecraft = Minecraft.getInstance();
         String dimension = minecraft.level == null ? "no_level" : minecraft.level.dimension().location().toString();
-        String targetId = "visual_collision_world:" + dimension;
-        long seed = stack.stableLong(CorruptionSurface.BLOCK_COLLISION, targetId, 0x424C4F43);
-        double blockSpan = stack.extreme(CorruptionSurface.BLOCK_COLLISION)
+        String targetId = "world_render_space:" + dimension;
+        long seed = stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId, 0x424C4F43);
+        double blockSpan = stack.extreme(CorruptionSurface.WORLD_RENDER)
                 ? 20.0D
                 : 0.35D + Math.pow(intensity, 1.35D) * 19.65D;
-        double phase = stack.unit(CorruptionSurface.BLOCK_COLLISION, targetId + ":phase", stack.bucket(CorruptionSurface.BLOCK_COLLISION, targetId, 0x50484153, 96));
+        double phase = stack.unit(CorruptionSurface.WORLD_RENDER, targetId + ":phase", stack.bucket(CorruptionSurface.WORLD_RENDER, targetId, 0x50484153, 96));
         double dynamic = dynamicWave(seed, phase, intensity);
         double x = snappedSigned(seed ^ 0x585348494654L, blockSpan) * dynamic;
         double y = snappedSigned(seed ^ 0x595348494654L, blockSpan * 0.72D) * dynamicWave(seed ^ 0x59444E4DL, phase, intensity);
@@ -84,9 +84,7 @@ public final class BlockRenderCorruptionHooks {
         }
 
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
-        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)
-                && !stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)
-                && !stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)) {
+        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
             return quads;
         }
 
@@ -94,13 +92,7 @@ public final class BlockRenderCorruptionHooks {
         String dimension = minecraft.level == null ? "no_level" : minecraft.level.dimension().location().toString();
         String blockId = state == null ? "unknown" : blockTargetId(state);
         String targetId = "missing_block_faces:" + dimension + ":" + blockId;
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.WORLD_RENDER) ? 1.0F : stack.intensity(CorruptionSurface.WORLD_RENDER),
-                Math.max(
-                        (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 1.0F : stack.intensity(CorruptionSurface.MODEL_GEOMETRY)) * 0.76F,
-                        (stack.extreme(CorruptionSurface.TEXTURE_MEMORY) ? 1.0F : stack.intensity(CorruptionSurface.TEXTURE_MEMORY)) * 0.48F
-                )
-        ), 0.0F, 1.0F);
+        float intensity = Mth.clamp(stack.extreme(CorruptionSurface.WORLD_RENDER) ? 1.0F : stack.intensity(CorruptionSurface.WORLD_RENDER), 0.0F, 1.0F);
         if (intensity <= 0.015F) {
             return quads;
         }

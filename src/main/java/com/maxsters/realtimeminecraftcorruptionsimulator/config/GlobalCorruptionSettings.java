@@ -25,7 +25,7 @@ public final class GlobalCorruptionSettings {
     private static final String CLIENT_DRIFT_ENABLED = "client_drift_enabled";
     private static final String SEED_RANDOMIZER_INTERVAL_TICKS = "seed_randomizer_interval_ticks";
 
-    private static boolean loaded;
+    private static volatile boolean loaded;
     private static int activeLevel;
     private static long seed = CorruptionProfileManager.DEFAULT_PROFILE.fixedSeed();
     private static String seedLabel = CorruptionSavedData.seedLabel(seed);
@@ -34,6 +34,8 @@ public final class GlobalCorruptionSettings {
     private static int autoIncreaseAmount = 1;
     private static boolean clientDriftEnabled;
     private static int seedRandomizerIntervalTicks;
+    private static long settingsVersion;
+    private static volatile CorruptionRuntimeSnapshot runtimeSnapshot = new CorruptionRuntimeSnapshot(activeLevel, seed, enabledTargetsMask, 0L);
     private static final ExecutorService SAVE_EXECUTOR = Executors.newSingleThreadExecutor(task -> {
         Thread thread = new Thread(task, "RMC corruption settings save");
         thread.setDaemon(true);
@@ -41,6 +43,16 @@ public final class GlobalCorruptionSettings {
     });
 
     private GlobalCorruptionSettings() {
+    }
+
+    public record CorruptionRuntimeSnapshot(int activeLevel, long seed, int enabledTargetsMask, long version) {
+    }
+
+    public static CorruptionRuntimeSnapshot runtimeSnapshot() {
+        if (!loaded) {
+            ensureLoaded();
+        }
+        return runtimeSnapshot;
     }
 
     public static synchronized int activeLevel() {
@@ -106,12 +118,14 @@ public final class GlobalCorruptionSettings {
         autoIncreaseAmount = clampAutoAmount(requestedAutoIncreaseAmount);
         clientDriftEnabled = requestedClientDriftEnabled;
         seedRandomizerIntervalTicks = clampIntervalTicks(requestedSeedRandomizerIntervalTicks);
+        publishRuntimeSnapshot();
         saveAsync();
     }
 
     public static synchronized void applyAutoLevel(int requestedLevel) {
         ensureLoaded();
         activeLevel = clampPercent(requestedLevel);
+        publishRuntimeSnapshot();
         saveAsync();
     }
 
@@ -139,8 +153,13 @@ public final class GlobalCorruptionSettings {
         clientDriftEnabled = parseBoolean(properties.getProperty(CLIENT_DRIFT_ENABLED), false);
         seedRandomizerIntervalTicks = clampIntervalTicks(parseInt(properties.getProperty(SEED_RANDOMIZER_INTERVAL_TICKS), 0));
 
+        publishRuntimeSnapshot();
         loaded = true;
         saveAsync();
+    }
+
+    private static void publishRuntimeSnapshot() {
+        runtimeSnapshot = new CorruptionRuntimeSnapshot(activeLevel, seed, enabledTargetsMask, ++settingsVersion);
     }
 
     private static void saveAsync() {

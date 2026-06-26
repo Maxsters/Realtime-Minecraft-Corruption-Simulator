@@ -6,10 +6,14 @@ import net.minecraft.world.level.levelgen.DensityFunction;
 public final class CorruptedDensityFunction implements DensityFunction {
     private final String channel;
     private final DensityFunction delegate;
+    private final double delegateMinValue;
+    private final double delegateMaxValue;
 
     CorruptedDensityFunction(String channel, DensityFunction delegate) {
         this.channel = channel;
         this.delegate = delegate;
+        this.delegateMinValue = delegate.minValue();
+        this.delegateMaxValue = delegate.maxValue();
     }
 
     @Override
@@ -17,23 +21,19 @@ public final class CorruptedDensityFunction implements DensityFunction {
         if (!WorldgenCorruptionHooks.shouldCorruptDensity(channel)) {
             return delegate.compute(context);
         }
-        WorldgenCorruptionHooks.DensityCoordinates coordinates = WorldgenCorruptionHooks.corruptDensityCoordinates(
-                channel,
-                context.blockX(),
-                context.blockY(),
-                context.blockZ()
-        );
-        FunctionContext sampleContext = coordinates.matches(context.blockX(), context.blockY(), context.blockZ())
-                ? context
-                : new CoordinateFunctionContext(coordinates.x(), coordinates.y(), coordinates.z());
+        int x = context.blockX();
+        int y = context.blockY();
+        int z = context.blockZ();
+        WorldgenCorruptionHooks.DensityCoordinates coordinates = WorldgenCorruptionHooks.corruptDensityCoordinates(channel, x, y, z);
+        FunctionContext sampleContext = coordinates == null ? context : new CoordinateFunctionContext(coordinates.x(), coordinates.y(), coordinates.z());
         return WorldgenCorruptionHooks.corruptDensitySample(
                 channel,
                 delegate.compute(sampleContext),
-                context.blockX(),
-                context.blockY(),
-                context.blockZ(),
-                delegate.minValue(),
-                delegate.maxValue()
+                x,
+                y,
+                z,
+                delegateMinValue,
+                delegateMaxValue
         );
     }
 
@@ -53,8 +53,8 @@ public final class CorruptedDensityFunction implements DensityFunction {
                         context.blockX(),
                         context.blockY(),
                         context.blockZ(),
-                        delegate.minValue(),
-                        delegate.maxValue()
+                        delegateMinValue,
+                        delegateMaxValue
                 );
             }
             return;
@@ -73,12 +73,12 @@ public final class CorruptedDensityFunction implements DensityFunction {
 
     @Override
     public double minValue() {
-        return WorldgenCorruptionHooks.densityMinValue(channel, delegate.minValue());
+        return WorldgenCorruptionHooks.densityMinValue(channel, delegateMinValue);
     }
 
     @Override
     public double maxValue() {
-        return WorldgenCorruptionHooks.densityMaxValue(channel, delegate.maxValue());
+        return WorldgenCorruptionHooks.densityMaxValue(channel, delegateMaxValue);
     }
 
     @Override

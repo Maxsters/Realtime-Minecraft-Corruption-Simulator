@@ -4,6 +4,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruption
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionState;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import net.minecraft.client.Minecraft;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
@@ -21,6 +22,10 @@ public final class ClientCorruptionEffects {
     }
 
     public static CorruptionEffectStack currentForWorldRendering() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || minecraft.level == null) {
+            return CorruptionEffectStack.local(0);
+        }
         return fromClientSnapshot();
     }
 

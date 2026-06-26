@@ -2,6 +2,7 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.effects;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.LightingCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.CameraRenderCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
@@ -96,12 +97,16 @@ public final class VisualCorruptionManager {
     public static void onSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
         CorruptionEffectStack previousStack = CorruptionEffectStack.from(previous);
         CorruptionEffectStack currentStack = CorruptionEffectStack.from(current);
-        if (!worldRenderSignature(previousStack).equals(worldRenderSignature(currentStack))) {
+        if (!chunkRenderRefreshSignature(previousStack).equals(chunkRenderRefreshSignature(currentStack))) {
             requestWorldRenderRefresh();
         }
         if (LightingCorruptionHooks.lightingCorruptionActive(previousStack)
                 || LightingCorruptionHooks.lightingCorruptionActive(currentStack)) {
             requestLightTextureRefresh();
+        }
+        if (LightingCorruptionHooks.lightingCorruptionActive(previousStack)
+                && !LightingCorruptionHooks.lightingCorruptionActive(currentStack)) {
+            requestLightTextureReset();
         }
     }
 
@@ -115,6 +120,10 @@ public final class VisualCorruptionManager {
         LightingCorruptionHooks.requestLightTextureRefresh();
     }
 
+    public static void requestLightTextureReset() {
+        LightingCorruptionHooks.requestLightTextureReset();
+    }
+
     @SubscribeEvent
     public static void onComputeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
@@ -123,6 +132,9 @@ public final class VisualCorruptionManager {
         }
 
         Minecraft minecraft = Minecraft.getInstance();
+        if (!CameraRenderCorruptionHooks.cameraReady(minecraft)) {
+            return;
+        }
         LocalPlayer player = minecraft.player;
         if (player == null) {
             return;
@@ -145,6 +157,9 @@ public final class VisualCorruptionManager {
         }
 
         Minecraft minecraft = Minecraft.getInstance();
+        if (!CameraRenderCorruptionHooks.cameraReady(minecraft)) {
+            return;
+        }
         LocalPlayer player = minecraft.player;
         String targetId = cameraTargetId(player, minecraft, "raw_fov") + ":" + event.usedConfiguredFov();
         float intensity = stack.intensityOrExtreme(CorruptionSurface.CAMERA_TRANSFORM);
@@ -155,9 +170,9 @@ public final class VisualCorruptionManager {
                 CorruptionSurface.CAMERA_TRANSFORM,
                 targetId,
                 baseFov,
-                12.0D + intensity * 74.0D,
-                1.0D,
-                175.0D,
+                18.0D + intensity * 96.0D,
+                12.0D,
+                165.0D,
                 0x46,
                 clock
         );
@@ -166,20 +181,25 @@ public final class VisualCorruptionManager {
         double bobLeak = motionSignal * signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x424F4246, 3.0D + intensity * 74.0D);
         mutated = mutated * featureScale + bobLeak;
         if (unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4A) < 0.18D + intensity * 0.28D) {
-            double scale = 0.08D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4B) * (2.55D + intensity * 1.40D);
-            mutated = baseFov * scale + signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4C, 20.0D + intensity * 54.0D) + bobLeak;
+            double scale = 0.04D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4B) * (3.05D + intensity * 2.20D);
+            mutated = baseFov * scale + signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4C, 28.0D + intensity * 86.0D) + bobLeak;
         }
         if (player != null && (player.isSwimming() || player.isUnderWater())) {
             mutated += signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x5754, 8.0D + intensity * 32.0D);
         }
-        if (stack.extreme(CorruptionSurface.CAMERA_TRANSFORM)) {
-            double multiplier = 0.04D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4D) * 4.30D;
-            if (unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x43) < 0.28D) {
-                multiplier = 0.01D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x44) * 0.18D;
-            }
-            mutated = mutated * multiplier + signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x53, 72.0D);
+        if (stack.level() >= 72 && unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x3244464F) < intensity * 0.34D) {
+            mutated = unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x464C4154) < 0.62D
+                    ? 150.0D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x57494445) * 15.0D
+                    : 12.0D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x54494E59) * 18.0D;
         }
-        event.setFOV(clampDouble(mutated, 1.0D, 175.0D));
+        if (stack.extreme(CorruptionSurface.CAMERA_TRANSFORM)) {
+            double multiplier = 0.025D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4D) * 5.75D;
+            if (unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x43) < 0.28D) {
+                multiplier = 0.018D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x44) * 0.20D;
+            }
+            mutated = mutated * multiplier + signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x53, 96.0D);
+        }
+        event.setFOV(clampDouble(mutated, 12.0D, 165.0D));
     }
 
     @SubscribeEvent
@@ -190,6 +210,9 @@ public final class VisualCorruptionManager {
         }
 
         Minecraft minecraft = Minecraft.getInstance();
+        if (!CameraRenderCorruptionHooks.cameraReady(minecraft)) {
+            return;
+        }
         String targetId = cameraTargetId(event.getPlayer(), minecraft, "fov_modifier");
         float intensity = stack.intensityOrExtreme(CorruptionSurface.CAMERA_TRANSFORM);
         long clock = staticClock(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x464D);
@@ -198,9 +221,9 @@ public final class VisualCorruptionManager {
                 CorruptionSurface.CAMERA_TRANSFORM,
                 targetId,
                 event.getNewFovModifier(),
-                0.42F + intensity * 5.40F,
-                0.02F,
-                6.0F,
+                0.35F + intensity * 4.50F,
+                0.18F,
+                4.0F,
                 0x4F,
                 clock
         );
@@ -208,10 +231,10 @@ public final class VisualCorruptionManager {
         mutated = (float) (mutated * (1.0D + signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x464D5343, 0.08D + intensity * 1.75D))
                 + motionSignal * signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x464D424F, 0.12D + intensity * 2.10D));
         if (stack.extreme(CorruptionSurface.CAMERA_TRANSFORM)) {
-            mutated = (float) (mutated * (0.03D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4E) * 4.60D)
-                    + signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x59, 1.15D));
+            mutated = (float) (mutated * (0.16D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4E) * 3.60D)
+                    + signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x59, 1.20D));
         }
-        event.setNewFovModifier((float) clampDouble(mutated, 0.02D, 6.0D));
+        event.setNewFovModifier((float) clampDouble(mutated, 0.18D, 4.0D));
     }
 
     @SubscribeEvent
@@ -447,23 +470,24 @@ public final class VisualCorruptionManager {
     }
 
     private static void tickLightingCorruptionState() {
-        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
-        boolean active = LightingCorruptionHooks.lightingCorruptionActive(stack);
+        Minecraft minecraft = Minecraft.getInstance();
+        boolean inWorld = minecraft.level != null && minecraft.player != null;
+        boolean active = inWorld && LightingCorruptionHooks.lightingCorruptionActive(ClientCorruptionEffects.currentForWorldRendering());
         if (lightingCorruptionWasActive && !active) {
-            requestLightTextureRefresh();
+            requestLightTextureReset();
             requestWorldRenderRefresh();
         }
         lightingCorruptionWasActive = active;
     }
 
-    private static String worldRenderSignature(CorruptionEffectStack stack) {
+    private static String chunkRenderRefreshSignature(CorruptionEffectStack stack) {
+        // Model geometry is baked into chunk meshes, so target changes need a rebuild even though it is not a world-visual surface.
         return stack.level()
                 + ":" + stack.fixedSeed()
                 + ":" + stack.bucket(CorruptionSurface.BIOME_TINT, 0x42494F4D, 64)
                 + ":" + stack.bucket(CorruptionSurface.LIGHT_FIELD, 0x4C494748, 64)
                 + ":" + stack.bucket(CorruptionSurface.TEXTURE_MEMORY, 0x544558, 64)
                 + ":" + stack.bucket(CorruptionSurface.MODEL_GEOMETRY, 0x4D4F444C, 64)
-                + ":" + stack.bucket(CorruptionSurface.BLOCK_COLLISION, 0x434F4C4C, 64)
                 + ":" + stack.bucket(CorruptionSurface.WORLD_RENDER, 0x574F524C, 64);
     }
 
@@ -535,6 +559,9 @@ public final class VisualCorruptionManager {
     }
 
     private static double clampDouble(double value, double min, double max) {
+        if (!Double.isFinite(value)) {
+            return min;
+        }
         return Math.max(min, Math.min(max, value));
     }
 

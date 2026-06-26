@@ -91,11 +91,37 @@ public final class WeatherRenderCorruptionHooks {
         return switch (mode) {
             case 0 -> 1.0F;
             case 1 -> (((clock >>> 2) & 1L) == 0L) ? 0.0F : 1.0F;
-            case 2 -> Mth.clamp(original + signed(clock ^ 0x5241494EL, intensity * 1.45F), 0.0F, 1.0F);
+            case 2 -> Mth.clamp(original + signed(clock ^ 0x5241494EL, intensity * 2.25F), 0.0F, 1.0F);
             case 3 -> Mth.clamp((float) Math.abs(Math.sin(time * (0.35F + intensity * 2.4F))), 0.0F, 1.0F);
-            case 4 -> Mth.clamp(unit(clock ^ ((long) (time / Math.max(1.0F, 5.0F - intensity * 4.0F)) << 12)) * (0.35F + intensity * 1.65F), 0.0F, 1.0F);
-            case 5 -> Mth.clamp(((time * (0.05F + intensity * 0.60F)) % 1.0F) * (0.65F + intensity * 0.75F), 0.0F, 1.0F);
-            default -> Mth.clamp(unit(clock ^ 0x4E4F4953L) * (0.25F + intensity * 1.45F), 0.0F, 1.0F);
+            case 4 -> Mth.clamp(unit(clock ^ ((long) (time / Math.max(1.0F, 5.0F - intensity * 4.0F)) << 12)) * (0.35F + intensity * 2.45F), 0.0F, 1.0F);
+            case 5 -> Mth.clamp(((time * (0.05F + intensity * 0.60F)) % 1.0F) * (0.65F + intensity * 1.35F), 0.0F, 1.0F);
+            default -> Mth.clamp(unit(clock ^ 0x4E4F4953L) * (0.25F + intensity * 2.20F), 0.0F, 1.0F);
+        };
+    }
+
+    public static float mutateRainParticleLevel(ClientLevel level, float original, float partialTick) {
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
+        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
+            return original;
+        }
+
+        String targetId = "weather_particle_density:" + dimension(level);
+        float intensity = weatherIntensity(stack, targetId);
+        if (intensity <= 0.01F) {
+            return original;
+        }
+
+        long clock = weatherClock(stack, targetId, level, partialTick);
+        if (!stack.extreme(CorruptionSurface.WORLD_RENDER) && unit(clock ^ 0x50415254L) > 0.08F + intensity * 0.56F) {
+            return original;
+        }
+        int mode = Math.floorMod((int) (clock >>> 31), 5);
+        return switch (mode) {
+            case 0 -> 1.0F;
+            case 1 -> 0.0F;
+            case 2 -> Mth.clamp(original + signed(clock ^ 0x44454E53L, intensity * 1.65F), 0.0F, 1.0F);
+            case 3 -> Mth.clamp(unit(clock ^ 0x4E4F4953L) * (0.45F + intensity * 2.0F), 0.0F, 1.0F);
+            default -> Mth.clamp(original * (0.04F + unit(clock ^ 0x5343414CL) * (4.0F + intensity * 6.0F)), 0.0F, 1.0F);
         };
     }
 
@@ -130,10 +156,10 @@ public final class WeatherRenderCorruptionHooks {
         double waveA = Math.sin(time * speed + x * (0.20D + context.intensity * 0.75D) + z * 0.17D + unit(hash) * Mth.TWO_PI);
         double waveB = Math.cos(time * (speed * 1.37D + 0.03D) + z * (0.16D + context.intensity * 0.62D) - x * 0.11D + unit(hash >>> 9) * Mth.TWO_PI);
         double curtainHeight = y - context.cameraY;
-        double warp = 0.025D + context.intensity * (0.70D + unit(hash >>> 19) * 1.40D);
+        double warp = 0.025D + context.intensity * (1.35D + unit(hash >>> 19) * 3.40D);
         double dx = waveA * warp + signed(hash ^ 0x584D4553L, context.intensity * 0.34D);
         double dz = waveB * warp + signed(hash ^ 0x5A4D4553L, context.intensity * 0.34D);
-        double dy = Math.sin(time * (0.05D + context.intensity * 0.32D) + curtainHeight * 0.38D + unit(hash >>> 31) * Mth.TWO_PI) * context.intensity * 0.24D;
+        double dy = Math.sin(time * (0.05D + context.intensity * 0.32D) + curtainHeight * 0.38D + unit(hash >>> 31) * Mth.TWO_PI) * context.intensity * 0.72D;
 
         switch (context.mode) {
             case 1 -> {
@@ -148,11 +174,12 @@ public final class WeatherRenderCorruptionHooks {
                 dz = 0.0D;
             }
             case 3 -> {
-                dx += signed(context.clock ^ 0x4C414758L, 2.0D + context.intensity * 10.0D);
-                dz += signed(context.clock ^ 0x4C41475AL, 2.0D + context.intensity * 10.0D);
+                dx += signed(context.clock ^ 0x4C414758L, 2.0D + context.intensity * 26.0D);
+                dz += signed(context.clock ^ 0x4C41475AL, 2.0D + context.intensity * 26.0D);
+                dy += signed(context.clock ^ 0x4C414759L, context.intensity * 10.0D);
             }
             case 4 -> {
-                double folded = Math.sin((x + z) * (0.12D + context.intensity * 0.24D) + time * speed) * context.intensity * 2.25D;
+                double folded = Math.sin((x + z) * (0.12D + context.intensity * 0.24D) + time * speed) * context.intensity * 7.25D;
                 dx += folded;
                 dz -= folded;
             }
@@ -161,9 +188,18 @@ public final class WeatherRenderCorruptionHooks {
                 dz *= unit(hash ^ 0x44524F5AL) < 0.35F + context.intensity * 0.42F ? -1.8D : 0.18D;
             }
             default -> {
-                dx += Math.sin(y * 0.52D + time * speed) * context.intensity * 0.72D;
-                dz += Math.cos(y * 0.47D - time * speed) * context.intensity * 0.72D;
+                dx += Math.sin(y * 0.52D + time * speed) * context.intensity * 2.40D;
+                dz += Math.cos(y * 0.47D - time * speed) * context.intensity * 2.40D;
             }
+        }
+
+        if (context.stack.extreme(CorruptionSurface.WORLD_RENDER) || unit(hash ^ 0x464C4154L) < context.intensity * 0.18F) {
+            y = (y - context.cameraY) * (0.01D + unit(hash ^ 0x504C414EL) * 0.08D) + context.cameraY;
+        }
+        if (unit(hash ^ 0x534E4150L) < context.intensity * 0.22F) {
+            double snap = 0.125D + unit(hash ^ 0x534E4151L) * (0.5D + context.intensity * 4.0D);
+            x = quantize(x, snap);
+            z = quantize(z, snap);
         }
 
         return builder.vertex(x + dx, y + dy, z + dz);
@@ -191,6 +227,53 @@ public final class WeatherRenderCorruptionHooks {
             warpedV = (float) quantize(warpedV, step);
         }
         return consumer.uv(warpedU, warpedV);
+    }
+
+    public static VertexConsumer color(VertexConsumer consumer, float red, float green, float blue, float alpha) {
+        WeatherContext context = WEATHER_CONTEXT.get();
+        if (context == null || context.intensity <= 0.01F) {
+            return consumer.color(red, green, blue, alpha);
+        }
+
+        long hash = mix(context.clock ^ 0x434F4C4FL ^ context.targetId.hashCode());
+        float colorSpan = 0.16F + context.intensity * 1.18F;
+        float mutatedRed = Mth.clamp(red + signed(hash ^ 0x524544L, colorSpan), 0.0F, 1.85F);
+        float mutatedGreen = Mth.clamp(green + signed(hash ^ 0x475245454EL, colorSpan), 0.0F, 1.85F);
+        float mutatedBlue = Mth.clamp(blue + signed(hash ^ 0x424C5545L, colorSpan), 0.0F, 1.85F);
+        float mutatedAlpha = Mth.clamp(alpha * (0.05F + unit(hash ^ 0x414C5048L) * (1.4F + context.intensity * 2.3F)), 0.0F, 1.0F);
+        if (context.stack.extreme(CorruptionSurface.WORLD_RENDER) && unit(hash ^ 0x57524954L) < 0.38F) {
+            mutatedRed = unit(hash ^ 0x455852L) * 1.85F;
+            mutatedGreen = unit(hash ^ 0x455847L) * 1.85F;
+            mutatedBlue = unit(hash ^ 0x455842L) * 1.85F;
+        }
+        return consumer.color(mutatedRed, mutatedGreen, mutatedBlue, mutatedAlpha);
+    }
+
+    public static VertexConsumer uv2(VertexConsumer consumer, int packedLight) {
+        WeatherContext context = WEATHER_CONTEXT.get();
+        if (context == null || context.intensity <= 0.01F) {
+            return consumer.uv2(packedLight);
+        }
+
+        int block = packedLight & 0xFFFF;
+        int sky = packedLight >>> 16 & 0xFFFF;
+        long hash = mix(context.clock ^ 0x4C494748L ^ packedLight);
+        int mutatedBlock = mutateLightComponent(block, hash ^ 0x424C4B, context);
+        int mutatedSky = mutateLightComponent(sky, hash ^ 0x534B59, context);
+        return consumer.uv2((mutatedSky << 16) | mutatedBlock);
+    }
+
+    public static VertexConsumer uv2(VertexConsumer consumer, int blockLight, int skyLight) {
+        WeatherContext context = WEATHER_CONTEXT.get();
+        if (context == null || context.intensity <= 0.01F) {
+            return consumer.uv2(blockLight, skyLight);
+        }
+
+        long hash = mix(context.clock ^ 0x4C494748L ^ (blockLight << 8) ^ skyLight);
+        return consumer.uv2(
+                mutateLightComponent(blockLight, hash ^ 0x424C4B, context),
+                mutateLightComponent(skyLight, hash ^ 0x534B59, context)
+        );
     }
 
     private static double mutateWeatherCameraAxis(double original, float partialTick, int axis) {
@@ -258,6 +341,19 @@ public final class WeatherRenderCorruptionHooks {
 
     private static double quantize(double value, double step) {
         return step <= 0.0D ? value : Math.rint(value / step) * step;
+    }
+
+    private static int mutateLightComponent(int original, long seed, WeatherContext context) {
+        int mode = Math.floorMod((int) (seed >>> 29), 6);
+        int value = switch (mode) {
+            case 0 -> 240;
+            case 1 -> 0;
+            case 2 -> Math.round(original * (0.05F + unit(seed ^ 0x5343414CL) * (2.8F + context.intensity * 4.0F)));
+            case 3 -> Math.round(unit(seed ^ 0x4E4F4953L) * 240.0F);
+            case 4 -> Math.round(240.0F - original * (0.25F + context.intensity * 0.75F));
+            default -> Math.round(original + signed(seed ^ 0x4F464653L, 80.0F + context.intensity * 240.0F));
+        };
+        return Mth.clamp(value, 0, 240);
     }
 
     private static float unit(long value) {

@@ -3,7 +3,11 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ClientCorruptionEffects;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
+import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
@@ -14,15 +18,26 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
+import java.lang.reflect.Field;
+
 @OnlyIn(Dist.CLIENT)
 public final class LightingCorruptionHooks {
     private static int pendingLightTextureRefreshPasses;
+    private static int pendingLightTextureResetPasses;
+    private static Field lightTextureTextureField;
+    private static Field lightTexturePixelsField;
 
     private LightingCorruptionHooks() {
     }
 
     public static void requestLightTextureRefresh() {
         pendingLightTextureRefreshPasses = Math.max(pendingLightTextureRefreshPasses, 8);
+    }
+
+    public static void requestLightTextureReset() {
+        pendingLightTextureResetPasses = Math.max(pendingLightTextureResetPasses, 4);
+        requestLightTextureRefresh();
+        restoreLightTextureNow();
     }
 
     public static boolean consumeLightTextureRefreshRequest() {
@@ -33,8 +48,39 @@ public final class LightingCorruptionHooks {
         return true;
     }
 
+    public static boolean consumeLightTextureResetRequest() {
+        if (pendingLightTextureResetPasses <= 0) {
+            return false;
+        }
+        pendingLightTextureResetPasses--;
+        return true;
+    }
+
     public static boolean lightingCorruptionActive(CorruptionEffectStack stack) {
         return lightingIntensity(stack) > 0.01F;
+    }
+
+    public static void restoreLightTextureNow() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || minecraft.gameRenderer == null) {
+            return;
+        }
+        try {
+            LightTexture lightTexture = minecraft.gameRenderer.lightTexture();
+            NativeImage pixels = lightPixels(lightTexture);
+            DynamicTexture texture = dynamicLightTexture(lightTexture);
+            if (pixels == null || texture == null) {
+                return;
+            }
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) {
+                    pixels.setPixelRGBA(x, y, -1);
+                }
+            }
+            texture.upload();
+            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+        } catch (RuntimeException ignored) {
+        }
     }
 
     public static boolean mutateAmbientOcclusionSwitch(boolean vanilla) {
@@ -281,13 +327,58 @@ public final class LightingCorruptionHooks {
         return 0xFF000000 | blue << 16 | green << 8 | red;
     }
 
+    private static DynamicTexture dynamicLightTexture(LightTexture lightTexture) {
+        Field field = lightTextureTextureField;
+        if (field == null) {
+            field = findLightTextureField("lightTexture", "f_109870_");
+            lightTextureTextureField = field;
+        }
+        if (field == null) {
+            return null;
+        }
+        try {
+            Object value = field.get(lightTexture);
+            return value instanceof DynamicTexture texture ? texture : null;
+        } catch (IllegalAccessException | RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static NativeImage lightPixels(LightTexture lightTexture) {
+        Field field = lightTexturePixelsField;
+        if (field == null) {
+            field = findLightTextureField("lightPixels", "f_109871_");
+            lightTexturePixelsField = field;
+        }
+        if (field == null) {
+            return null;
+        }
+        try {
+            Object value = field.get(lightTexture);
+            return value instanceof NativeImage pixels ? pixels : null;
+        } catch (IllegalAccessException | RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static Field findLightTextureField(String... names) {
+        for (String name : names) {
+            try {
+                Field field = LightTexture.class.getDeclaredField(name);
+                field.setAccessible(true);
+                return field;
+            } catch (NoSuchFieldException ignored) {
+            }
+        }
+        return null;
+    }
+
     private static float lightingIntensity(CorruptionEffectStack stack) {
         if (stack == null) {
             return 0.0F;
         }
         float light = stack.extreme(CorruptionSurface.LIGHT_FIELD) ? 1.0F : stack.intensity(CorruptionSurface.LIGHT_FIELD);
-        float render = stack.extreme(CorruptionSurface.WORLD_RENDER) ? 0.52F : stack.intensity(CorruptionSurface.WORLD_RENDER) * 0.34F;
-        return Mth.clamp(Math.max(light, render), 0.0F, 1.0F);
+        return Mth.clamp(light, 0.0F, 1.0F);
     }
 
     private static int mutateLightComponent(CorruptionEffectStack stack, BlockPos pos, int value, float intensity, int salt, boolean sky) {
