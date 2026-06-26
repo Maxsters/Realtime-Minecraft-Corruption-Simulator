@@ -7,7 +7,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.Corrupti
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.OpenCorruptionToolPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.RequestCorruptionStatePacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.runtime.CorruptionRuntimeManager;
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionSavedData;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -58,7 +58,7 @@ public final class ModNetwork {
         }
         CorruptionSavedData data = CorruptionSavedData.get(player.getServer());
         CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
-        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new CorruptionStateSyncPacket(CorruptionProfileSnapshot.from(data), serverCheatsExposed(player.getServer())));
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new CorruptionStateSyncPacket(CorruptionStateSnapshot.from(data), serverCheatsExposed(player.getServer())));
     }
 
     public static void broadcastState(MinecraftServer server) {
@@ -67,7 +67,7 @@ public final class ModNetwork {
         }
         CorruptionSavedData data = CorruptionSavedData.get(server);
         CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
-        CorruptionStateSyncPacket packet = new CorruptionStateSyncPacket(CorruptionProfileSnapshot.from(data), serverCheatsExposed(server));
+        CorruptionStateSyncPacket packet = new CorruptionStateSyncPacket(CorruptionStateSnapshot.from(data), serverCheatsExposed(server));
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
         }

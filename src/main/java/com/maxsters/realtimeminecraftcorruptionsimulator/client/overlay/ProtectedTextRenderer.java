@@ -1,11 +1,15 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client.overlay;
 
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.Minecraft;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @OnlyIn(Dist.CLIENT)
 public final class ProtectedTextRenderer {
@@ -13,6 +17,10 @@ public final class ProtectedTextRenderer {
     private static final int GLYPH_WIDTH = 5;
     private static final int GLYPH_HEIGHT = 7;
     private static final int GLYPH_SPACING = 1;
+    private static final int MAX_CACHE_ENTRIES = 768;
+    private static final Map<String, Integer> WIDTH_CACHE = lruCache();
+    private static final Map<ClipKey, String> CLIP_CACHE = lruCache();
+    private static final Map<WrapKey, List<String>> WRAP_CACHE = lruCache();
 
     private ProtectedTextRenderer() {
     }
@@ -21,6 +29,15 @@ public final class ProtectedTextRenderer {
         if (text == null || text.isEmpty()) {
             return;
         }
+        Font font = font();
+        if (font != null) {
+            graphics.drawString(font, text, x, y, color, false);
+            return;
+        }
+        drawPixelString(graphics, text, x, y, color);
+    }
+
+    private static void drawPixelString(GuiGraphics graphics, String text, int x, int y, int color) {
         int cursor = x;
         for (int i = 0; i < text.length(); i++) {
             char c = normalize(text.charAt(i));
@@ -35,6 +52,21 @@ public final class ProtectedTextRenderer {
         if (text == null || text.isEmpty()) {
             return 0;
         }
+        synchronized (WIDTH_CACHE) {
+            Integer cached = WIDTH_CACHE.get(text);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        Font font = font();
+        int width = font == null ? pixelWidth(text) : font.width(text);
+        synchronized (WIDTH_CACHE) {
+            WIDTH_CACHE.put(text, width);
+        }
+        return width;
+    }
+
+    private static int pixelWidth(String text) {
         int width = 0;
         for (int i = 0; i < text.length(); i++) {
             width += advance(normalize(text.charAt(i)));
@@ -46,24 +78,58 @@ public final class ProtectedTextRenderer {
         if (text == null || text.isEmpty() || maxWidth <= 0) {
             return "";
         }
-        int width = 0;
-        int index = 0;
-        while (index < text.length()) {
-            int next = advance(normalize(text.charAt(index)));
-            if (width + next > maxWidth) {
-                break;
+        ClipKey key = new ClipKey(text, maxWidth);
+        synchronized (CLIP_CACHE) {
+            String cached = CLIP_CACHE.get(key);
+            if (cached != null) {
+                return cached;
             }
-            width += next;
-            index++;
         }
-        return text.substring(0, index);
+        String clipped = computePlainSubstrByWidth(text, maxWidth);
+        synchronized (CLIP_CACHE) {
+            CLIP_CACHE.put(key, clipped);
+        }
+        return clipped;
     }
 
     public static List<String> wrap(String text, int maxWidth, int maxLines) {
-        List<String> lines = new ArrayList<>();
         if (text == null || text.isBlank() || maxWidth <= 0 || maxLines <= 0) {
-            return lines;
+            return List.of();
         }
+        WrapKey key = new WrapKey(text, maxWidth, maxLines);
+        synchronized (WRAP_CACHE) {
+            List<String> cached = WRAP_CACHE.get(key);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        List<String> lines = computeWrap(text, maxWidth, maxLines);
+        List<String> cachedLines = List.copyOf(lines);
+        synchronized (WRAP_CACHE) {
+            WRAP_CACHE.put(key, cachedLines);
+        }
+        return cachedLines;
+    }
+
+    private static String computePlainSubstrByWidth(String text, int maxWidth) {
+        if (width(text) <= maxWidth) {
+            return text;
+        }
+        int low = 0;
+        int high = text.length();
+        while (low < high) {
+            int mid = (low + high + 1) >>> 1;
+            if (width(text.substring(0, mid)) <= maxWidth) {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+        return text.substring(0, low);
+    }
+
+    private static List<String> computeWrap(String text, int maxWidth, int maxLines) {
+        List<String> lines = new ArrayList<>();
 
         String[] words = text.split("\\s+");
         String current = "";
@@ -93,6 +159,20 @@ public final class ProtectedTextRenderer {
             lines.add(current);
         }
         return lines;
+    }
+
+    private static Font font() {
+        Minecraft minecraft = Minecraft.getInstance();
+        return minecraft == null ? null : minecraft.font;
+    }
+
+    private static <K, V> Map<K, V> lruCache() {
+        return new LinkedHashMap<>(MAX_CACHE_ENTRIES, 0.75F, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+                return size() > MAX_CACHE_ENTRIES;
+            }
+        };
     }
 
     private static void drawGlyph(GuiGraphics graphics, char c, int x, int y, int color) {
@@ -194,5 +274,11 @@ public final class ProtectedTextRenderer {
 
     private static String[] rows(String a, String b, String c, String d, String e, String f, String g) {
         return new String[]{a, b, c, d, e, f, g};
+    }
+
+    private record ClipKey(String text, int maxWidth) {
+    }
+
+    private record WrapKey(String text, int maxWidth, int maxLines) {
     }
 }

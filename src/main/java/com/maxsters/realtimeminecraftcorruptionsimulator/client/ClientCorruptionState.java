@@ -1,8 +1,7 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.config.GlobalCorruptionSettings;
-import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionProfileManager;
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionSavedData;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.api.distmarker.Dist;
@@ -10,16 +9,16 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 
 @OnlyIn(Dist.CLIENT)
 public final class ClientCorruptionState {
-    private static volatile CorruptionProfileSnapshot latestSnapshot = localSnapshot();
+    private static volatile CorruptionStateSnapshot latestSnapshot = localSnapshot();
 
     private ClientCorruptionState() {
     }
 
-    public static CorruptionProfileSnapshot snapshot() {
+    public static CorruptionStateSnapshot snapshot() {
         return latestSnapshot;
     }
 
-    public static void applySnapshot(CorruptionProfileSnapshot snapshot) {
+    public static void applySnapshot(CorruptionStateSnapshot snapshot) {
         latestSnapshot = attachClientDriftSalt(snapshot == null ? localSnapshot() : snapshot);
     }
 
@@ -27,18 +26,10 @@ public final class ClientCorruptionState {
         latestSnapshot = localSnapshot();
     }
 
-    public static CorruptionProfileSnapshot localSnapshot() {
+    public static CorruptionStateSnapshot localSnapshot() {
         int activeLevel = GlobalCorruptionSettings.activeLevel();
-        return new CorruptionProfileSnapshot(
+        return new CorruptionStateSnapshot(
                 activeLevel,
-                activeLevel,
-                0,
-                100,
-                0,
-                100,
-                0,
-                activeLevel,
-                CorruptionProfileManager.DEFAULT_PROFILE.id(),
                 GlobalCorruptionSettings.seed(),
                 CorruptionSavedData.sanitizeSeedLabel(GlobalCorruptionSettings.seedLabel(), GlobalCorruptionSettings.seed()),
                 GlobalCorruptionSettings.enabledTargetsMask(),
@@ -50,7 +41,7 @@ public final class ClientCorruptionState {
         );
     }
 
-    public static CorruptionProfileSnapshot attachClientDriftSalt(CorruptionProfileSnapshot snapshot) {
+    public static CorruptionStateSnapshot attachClientDriftSalt(CorruptionStateSnapshot snapshot) {
         if (snapshot == null) {
             return localSnapshot();
         }

@@ -1,6 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.profile;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionSavedData;
 
 import java.util.ArrayList;
@@ -8,46 +8,29 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+// Immutable view of the current corruption state used by mechanics and render hooks.
+// All intensity comes from the current level, seed, target mask, and surface tuning.
 public final class CorruptionEffectStack {
     private static final float ACTIVE_THRESHOLD = 0.00025F;
     private static final float LOG_RESPONSE_CURVE = 9.0F;
-    private static final float EFFECTIVE_DELTA_SATURATION = mappedPercent(70);
 
     private final int corruptionLevel;
-    private final int previousCorruptionLevel;
-    private final int corruptionDelta;
     private final float effectiveLevel;
-    private final float effectivePreviousLevel;
-    private final float effectiveDelta;
     private final int effectiveLevelBucket;
-    private final int effectivePreviousLevelBucket;
-    private final int effectiveDeltaBucket;
-    private final int calibrationConfidence;
-    private final int stabilityDebt;
-    private final int profileCoherence;
     private final long fixedSeed;
     private final int enabledTargetsMask;
     private final int layerCount;
     private final float instability;
     private final float[] intensityCache;
 
-    private CorruptionEffectStack(int corruptionLevel, int previousCorruptionLevel, int corruptionDelta, int calibrationConfidence, int stabilityDebt, int profileCoherence, long fixedSeed, int enabledTargetsMask) {
+    private CorruptionEffectStack(int corruptionLevel, long fixedSeed, int enabledTargetsMask) {
         this.corruptionLevel = clampPercent(corruptionLevel);
-        this.previousCorruptionLevel = clampPercent(previousCorruptionLevel);
-        this.corruptionDelta = clampPercent(corruptionDelta);
         this.effectiveLevel = mappedPercent(this.corruptionLevel);
-        this.effectivePreviousLevel = mappedPercent(this.previousCorruptionLevel);
-        this.effectiveDelta = clamp01(Math.max(Math.abs(this.effectiveLevel - this.effectivePreviousLevel), mappedPercent(this.corruptionDelta)));
         this.effectiveLevelBucket = Math.round(this.effectiveLevel * 100.0F);
-        this.effectivePreviousLevelBucket = Math.round(this.effectivePreviousLevel * 100.0F);
-        this.effectiveDeltaBucket = Math.round(this.effectiveDelta * 100.0F);
-        this.calibrationConfidence = clampPercent(calibrationConfidence);
-        this.stabilityDebt = clampPercent(stabilityDebt);
-        this.profileCoherence = clampPercent(profileCoherence);
         this.fixedSeed = fixedSeed;
         this.enabledTargetsMask = CorruptionTarget.normalizeMask(enabledTargetsMask);
         this.layerCount = computeLayerCount(this.effectiveLevel);
-        this.instability = computeInstability(this.calibrationConfidence, this.stabilityDebt, this.profileCoherence);
+        this.instability = computeInstability(this.effectiveLevel);
         this.intensityCache = new float[CorruptionSurface.values().length];
         Arrays.fill(this.intensityCache, Float.NaN);
     }
@@ -58,76 +41,36 @@ public final class CorruptionEffectStack {
         }
         return new CorruptionEffectStack(
                 data.getCorruptionLevel(),
-                data.getPreviousCorruptionLevel(),
-                data.getCorruptionDelta(),
-                data.getCalibrationConfidence(),
-                data.getStabilityDebt(),
-                data.getProfileCoherence(),
                 data.getFixedCorruptionSeed(),
                 data.getEnabledTargetsMask()
         );
     }
 
-    public static CorruptionEffectStack from(CorruptionProfileSnapshot snapshot) {
+    public static CorruptionEffectStack from(CorruptionStateSnapshot snapshot) {
         if (snapshot == null) {
             return local(0);
         }
         return new CorruptionEffectStack(
                 snapshot.getCorruptionLevel(),
-                snapshot.getPreviousCorruptionLevel(),
-                snapshot.getCorruptionDelta(),
-                snapshot.getCalibrationConfidence(),
-                snapshot.getStabilityDebt(),
-                snapshot.getProfileCoherence(),
                 snapshot.getEffectiveCorruptionSeed(),
                 snapshot.getEnabledTargetsMask()
         );
     }
 
     public static CorruptionEffectStack local(int corruptionLevel) {
-        return local(corruptionLevel, CorruptionProfileManager.DEFAULT_PROFILE.fixedSeed(), CorruptionTarget.ALL_MASK);
+        return local(corruptionLevel, DeterministicCorruption.DEFAULT_SEED, CorruptionTarget.ALL_MASK);
     }
 
     public static CorruptionEffectStack local(int corruptionLevel, long fixedSeed, int enabledTargetsMask) {
-        int clampedLevel = clampPercent(corruptionLevel);
-        return new CorruptionEffectStack(
-                clampedLevel,
-                0,
-                clampedLevel,
-                100,
-                0,
-                100,
-                fixedSeed,
-                enabledTargetsMask
-        );
+        return new CorruptionEffectStack(corruptionLevel, fixedSeed, enabledTargetsMask);
     }
 
     public int level() {
         return corruptionLevel;
     }
 
-    public int previousLevel() {
-        return previousCorruptionLevel;
-    }
-
-    public int delta() {
-        return corruptionDelta;
-    }
-
     public float effectiveLevel() {
         return effectiveLevel;
-    }
-
-    public int calibrationConfidence() {
-        return calibrationConfidence;
-    }
-
-    public int stabilityDebt() {
-        return stabilityDebt;
-    }
-
-    public int profileCoherence() {
-        return profileCoherence;
     }
 
     public long fixedSeed() {
@@ -151,8 +94,7 @@ public final class CorruptionEffectStack {
             return false;
         }
         float pressure = intensity(surface) * 0.68F + instability() * 0.22F + layerCount() / 24.0F * 0.10F;
-        float level = effectiveLevel;
-        float threshold = 0.72F - smoothstep(level) * 0.18F;
+        float threshold = 0.72F - smoothstep(effectiveLevel) * 0.18F;
         return pressure >= threshold;
     }
 
@@ -197,12 +139,10 @@ public final class CorruptionEffectStack {
         float level = effectiveLevel;
         float levelPressure = (float) Math.pow(level, 1.18F);
         float layerPressure = layerPressure(surface);
-        float disorder = instability;
-        float deltaPressure = smoothstep(clamp01(effectiveDelta / EFFECTIVE_DELTA_SATURATION)) * level;
-        float coherenceDamping = 0.74F + profileCoherence / 100.0F * 0.26F;
-        float raw = levelPressure * (0.64F + layerPressure * 0.46F) * coherenceDamping;
-        raw += disorder * surface.instabilityBias() * (0.28F + level * 0.72F);
-        raw += deltaPressure * surface.deltaBias() * 0.62F;
+        // Surface personality adjusts how quickly each real subsystem falls apart at the same percent.
+        float raw = levelPressure * (0.64F + layerPressure * 0.46F);
+        raw += instability * surface.instabilityBias() * (0.18F + level * 0.54F);
+        raw += smoothstep(level) * surface.entropyBias() * (0.10F + level * 0.42F);
         float intensity = clamp01(raw);
         intensityCache[index] = intensity;
         return intensity;
@@ -363,6 +303,8 @@ public final class CorruptionEffectStack {
     }
 
     private long surfaceSeed(CorruptionSurface surface, String targetId, int salt) {
+        // Level is mixed into the address space so changing percent can move
+        // mutations without depending on old "previous level" bookkeeping.
         long value = fixedSeed;
         value ^= surface.salt() * 0x9E37_79B9_7F4A_7C15L;
         value ^= Integer.toUnsignedLong(salt) * 0xBF58_476D_1CE4_E5B9L;
@@ -370,8 +312,6 @@ public final class CorruptionEffectStack {
             value ^= stableString(targetId) * 0x94D0_49BB_1331_11EBL;
         }
         value ^= (long) effectiveLevelBucket << 32;
-        value ^= (long) effectivePreviousLevelBucket << 17;
-        value ^= (long) effectiveDeltaBucket << 9;
         return value;
     }
 
@@ -398,8 +338,8 @@ public final class CorruptionEffectStack {
         return Math.max(1, Math.min(24, Math.round(1.0F + (float) Math.pow(level, 0.82F) * 23.0F)));
     }
 
-    // Keep the visible percent linear, but use a mirrored logarithmic backend response for playability at low levels.
     private static float mappedPercent(int visiblePercent) {
+        // The GUI stays linear while the backend preserves fine control at low corruption.
         if (visiblePercent <= 0) {
             return 0.0F;
         }
@@ -412,11 +352,9 @@ public final class CorruptionEffectStack {
         return clamp01((float) mapped);
     }
 
-    private static float computeInstability(int calibrationConfidence, int stabilityDebt, int profileCoherence) {
-        float confidenceLoss = (100 - calibrationConfidence) / 100.0F;
-        float coherenceLoss = (100 - profileCoherence) / 100.0F;
-        float debt = stabilityDebt / 100.0F;
-        return clamp01(confidenceLoss * 0.30F + coherenceLoss * 0.32F + debt * 0.38F);
+    private static float computeInstability(float effectiveLevel) {
+        // Instability is now level-derived pressure, not a penalty for changing settings.
+        return smoothstep(effectiveLevel);
     }
 
     private static float unit(long value) {

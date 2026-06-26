@@ -26,14 +26,15 @@ public enum CorruptionSurface {
 
     private final float affinity;
     private final float instabilityBias;
-    private final float deltaBias;
+    private final float entropyBias;
     private final float targetBias;
     private final CorruptionOperation[] operations;
 
-    CorruptionSurface(float affinity, float instabilityBias, float deltaBias, float targetBias, CorruptionOperation... operations) {
+    // affinity: how readily the surface activates; instability/entropy/target tune its failure shape.
+    CorruptionSurface(float affinity, float instabilityBias, float entropyBias, float targetBias, CorruptionOperation... operations) {
         this.affinity = affinity;
         this.instabilityBias = instabilityBias;
-        this.deltaBias = deltaBias;
+        this.entropyBias = entropyBias;
         this.targetBias = targetBias;
         this.operations = operations;
     }
@@ -50,8 +51,8 @@ public enum CorruptionSurface {
         return instabilityBias;
     }
 
-    public float deltaBias() {
-        return deltaBias;
+    public float entropyBias() {
+        return entropyBias;
     }
 
     public float targetBias() {

@@ -1,6 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client.overlay;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.api.distmarker.Dist;
@@ -11,7 +11,7 @@ public final class CorruptionOverlayButton {
     private CorruptionOverlayButton() {
     }
 
-    public static void render(GuiGraphics graphics, Font font, int x, int y, int size, CorruptionProfileSnapshot snapshot, boolean hovered) {
+    public static void render(GuiGraphics graphics, Font font, int x, int y, int size, CorruptionStateSnapshot snapshot, boolean hovered) {
         int radius = size / 2;
         int centerX = x + radius;
         int centerY = y + radius;
@@ -30,12 +30,9 @@ public final class CorruptionOverlayButton {
         }
     }
 
-    private static int accentColor(CorruptionProfileSnapshot snapshot) {
+    private static int accentColor(CorruptionStateSnapshot snapshot) {
         if (snapshot == null) {
             return 0xFF5CA7B2;
-        }
-        if (snapshot.getStabilityDebt() >= 50) {
-            return 0xFFD39A3E;
         }
         if (snapshot.getCorruptionLevel() >= 70) {
             return 0xFF4D8FD6;

@@ -4,7 +4,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorrup
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
@@ -70,7 +70,7 @@ public final class TextureMutationManager {
         startupTextureScanRequested = true;
     }
 
-    public static void onSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
+    public static void onSettingsChanged(CorruptionStateSnapshot previous, CorruptionStateSnapshot current) {
         CorruptionEffectStack previousStack = CorruptionEffectStack.from(previous);
         CorruptionEffectStack currentStack = CorruptionEffectStack.from(current);
         if (textureSettingsSignature(previousStack).equals(textureSettingsSignature(currentStack))) {

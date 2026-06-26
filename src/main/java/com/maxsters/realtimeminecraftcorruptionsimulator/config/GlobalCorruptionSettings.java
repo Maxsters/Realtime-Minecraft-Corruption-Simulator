@@ -1,7 +1,7 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.config;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
-import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionProfileManager;
+import com.maxsters.realtimeminecraftcorruptionsimulator.profile.DeterministicCorruption;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionTarget;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionSavedData;
 import net.minecraftforge.fml.loading.FMLPaths;
@@ -27,7 +27,7 @@ public final class GlobalCorruptionSettings {
 
     private static volatile boolean loaded;
     private static int activeLevel;
-    private static long seed = CorruptionProfileManager.DEFAULT_PROFILE.fixedSeed();
+    private static long seed = DeterministicCorruption.DEFAULT_SEED;
     private static String seedLabel = CorruptionSavedData.seedLabel(seed);
     private static int enabledTargetsMask = CorruptionTarget.ALL_MASK;
     private static int autoIncreaseIntervalTicks;
@@ -35,6 +35,7 @@ public final class GlobalCorruptionSettings {
     private static boolean clientDriftEnabled;
     private static int seedRandomizerIntervalTicks;
     private static long settingsVersion;
+    // Worldgen reads this volatile snapshot from hot paths, avoiding synchronized config access per sample.
     private static volatile CorruptionRuntimeSnapshot runtimeSnapshot = new CorruptionRuntimeSnapshot(activeLevel, seed, enabledTargetsMask, 0L);
     private static final ExecutorService SAVE_EXECUTOR = Executors.newSingleThreadExecutor(task -> {
         Thread thread = new Thread(task, "RMC corruption settings save");
@@ -145,7 +146,7 @@ public final class GlobalCorruptionSettings {
         }
 
         activeLevel = clampPercent(parseInt(properties.getProperty(CORRUPTION_LEVEL), parseInt(properties.getProperty("active_corruption_level"), 0)));
-        seed = parseLong(properties.getProperty(CORRUPTION_SEED), CorruptionProfileManager.DEFAULT_PROFILE.fixedSeed());
+        seed = parseLong(properties.getProperty(CORRUPTION_SEED), DeterministicCorruption.DEFAULT_SEED);
         seedLabel = CorruptionSavedData.sanitizeSeedLabel(properties.getProperty(CORRUPTION_SEED_LABEL), seed);
         enabledTargetsMask = CorruptionTarget.normalizeMask(parseInt(properties.getProperty(ENABLED_TARGETS_MASK), CorruptionTarget.ALL_MASK));
         autoIncreaseIntervalTicks = clampIntervalTicks(parseInt(properties.getProperty(AUTO_INCREASE_INTERVAL_TICKS), 0));

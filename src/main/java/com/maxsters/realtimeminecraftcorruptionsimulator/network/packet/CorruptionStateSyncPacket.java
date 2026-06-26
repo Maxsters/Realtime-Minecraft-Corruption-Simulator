@@ -1,6 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.network.packet;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.loading.FMLEnvironment;
@@ -10,14 +10,14 @@ import java.lang.reflect.Method;
 import java.util.function.Supplier;
 
 public final class CorruptionStateSyncPacket {
-    private final CorruptionProfileSnapshot snapshot;
+    private final CorruptionStateSnapshot snapshot;
     private final boolean serverCheatsExposed;
 
-    public CorruptionStateSyncPacket(CorruptionProfileSnapshot snapshot) {
+    public CorruptionStateSyncPacket(CorruptionStateSnapshot snapshot) {
         this(snapshot, false);
     }
 
-    public CorruptionStateSyncPacket(CorruptionProfileSnapshot snapshot, boolean serverCheatsExposed) {
+    public CorruptionStateSyncPacket(CorruptionStateSnapshot snapshot, boolean serverCheatsExposed) {
         this.snapshot = snapshot;
         this.serverCheatsExposed = serverCheatsExposed;
     }
@@ -28,7 +28,7 @@ public final class CorruptionStateSyncPacket {
     }
 
     public static CorruptionStateSyncPacket decode(FriendlyByteBuf buffer) {
-        CorruptionProfileSnapshot snapshot = CorruptionProfileSnapshot.decode(buffer);
+        CorruptionStateSnapshot snapshot = CorruptionStateSnapshot.decode(buffer);
         boolean serverCheatsExposed = buffer.isReadable() && buffer.readBoolean();
         return new CorruptionStateSyncPacket(snapshot, serverCheatsExposed);
     }
@@ -39,18 +39,18 @@ public final class CorruptionStateSyncPacket {
         context.setPacketHandled(true);
     }
 
-    private static void handleClientState(CorruptionProfileSnapshot snapshot, boolean serverCheatsExposed) {
+    private static void handleClientState(CorruptionStateSnapshot snapshot, boolean serverCheatsExposed) {
         if (FMLEnvironment.dist != Dist.CLIENT) {
             return;
         }
         try {
             Class<?> type = Class.forName("com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientNetworkHandlers");
-            Method method = type.getMethod("handleState", CorruptionProfileSnapshot.class, boolean.class);
+            Method method = type.getMethod("handleState", CorruptionStateSnapshot.class, boolean.class);
             method.invoke(null, snapshot, serverCheatsExposed);
         } catch (ReflectiveOperationException | LinkageError ignored) {
             try {
                 Class<?> type = Class.forName("com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientNetworkHandlers");
-                Method method = type.getMethod("handleState", CorruptionProfileSnapshot.class);
+                Method method = type.getMethod("handleState", CorruptionStateSnapshot.class);
                 method.invoke(null, snapshot);
             } catch (ReflectiveOperationException | LinkageError ignoredAgain) {
             }

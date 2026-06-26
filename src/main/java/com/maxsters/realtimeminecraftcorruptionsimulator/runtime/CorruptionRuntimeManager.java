@@ -1,6 +1,5 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.runtime;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.calibration.CorruptionCalibrationManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.config.GlobalCorruptionSettings;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionSavedData;
 
@@ -45,7 +44,8 @@ public final class CorruptionRuntimeManager {
             changed = true;
         }
         if (data.getCorruptionLevel() != activeLevel) {
-            CorruptionCalibrationManager.applyCorruptionLevel(data, activeLevel);
+            // Level changes are direct now; there is no hidden progression layer.
+            data.setCorruptionLevel(activeLevel);
             changed = true;
         }
         return changed;

@@ -8,7 +8,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.TextureM
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.VisualCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.overlay.CorruptionOverlayManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.AchievementEventPacket;
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
@@ -18,16 +18,16 @@ public final class ClientNetworkHandlers {
     private ClientNetworkHandlers() {
     }
 
-    public static void handleState(CorruptionProfileSnapshot snapshot) {
+    public static void handleState(CorruptionStateSnapshot snapshot) {
         handleState(snapshot, false);
     }
 
-    public static void handleState(CorruptionProfileSnapshot snapshot, boolean serverCheatsExposed) {
+    public static void handleState(CorruptionStateSnapshot snapshot, boolean serverCheatsExposed) {
         Minecraft.getInstance().execute(() -> {
-            CorruptionProfileSnapshot previous = ClientCorruptionState.snapshot();
+            CorruptionStateSnapshot previous = ClientCorruptionState.snapshot();
             CorruptionAchievementManager.setServerCheatsExposed(serverCheatsExposed);
             ClientCorruptionState.applySnapshot(snapshot);
-            CorruptionProfileSnapshot current = ClientCorruptionState.snapshot();
+            CorruptionStateSnapshot current = ClientCorruptionState.snapshot();
             CorruptionOverlayManager.applySnapshot(current);
             TextureMutationManager.onSettingsChanged(previous, current);
             FontTextureCorruptionManager.onSettingsChanged(previous, current);

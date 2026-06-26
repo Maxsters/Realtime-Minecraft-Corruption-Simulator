@@ -1,7 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mechanics;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
-import com.maxsters.realtimeminecraftcorruptionsimulator.calibration.CorruptionCalibrationManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.ModNetwork;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
@@ -109,10 +108,6 @@ public final class CorruptionMechanicsManager {
     private static final int MAX_WORLD_PROCESS_MUTATIONS_PER_TICK = 12;
     private static final int MIN_PERSISTENT_TERRAIN_CORRUPTION_LEVEL = 1;
     private static final int MAX_PERSISTENT_TERRAIN_CORRUPTION_LEVEL = 100;
-    private static final int MIN_PERSISTENT_TERRAIN_CONFIDENCE = 0;
-    private static final int MIN_PERSISTENT_TERRAIN_COHERENCE = 0;
-    private static final int MAX_PERSISTENT_TERRAIN_DEBT = 100;
-    private static final int MAX_PERSISTENT_TERRAIN_DELTA = 100;
     private static final float MIN_PERSISTENT_TERRAIN_INTENSITY = 0.006F;
     private static final float MIN_RUNTIME_MECHANICS_INTENSITY = 0.00025F;
     private static final float MIN_WORLD_PROCESS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
@@ -1492,7 +1487,7 @@ public final class CorruptionMechanicsManager {
                 int next = clampInt(current + amount, 0, 100);
                 data.setLastAutoIncreaseGameTime(clock);
                 if (next != current) {
-                    CorruptionCalibrationManager.applyCorruptionLevel(data, next);
+                    data.setCorruptionLevel(next);
                     changed = true;
                 }
             }
@@ -1563,8 +1558,6 @@ public final class CorruptionMechanicsManager {
     private static int entityMechanicsSyncSignature(CorruptionEffectStack stack) {
         int signature = 23;
         signature = signature * 31 + stack.level();
-        signature = signature * 31 + stack.previousLevel();
-        signature = signature * 31 + stack.delta();
         signature = signature * 31 + stack.enabledTargetsMask();
         signature = signature * 31 + (int) (stack.fixedSeed() ^ (stack.fixedSeed() >>> 32));
         signature = signature * 31 + Math.round(stack.instability() * 1000.0F);
@@ -1671,8 +1664,6 @@ public final class CorruptionMechanicsManager {
     private static int entityHitboxProfileSignature(CorruptionEffectStack stack) {
         int signature = 29;
         signature = signature * 31 + stack.level();
-        signature = signature * 31 + stack.previousLevel();
-        signature = signature * 31 + stack.delta();
         signature = signature * 31 + stack.enabledTargetsMask();
         signature = signature * 31 + (int) (stack.fixedSeed() ^ (stack.fixedSeed() >>> 32));
         signature = signature * 31 + Math.round(stack.intensity(CorruptionSurface.ENTITY_STATE) * 1000.0F);
@@ -1742,8 +1733,6 @@ public final class CorruptionMechanicsManager {
 
         int signature = 17;
         signature = signature * 31 + stack.level();
-        signature = signature * 31 + stack.previousLevel();
-        signature = signature * 31 + stack.delta();
         signature = signature * 31 + stack.enabledTargetsMask();
         signature = signature * 31 + (int) (stack.fixedSeed() ^ (stack.fixedSeed() >>> 32));
         signature = signature * 31 + surface.ordinal();
@@ -2170,11 +2159,7 @@ public final class CorruptionMechanicsManager {
     private static boolean allowsPersistentTerrainMutation(CorruptionEffectStack stack) {
         return stack.level() >= MIN_PERSISTENT_TERRAIN_CORRUPTION_LEVEL
                 && stack.level() <= MAX_PERSISTENT_TERRAIN_CORRUPTION_LEVEL
-                && stack.intensity(CorruptionSurface.WORLDGEN_SURFACE) >= MIN_PERSISTENT_TERRAIN_INTENSITY
-                && stack.calibrationConfidence() >= MIN_PERSISTENT_TERRAIN_CONFIDENCE
-                && stack.profileCoherence() >= MIN_PERSISTENT_TERRAIN_COHERENCE
-                && stack.stabilityDebt() <= MAX_PERSISTENT_TERRAIN_DEBT
-                && stack.delta() <= MAX_PERSISTENT_TERRAIN_DELTA;
+                && stack.intensity(CorruptionSurface.WORLDGEN_SURFACE) >= MIN_PERSISTENT_TERRAIN_INTENSITY;
     }
 
     private static boolean surfaceActive(CorruptionEffectStack stack, CorruptionSurface surface, float minimumIntensity) {
@@ -2502,6 +2487,7 @@ public final class CorruptionMechanicsManager {
             return cachedServerStack;
         }
 
+        // Server hooks can ask for the stack many times per tick; build it once from saved world settings.
         CorruptionSavedData data = CorruptionSavedData.get(server);
         CorruptionRuntimeManager.syncGlobalLevel(data);
         cachedServerIdentity = identity;

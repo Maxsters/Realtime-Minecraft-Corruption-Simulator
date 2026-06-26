@@ -7,7 +7,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionOpera
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionTarget;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import com.mojang.blaze3d.audio.OggAudioStream;
 import com.mojang.blaze3d.audio.SoundBuffer;
 import net.minecraft.Util;
@@ -67,7 +67,7 @@ public final class AudioCorruptionManager {
         installMutatingSoundBuffers(event.getEngine());
     }
 
-    public static void onSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
+    public static void onSettingsChanged(CorruptionStateSnapshot previous, CorruptionStateSnapshot current) {
         SoundManager soundManager = Minecraft.getInstance().getSoundManager();
         SoundEngine engine = soundEngine(soundManager);
         MutatingSoundBufferLibrary library = installMutatingSoundBuffers(engine);
@@ -155,21 +155,17 @@ public final class AudioCorruptionManager {
         }
     }
 
-    private static String audioRefreshSignature(CorruptionProfileSnapshot snapshot) {
+    private static String audioRefreshSignature(CorruptionStateSnapshot snapshot) {
         if (snapshot == null) {
             return "missing";
         }
         boolean audioEnabled = snapshot.isTargetEnabled(CorruptionTarget.AUDIO);
         return audioEnabled
                 + ":" + snapshot.getCorruptionLevel()
-                + ":" + snapshot.getPreviousCorruptionLevel()
-                + ":" + snapshot.getCorruptionDelta()
-                + ":" + snapshot.getStabilityDebt()
-                + ":" + snapshot.getProfileCoherence()
                 + ":" + snapshot.getEffectiveCorruptionSeed();
     }
 
-    private static boolean audioPlaybackAffected(CorruptionProfileSnapshot snapshot) {
+    private static boolean audioPlaybackAffected(CorruptionStateSnapshot snapshot) {
         return snapshot != null && snapshot.getCorruptionLevel() > 0 && snapshot.isTargetEnabled(CorruptionTarget.AUDIO);
     }
 
@@ -501,10 +497,6 @@ public final class AudioCorruptionManager {
 
     private static String audioSignature(CorruptionEffectStack stack, String targetId) {
         return stack.level()
-                + ":" + stack.previousLevel()
-                + ":" + stack.delta()
-                + ":" + stack.stabilityDebt()
-                + ":" + stack.profileCoherence()
                 + ":" + Math.round(audioIntensity(stack, targetId) * 1000.0F)
                 + ":" + stack.bucket(CorruptionSurface.SOUND_STREAM, targetId, 0x415544, 96);
     }

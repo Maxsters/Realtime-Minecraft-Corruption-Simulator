@@ -4,9 +4,9 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruption
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.BlockRenderCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
-import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionProfileManager;
+import com.maxsters.realtimeminecraftcorruptionsimulator.profile.DeterministicCorruption;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import net.minecraft.client.renderer.RenderType;
@@ -44,7 +44,7 @@ import java.util.function.Supplier;
 
 @OnlyIn(Dist.CLIENT)
 public final class ItemTextureCorruptionManager {
-    private static final long ITEM_TEXTURE_SEED = CorruptionProfileManager.DEFAULT_PROFILE.fixedSeed() ^ 0x493354454d55564cL;
+    private static final long ITEM_TEXTURE_SEED = DeterministicCorruption.DEFAULT_SEED ^ 0x493354454d55564cL;
     private static final List<TextureAtlasSprite> SPRITE_POOL = new ArrayList<>();
     private static final Set<ResourceLocation> SPRITE_POOL_IDS = new HashSet<>();
     private static final Set<CorruptedItemBakedModel> MODEL_WRAPPERS = Collections.newSetFromMap(new ConcurrentHashMap<>());
@@ -171,7 +171,7 @@ public final class ItemTextureCorruptionManager {
         }
     }
 
-    public static void onSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
+    public static void onSettingsChanged(CorruptionStateSnapshot previous, CorruptionStateSnapshot current) {
         CorruptionEffectStack previousStack = CorruptionEffectStack.from(previous);
         CorruptionEffectStack currentStack = CorruptionEffectStack.from(current);
         if (!modelTextureSignature(previousStack).equals(modelTextureSignature(currentStack))) {

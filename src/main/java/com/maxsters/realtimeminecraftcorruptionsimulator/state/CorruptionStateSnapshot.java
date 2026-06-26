@@ -3,16 +3,10 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.state;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionTarget;
 import net.minecraft.network.FriendlyByteBuf;
 
-public record CorruptionProfileSnapshot(
+// Client mirror of the active runtime settings. Corruption intensity is derived
+// from these fields by CorruptionEffectStack instead of being synced as state.
+public record CorruptionStateSnapshot(
         int corruptionLevel,
-        int previousCorruptionLevel,
-        int corruptionDelta,
-        int calibrationConfidence,
-        int stabilityDebt,
-        int profileCoherence,
-        int emergenceScore,
-        int lastKnownSafeCorruptionLevel,
-        String activeProfile,
         long fixedCorruptionSeed,
         String corruptionSeedLabel,
         int enabledTargetsMask,
@@ -22,16 +16,8 @@ public record CorruptionProfileSnapshot(
         int seedRandomizerIntervalTicks,
         long clientDriftSalt
 ) {
-    public CorruptionProfileSnapshot(
+    public CorruptionStateSnapshot(
             int corruptionLevel,
-            int previousCorruptionLevel,
-            int corruptionDelta,
-            int calibrationConfidence,
-            int stabilityDebt,
-            int profileCoherence,
-            int emergenceScore,
-            int lastKnownSafeCorruptionLevel,
-            String activeProfile,
             long fixedCorruptionSeed,
             String corruptionSeedLabel,
             int enabledTargetsMask,
@@ -40,14 +26,6 @@ public record CorruptionProfileSnapshot(
     ) {
         this(
                 corruptionLevel,
-                previousCorruptionLevel,
-                corruptionDelta,
-                calibrationConfidence,
-                stabilityDebt,
-                profileCoherence,
-                emergenceScore,
-                lastKnownSafeCorruptionLevel,
-                activeProfile,
                 fixedCorruptionSeed,
                 corruptionSeedLabel,
                 enabledTargetsMask,
@@ -59,16 +37,8 @@ public record CorruptionProfileSnapshot(
         );
     }
 
-    public CorruptionProfileSnapshot(
+    public CorruptionStateSnapshot(
             int corruptionLevel,
-            int previousCorruptionLevel,
-            int corruptionDelta,
-            int calibrationConfidence,
-            int stabilityDebt,
-            int profileCoherence,
-            int emergenceScore,
-            int lastKnownSafeCorruptionLevel,
-            String activeProfile,
             long fixedCorruptionSeed,
             String corruptionSeedLabel,
             int enabledTargetsMask,
@@ -79,14 +49,6 @@ public record CorruptionProfileSnapshot(
     ) {
         this(
                 corruptionLevel,
-                previousCorruptionLevel,
-                corruptionDelta,
-                calibrationConfidence,
-                stabilityDebt,
-                profileCoherence,
-                emergenceScore,
-                lastKnownSafeCorruptionLevel,
-                activeProfile,
                 fixedCorruptionSeed,
                 corruptionSeedLabel,
                 enabledTargetsMask,
@@ -98,16 +60,8 @@ public record CorruptionProfileSnapshot(
         );
     }
 
-    public CorruptionProfileSnapshot {
+    public CorruptionStateSnapshot {
         corruptionLevel = clampPercent(corruptionLevel);
-        previousCorruptionLevel = clampPercent(previousCorruptionLevel);
-        corruptionDelta = clampPercent(corruptionDelta);
-        calibrationConfidence = clampPercent(calibrationConfidence);
-        stabilityDebt = clampPercent(stabilityDebt);
-        profileCoherence = clampPercent(profileCoherence);
-        emergenceScore = clampPercent(emergenceScore);
-        lastKnownSafeCorruptionLevel = clampPercent(lastKnownSafeCorruptionLevel);
-        activeProfile = activeProfile == null || activeProfile.isBlank() ? "REALTIME_CORRUPTION_SIMULATOR" : activeProfile;
         corruptionSeedLabel = CorruptionSavedData.sanitizeSeedLabel(corruptionSeedLabel, fixedCorruptionSeed);
         enabledTargetsMask = CorruptionTarget.normalizeMask(enabledTargetsMask);
         autoIncreaseIntervalTicks = clampIntervalTicks(autoIncreaseIntervalTicks);
@@ -116,17 +70,9 @@ public record CorruptionProfileSnapshot(
         clientDriftSalt = clientDriftEnabled ? clientDriftSalt : 0L;
     }
 
-    public static CorruptionProfileSnapshot from(CorruptionSavedData data) {
-        return new CorruptionProfileSnapshot(
+    public static CorruptionStateSnapshot from(CorruptionSavedData data) {
+        return new CorruptionStateSnapshot(
                 data.getCorruptionLevel(),
-                data.getPreviousCorruptionLevel(),
-                data.getCorruptionDelta(),
-                data.getCalibrationConfidence(),
-                data.getStabilityDebt(),
-                data.getProfileCoherence(),
-                data.getEmergenceScore(),
-                data.getLastKnownSafeCorruptionLevel(),
-                data.getActiveProfile(),
                 data.getFixedCorruptionSeed(),
                 data.getCorruptionSeedLabel(),
                 data.getEnabledTargetsMask(),
@@ -138,16 +84,8 @@ public record CorruptionProfileSnapshot(
         );
     }
 
-    public static CorruptionProfileSnapshot decode(FriendlyByteBuf buffer) {
+    public static CorruptionStateSnapshot decode(FriendlyByteBuf buffer) {
         int corruptionLevel = buffer.readVarInt();
-        int previousCorruptionLevel = buffer.readVarInt();
-        int corruptionDelta = buffer.readVarInt();
-        int calibrationConfidence = buffer.readVarInt();
-        int stabilityDebt = buffer.readVarInt();
-        int profileCoherence = buffer.readVarInt();
-        int emergenceScore = buffer.readVarInt();
-        int lastKnownSafeCorruptionLevel = buffer.readVarInt();
-        String activeProfile = buffer.readUtf(64);
         long fixedCorruptionSeed = buffer.readLong();
         String corruptionSeedLabel = buffer.readUtf(96);
         int enabledTargetsMask = buffer.readVarInt();
@@ -155,16 +93,8 @@ public record CorruptionProfileSnapshot(
         int autoIncreaseAmount = buffer.readVarInt();
         boolean clientDriftEnabled = buffer.readBoolean();
         int seedRandomizerIntervalTicks = buffer.readVarInt();
-        return new CorruptionProfileSnapshot(
+        return new CorruptionStateSnapshot(
                 corruptionLevel,
-                previousCorruptionLevel,
-                corruptionDelta,
-                calibrationConfidence,
-                stabilityDebt,
-                profileCoherence,
-                emergenceScore,
-                lastKnownSafeCorruptionLevel,
-                activeProfile,
                 fixedCorruptionSeed,
                 corruptionSeedLabel,
                 enabledTargetsMask,
@@ -178,14 +108,6 @@ public record CorruptionProfileSnapshot(
 
     public void encode(FriendlyByteBuf buffer) {
         buffer.writeVarInt(corruptionLevel);
-        buffer.writeVarInt(previousCorruptionLevel);
-        buffer.writeVarInt(corruptionDelta);
-        buffer.writeVarInt(calibrationConfidence);
-        buffer.writeVarInt(stabilityDebt);
-        buffer.writeVarInt(profileCoherence);
-        buffer.writeVarInt(emergenceScore);
-        buffer.writeVarInt(lastKnownSafeCorruptionLevel);
-        buffer.writeUtf(activeProfile);
         buffer.writeLong(fixedCorruptionSeed);
         buffer.writeUtf(corruptionSeedLabel);
         buffer.writeVarInt(enabledTargetsMask);
@@ -197,38 +119,6 @@ public record CorruptionProfileSnapshot(
 
     public int getCorruptionLevel() {
         return corruptionLevel;
-    }
-
-    public int getPreviousCorruptionLevel() {
-        return previousCorruptionLevel;
-    }
-
-    public int getCorruptionDelta() {
-        return corruptionDelta;
-    }
-
-    public int getCalibrationConfidence() {
-        return calibrationConfidence;
-    }
-
-    public int getStabilityDebt() {
-        return stabilityDebt;
-    }
-
-    public int getProfileCoherence() {
-        return profileCoherence;
-    }
-
-    public int getEmergenceScore() {
-        return emergenceScore;
-    }
-
-    public int getLastKnownSafeCorruptionLevel() {
-        return lastKnownSafeCorruptionLevel;
-    }
-
-    public String getActiveProfile() {
-        return activeProfile;
     }
 
     public long getFixedCorruptionSeed() {
@@ -267,17 +157,9 @@ public record CorruptionProfileSnapshot(
         return clientDriftEnabled ? fixedCorruptionSeed ^ clientDriftSalt : fixedCorruptionSeed;
     }
 
-    public CorruptionProfileSnapshot withClientDriftSalt(long salt) {
-        return new CorruptionProfileSnapshot(
+    public CorruptionStateSnapshot withClientDriftSalt(long salt) {
+        return new CorruptionStateSnapshot(
                 corruptionLevel,
-                previousCorruptionLevel,
-                corruptionDelta,
-                calibrationConfidence,
-                stabilityDebt,
-                profileCoherence,
-                emergenceScore,
-                lastKnownSafeCorruptionLevel,
-                activeProfile,
                 fixedCorruptionSeed,
                 corruptionSeedLabel,
                 enabledTargetsMask,

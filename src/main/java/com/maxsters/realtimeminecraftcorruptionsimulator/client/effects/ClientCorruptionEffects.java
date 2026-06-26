@@ -3,7 +3,7 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.effects;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionState;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
@@ -30,7 +30,7 @@ public final class ClientCorruptionEffects {
     }
 
     private static CorruptionEffectStack fromClientSnapshot() {
-        CorruptionProfileSnapshot snapshot = ClientCorruptionState.snapshot();
+        CorruptionStateSnapshot snapshot = ClientCorruptionState.snapshot();
         return snapshot == null ? CorruptionEffectStack.local(0) : CorruptionEffectStack.from(snapshot);
     }
 }

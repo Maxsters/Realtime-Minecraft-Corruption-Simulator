@@ -6,7 +6,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.CameraRend
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import com.mojang.blaze3d.shaders.FogShape;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.color.block.BlockColor;
@@ -94,7 +94,7 @@ public final class VisualCorruptionManager {
         );
     }
 
-    public static void onSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
+    public static void onSettingsChanged(CorruptionStateSnapshot previous, CorruptionStateSnapshot current) {
         CorruptionEffectStack previousStack = CorruptionEffectStack.from(previous);
         CorruptionEffectStack currentStack = CorruptionEffectStack.from(current);
         if (!chunkRenderRefreshSignature(previousStack).equals(chunkRenderRefreshSignature(currentStack))) {

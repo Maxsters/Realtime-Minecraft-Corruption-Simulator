@@ -4,7 +4,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorrup
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import com.mojang.blaze3d.font.GlyphInfo;
 import com.mojang.blaze3d.font.GlyphProvider;
 import com.mojang.blaze3d.font.SheetGlyphInfo;
@@ -92,7 +92,7 @@ public final class FontTextureCorruptionManager {
         pendingFontRefresh = false;
     }
 
-    public static void onSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
+    public static void onSettingsChanged(CorruptionStateSnapshot previous, CorruptionStateSnapshot current) {
         if (previous == null || current == null
                 || previous.getCorruptionLevel() != current.getCorruptionLevel()
                 || previous.getEffectiveCorruptionSeed() != current.getEffectiveCorruptionSeed()
@@ -427,8 +427,6 @@ public final class FontTextureCorruptionManager {
 
     private static String fontSignature(CorruptionEffectStack stack) {
         return stack.level()
-                + ":" + stack.previousLevel()
-                + ":" + stack.delta()
                 + ":" + stack.fixedSeed()
                 + ":" + stack.bucket(CorruptionSurface.GUI_SURFACE, 0x475549, 64);
     }

@@ -15,7 +15,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.network.ModNetwork;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.ApplyCorruptionSettingsPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.RequestCorruptionStatePacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionTarget;
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionSavedData;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.Lighting;
@@ -52,7 +52,7 @@ public final class CorruptionOverlayManager {
 
     private static KeyMapping overlayKey;
     private static KeyMapping quickToggleKey;
-    private static CorruptionProfileSnapshot latestSnapshot = ClientCorruptionState.localSnapshot();
+    private static CorruptionStateSnapshot latestSnapshot = ClientCorruptionState.localSnapshot();
     private static QuickToggleSnapshot quickToggleRestore;
     private static String currentWorldKey = "";
     private static boolean requestedThisWorld;
@@ -110,7 +110,7 @@ public final class CorruptionOverlayManager {
         event.register(quickToggleKey);
     }
 
-    public static void applySnapshot(CorruptionProfileSnapshot snapshot) {
+    public static void applySnapshot(CorruptionStateSnapshot snapshot) {
         boolean preserveDraft = hasPendingChanges() || isTextEditing() || mouseAction == MouseAction.SLIDER
                 || mouseAction == MouseAction.FUN_INTERVAL || mouseAction == MouseAction.FUN_AMOUNT || mouseAction == MouseAction.FUN_SEED_RANDOMIZER;
         latestSnapshot = snapshot == null ? ClientCorruptionState.localSnapshot() : snapshot;
@@ -389,8 +389,8 @@ public final class CorruptionOverlayManager {
     }
 
     private static void renderOverlay(GuiGraphics graphics, Minecraft minecraft, int mouseX, int mouseY) {
-        CorruptionProfileSnapshot snapshot = renderSnapshot();
-        CorruptionProfileSnapshot draftSnapshot = draftSnapshot(snapshot);
+        CorruptionStateSnapshot snapshot = renderSnapshot();
+        CorruptionStateSnapshot draftSnapshot = draftSnapshot(snapshot);
         LAYOUT.clampToScreen(graphics.guiWidth(), graphics.guiHeight());
         graphics.flush();
         RenderSystem.disableDepthTest();
@@ -867,10 +867,10 @@ public final class CorruptionOverlayManager {
         if (minecraft.getConnection() != null) {
             ModNetwork.sendToServer(new ApplyCorruptionSettingsPacket(level, seed, seedLabel, enabledTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount, clientDriftEnabled, seedRandomizerIntervalTicks));
         } else {
-            CorruptionProfileSnapshot previous = ClientCorruptionState.snapshot();
+            CorruptionStateSnapshot previous = ClientCorruptionState.snapshot();
             GlobalCorruptionSettings.apply(level, seed, seedLabel, enabledTargetsMask, autoIncreaseIntervalTicks, autoIncreaseAmount, clientDriftEnabled, seedRandomizerIntervalTicks);
             ClientCorruptionState.reset();
-            CorruptionProfileSnapshot current = ClientCorruptionState.snapshot();
+            CorruptionStateSnapshot current = ClientCorruptionState.snapshot();
             latestSnapshot = current;
             syncDraftFromSnapshot();
             notifyLocalSettingsChanged(previous, current);
@@ -891,7 +891,7 @@ public final class CorruptionOverlayManager {
     }
 
     private static void toggleAllCorruption() {
-        CorruptionProfileSnapshot snapshot = latestSnapshot == null ? ClientCorruptionState.snapshot() : latestSnapshot;
+        CorruptionStateSnapshot snapshot = latestSnapshot == null ? ClientCorruptionState.snapshot() : latestSnapshot;
         if (snapshot == null) {
             snapshot = ClientCorruptionState.localSnapshot();
         }
@@ -919,7 +919,7 @@ public final class CorruptionOverlayManager {
         );
     }
 
-    private static boolean isQuickToggleOff(CorruptionProfileSnapshot snapshot) {
+    private static boolean isQuickToggleOff(CorruptionStateSnapshot snapshot) {
         return snapshot.getCorruptionLevel() == 0
                 && snapshot.getEnabledTargetsMask() == 0
                 && snapshot.getAutoIncreaseIntervalTicks() == 0
@@ -932,7 +932,7 @@ public final class CorruptionOverlayManager {
         syncDraftFromSnapshot();
     }
 
-    private static void notifyLocalSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
+    private static void notifyLocalSettingsChanged(CorruptionStateSnapshot previous, CorruptionStateSnapshot current) {
         TextureMutationManager.onSettingsChanged(previous, current);
         FontTextureCorruptionManager.onSettingsChanged(previous, current);
         GuiTextureCorruptionManager.onSettingsChanged(previous, current);
@@ -1436,23 +1436,15 @@ public final class CorruptionOverlayManager {
         return hash;
     }
 
-    private static CorruptionProfileSnapshot renderSnapshot() {
+    private static CorruptionStateSnapshot renderSnapshot() {
         Minecraft minecraft = Minecraft.getInstance();
         return minecraft.level == null || minecraft.player == null ? ClientCorruptionState.localSnapshot() : latestSnapshot;
     }
 
-    private static CorruptionProfileSnapshot draftSnapshot(CorruptionProfileSnapshot base) {
-        CorruptionProfileSnapshot snapshot = base == null ? latestSnapshot : base;
-        return new CorruptionProfileSnapshot(
+    private static CorruptionStateSnapshot draftSnapshot(CorruptionStateSnapshot base) {
+        CorruptionStateSnapshot snapshot = base == null ? latestSnapshot : base;
+        return new CorruptionStateSnapshot(
                 pendingLevel,
-                snapshot.getPreviousCorruptionLevel(),
-                snapshot.getCorruptionDelta(),
-                snapshot.getCalibrationConfidence(),
-                snapshot.getStabilityDebt(),
-                snapshot.getProfileCoherence(),
-                snapshot.getEmergenceScore(),
-                snapshot.getLastKnownSafeCorruptionLevel(),
-                snapshot.getActiveProfile(),
                 draftSeed,
                 draftSeedLabel,
                 draftTargetsMask,
@@ -1598,7 +1590,7 @@ public final class CorruptionOverlayManager {
             boolean clientDriftEnabled,
             int seedRandomizerIntervalTicks
     ) {
-        private static QuickToggleSnapshot from(CorruptionProfileSnapshot snapshot) {
+        private static QuickToggleSnapshot from(CorruptionStateSnapshot snapshot) {
             return new QuickToggleSnapshot(
                     snapshot.getCorruptionLevel(),
                     snapshot.getFixedCorruptionSeed(),

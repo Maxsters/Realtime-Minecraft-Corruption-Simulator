@@ -6,7 +6,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.overlay.Corrupti
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
-import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionProfileSnapshot;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Renderable;
@@ -38,7 +38,7 @@ public final class GuiTextureCorruptionManager {
     private GuiTextureCorruptionManager() {
     }
 
-    public static void onSettingsChanged(CorruptionProfileSnapshot previous, CorruptionProfileSnapshot current) {
+    public static void onSettingsChanged(CorruptionStateSnapshot previous, CorruptionStateSnapshot current) {
         CorruptionEffectStack previousStack = CorruptionEffectStack.from(previous);
         CorruptionEffectStack currentStack = CorruptionEffectStack.from(current);
         if (previousStack.activeOrExtreme(CorruptionSurface.GUI_SURFACE)

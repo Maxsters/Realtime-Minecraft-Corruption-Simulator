@@ -208,8 +208,6 @@ public final class CloudRenderCorruptionHooks {
 
     private static String cloudRenderSignature(CorruptionEffectStack stack) {
         return stack.level()
-                + ":" + stack.previousLevel()
-                + ":" + stack.delta()
                 + ":" + stack.fixedSeed()
                 + ":" + stack.bucket(CorruptionSurface.WORLD_RENDER, 0x434C4F44, 96)
                 + ":" + stack.bucket(CorruptionSurface.LIGHT_FIELD, 0x4C494748, 96);
@@ -217,8 +215,6 @@ public final class CloudRenderCorruptionHooks {
 
     private static String cloudTextureSignature(CorruptionEffectStack stack) {
         return stack.level()
-                + ":" + stack.previousLevel()
-                + ":" + stack.delta()
                 + ":" + stack.fixedSeed()
                 + ":" + stack.bucket(CorruptionSurface.MODEL_UV, 0x5556434C, 96)
                 + ":" + stack.bucket(CorruptionSurface.TEXTURE_MEMORY, 0x54455843, 96);
