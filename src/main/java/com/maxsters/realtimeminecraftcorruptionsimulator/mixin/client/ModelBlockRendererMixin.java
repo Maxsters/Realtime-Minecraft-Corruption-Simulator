@@ -25,6 +25,8 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.List;
+
 @Mixin(ModelBlockRenderer.class)
 @SuppressWarnings("target")
 public abstract class ModelBlockRendererMixin {
@@ -63,6 +65,38 @@ public abstract class ModelBlockRendererMixin {
     private void rmc$endRenderSpaceOffset(BlockAndTintGetter level, BakedModel model, BlockState state, BlockPos pos, PoseStack poseStack, VertexConsumer consumer, boolean checkSides, RandomSource random, long seed, int packedOverlay, ModelData modelData, RenderType renderType, CallbackInfo callback) {
         BlockRenderCorruptionHooks.endTesselate(poseStack, rmc$renderSpaceOffsetApplied.get());
         rmc$renderSpaceOffsetApplied.remove();
+    }
+
+    @Redirect(
+            method = {
+                    "tesselateWithAO(Lnet/minecraft/world/level/BlockAndTintGetter;Lnet/minecraft/client/resources/model/BakedModel;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;ZLnet/minecraft/util/RandomSource;JILnet/minecraftforge/client/model/data/ModelData;Lnet/minecraft/client/renderer/RenderType;)V",
+                    "tesselateWithoutAO(Lnet/minecraft/world/level/BlockAndTintGetter;Lnet/minecraft/client/resources/model/BakedModel;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;ZLnet/minecraft/util/RandomSource;JILnet/minecraftforge/client/model/data/ModelData;Lnet/minecraft/client/renderer/RenderType;)V"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/resources/model/BakedModel;getQuads(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/Direction;Lnet/minecraft/util/RandomSource;Lnet/minecraftforge/client/model/data/ModelData;Lnet/minecraft/client/renderer/RenderType;)Ljava/util/List;", remap = false),
+            remap = false,
+            require = 0
+    )
+    @Dynamic("Applies world-render face loss where the renderer still has BlockPos; model-level getQuads hooks do not.")
+    private List<BakedQuad> rmc$getPositionedBlockQuads(BakedModel model,
+                                                        BlockState state,
+                                                        Direction side,
+                                                        RandomSource random,
+                                                        ModelData modelData,
+                                                        RenderType renderType,
+                                                        BlockAndTintGetter level,
+                                                        BakedModel originalModel,
+                                                        BlockState originalState,
+                                                        BlockPos pos,
+                                                        PoseStack poseStack,
+                                                        VertexConsumer consumer,
+                                                        boolean checkSides,
+                                                        RandomSource originalRandom,
+                                                        long seed,
+                                                        int packedOverlay,
+                                                        ModelData originalModelData,
+                                                        RenderType originalRenderType) {
+        List<BakedQuad> quads = model.getQuads(state, side, random, modelData, renderType);
+        return BlockRenderCorruptionHooks.corruptBlockFaces(state, pos, side, quads);
     }
 
     @Redirect(

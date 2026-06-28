@@ -4,6 +4,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ClientCo
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.BlockAndTintGetter;
@@ -21,7 +22,7 @@ public final class BiomeBlendCorruptionHooks {
             return original;
         }
 
-        String dimension = level == null ? "no_level" : level.toString();
+        String dimension = currentDimensionId();
         String targetId = "biome_blend_failure:" + channel + ":" + dimension;
         float intensity = Mth.clamp(Math.max(
                 stack.extreme(CorruptionSurface.BIOME_TINT) ? 1.0F : stack.intensity(CorruptionSurface.BIOME_TINT),
@@ -90,6 +91,11 @@ public final class BiomeBlendCorruptionHooks {
         int g = Math.round(Mth.lerp(amount, (from >> 8) & 0xFF, (to >> 8) & 0xFF));
         int b = Math.round(Mth.lerp(amount, from & 0xFF, to & 0xFF));
         return r << 16 | g << 8 | b;
+    }
+
+    private static String currentDimensionId() {
+        Minecraft minecraft = Minecraft.getInstance();
+        return minecraft.level == null ? "no_level" : minecraft.level.dimension().location().toString();
     }
 
     private static float unit(long value) {

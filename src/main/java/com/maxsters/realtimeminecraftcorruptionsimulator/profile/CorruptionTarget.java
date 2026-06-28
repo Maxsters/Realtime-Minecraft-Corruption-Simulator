@@ -4,7 +4,7 @@ import java.util.Locale;
 
 public enum CorruptionTarget {
     CAMERA(0, "camera", "Camera", "View drift and FOV changes."),
-    MOBILITY(1, "mobility", "Mobility", "Movement, fluids, and phasing."),
+    MOBILITY(1, "mobility", "Mobility", "Fluid checks, motion, collision, and phasing."),
     WORLD_VISUALS(2, "world_visuals", "World visuals", "Chunks, weather, light, biomes."),
     TEXTURES(3, "textures", "Textures", "Image data for world and UI."),
     AUDIO(4, "audio", "Audio", "Sound playback and placement."),

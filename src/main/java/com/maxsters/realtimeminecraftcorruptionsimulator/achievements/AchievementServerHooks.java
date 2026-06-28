@@ -3,9 +3,11 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.achievements;
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.ModNetwork;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.AchievementEventPacket;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraftforge.event.CommandEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -14,6 +16,19 @@ import net.minecraftforge.fml.common.Mod;
 @Mod.EventBusSubscriber(modid = RealtimeMinecraftCorruptionSimulator.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class AchievementServerHooks {
     private AchievementServerHooks() {
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onCommand(CommandEvent event) {
+        if (event.isCanceled() || event.getParseResults() == null) {
+            return;
+        }
+        CommandSourceStack source = event.getParseResults().getContext().getSource();
+        // CommandEvent fires before execution. Flagging permissioned sources here prevents
+        // command teleports from producing achievement progress before clients learn about it.
+        if (source != null && source.hasPermission(2)) {
+            ModNetwork.markServerAchievementDisqualified(source.getServer());
+        }
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)

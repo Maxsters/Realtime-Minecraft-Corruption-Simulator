@@ -1,7 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client.effects;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.BlockRenderCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.DeterministicCorruption;
@@ -115,16 +114,12 @@ public final class ItemTextureCorruptionManager {
 
         CorruptionEffectStack stack = state == null ? ClientCorruptionEffects.current() : ClientCorruptionEffects.currentForWorldRendering();
         if (!stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)
-                && !stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)
-                && !stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
+                && !stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)) {
             return quads;
         }
 
-        CorruptedItemBakedModel wrapper = stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY) || stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)
-                ? runtimeBlockWrapper(model, state)
-                : null;
-        List<BakedQuad> transformed = wrapper == null ? quads : wrapper.transform(quads, stack);
-        return BlockRenderCorruptionHooks.corruptBlockFaces(state, side, transformed);
+        CorruptedItemBakedModel wrapper = runtimeBlockWrapper(model, state);
+        return wrapper == null ? quads : wrapper.transform(quads, stack);
     }
 
     public static BakedQuad corruptRenderedBlockQuad(@Nullable BlockState state, BakedQuad quad) {

@@ -8,6 +8,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.AudioCor
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.FontTextureCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.GuiTextureCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ItemTextureCorruptionManager;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.LightingCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.TextureMutationManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.VisualCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.config.GlobalCorruptionSettings;
@@ -398,48 +399,53 @@ public final class CorruptionOverlayManager {
         graphics.pose().translate(0.0F, 0.0F, OVERLAY_Z);
         try {
             ClientCorruptionProtection.runProtectedGui(() -> {
-                if (LAYOUT.mode() == CorruptionOverlayLayout.Mode.COLLAPSED) {
-                    CorruptionOverlayPanel.renderCollapsed(graphics, minecraft.font, LAYOUT, snapshot, mouseX, mouseY);
-                } else if (LAYOUT.mode() == CorruptionOverlayLayout.Mode.MINIMIZED) {
-                    CorruptionOverlayPanel.renderMinimized(graphics, minecraft.font, LAYOUT, snapshot, mouseX, mouseY);
-                } else {
-                    int displayAutoInterval = mouseAction == MouseAction.FUN_INTERVAL ? pendingFunValue : draftAutoIntervalTicks;
-                    int displayAutoAmount = mouseAction == MouseAction.FUN_AMOUNT ? pendingFunValue : draftAutoAmount;
-                    int displaySeedRandomizerInterval = mouseAction == MouseAction.FUN_SEED_RANDOMIZER ? pendingFunValue : draftSeedRandomizerIntervalTicks;
-                    boolean draftDirty = hasPendingChanges();
-                    achievementsScroll = clampAchievementsScroll(graphics.guiWidth(), graphics.guiHeight());
-                    expireAchievementResetPresses();
-                    CorruptionOverlayPanel.renderOpen(
-                            graphics,
-                            minecraft.font,
-                            LAYOUT,
-                            snapshot,
-                            draftSnapshot,
-                            pendingLevel,
-                            displayAutoInterval,
-                            displayAutoAmount,
-                            displaySeedRandomizerInterval,
-                            draftDirty,
-                            currentPage,
-                            seedEditing,
-                            seedEditText,
-                            funEditField == FunEditField.INTERVAL,
-                            funIntervalEditText,
-                            funEditField == FunEditField.AMOUNT,
-                            funAmountEditText,
-                            funEditField == FunEditField.SEED_RANDOMIZER,
-                            funSeedRandomizerEditText,
-                            achievementsScroll,
-                            achievementResetPresses,
-                            CorruptionAchievementManager.pinnedCorner(),
-                            mouseX,
-                            mouseY
-                    );
+                LightingCorruptionHooks.beginGuiLightProtection();
+                try {
+                    if (LAYOUT.mode() == CorruptionOverlayLayout.Mode.COLLAPSED) {
+                        CorruptionOverlayPanel.renderCollapsed(graphics, minecraft.font, LAYOUT, snapshot, mouseX, mouseY);
+                    } else if (LAYOUT.mode() == CorruptionOverlayLayout.Mode.MINIMIZED) {
+                        CorruptionOverlayPanel.renderMinimized(graphics, minecraft.font, LAYOUT, snapshot, mouseX, mouseY);
+                    } else {
+                        int displayAutoInterval = mouseAction == MouseAction.FUN_INTERVAL ? pendingFunValue : draftAutoIntervalTicks;
+                        int displayAutoAmount = mouseAction == MouseAction.FUN_AMOUNT ? pendingFunValue : draftAutoAmount;
+                        int displaySeedRandomizerInterval = mouseAction == MouseAction.FUN_SEED_RANDOMIZER ? pendingFunValue : draftSeedRandomizerIntervalTicks;
+                        boolean draftDirty = hasPendingChanges();
+                        achievementsScroll = clampAchievementsScroll(graphics.guiWidth(), graphics.guiHeight());
+                        expireAchievementResetPresses();
+                        CorruptionOverlayPanel.renderOpen(
+                                graphics,
+                                minecraft.font,
+                                LAYOUT,
+                                snapshot,
+                                draftSnapshot,
+                                pendingLevel,
+                                displayAutoInterval,
+                                displayAutoAmount,
+                                displaySeedRandomizerInterval,
+                                draftDirty,
+                                currentPage,
+                                seedEditing,
+                                seedEditText,
+                                funEditField == FunEditField.INTERVAL,
+                                funIntervalEditText,
+                                funEditField == FunEditField.AMOUNT,
+                                funAmountEditText,
+                                funEditField == FunEditField.SEED_RANDOMIZER,
+                                funSeedRandomizerEditText,
+                                achievementsScroll,
+                                achievementResetPresses,
+                                CorruptionAchievementManager.pinnedCorner(),
+                                mouseX,
+                                mouseY
+                        );
+                    }
+                    if (minecraft.screen == null) {
+                        CorruptionOverlayPanel.renderPinnedAchievements(graphics, minecraft.font, CorruptionAchievementManager.pinnedAchievements(), CorruptionAchievementManager.pinnedCorner());
+                    }
+                    graphics.flush();
+                } finally {
+                    LightingCorruptionHooks.endGuiLightProtection();
                 }
-                if (minecraft.screen == null) {
-                    CorruptionOverlayPanel.renderPinnedAchievements(graphics, minecraft.font, CorruptionAchievementManager.pinnedAchievements(), CorruptionAchievementManager.pinnedCorner());
-                }
-                graphics.flush();
             });
         } finally {
             graphics.pose().popPose();

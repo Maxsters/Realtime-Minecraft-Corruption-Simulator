@@ -30,7 +30,7 @@ public final class BlockRenderCorruptionHooks {
             return false;
         }
 
-        Vec3 offset = currentRenderSpaceOffset();
+        Vec3 offset = currentRenderSpaceOffset(pos);
         if (!hasRenderSpaceOffset(offset)) {
             return false;
         }
@@ -41,6 +41,10 @@ public final class BlockRenderCorruptionHooks {
     }
 
     public static Vec3 currentRenderSpaceOffset() {
+        return currentRenderSpaceOffset(null);
+    }
+
+    public static Vec3 currentRenderSpaceOffset(BlockPos pos) {
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
             return Vec3.ZERO;
@@ -53,9 +57,7 @@ public final class BlockRenderCorruptionHooks {
             return Vec3.ZERO;
         }
 
-        Minecraft minecraft = Minecraft.getInstance();
-        String dimension = minecraft.level == null ? "no_level" : minecraft.level.dimension().location().toString();
-        String targetId = "world_render_space:" + dimension;
+        String targetId = "world_render_space:" + currentDimensionId() + ":" + renderRegionKey(pos);
         long seed = stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId, 0x424C4F43);
         double blockSpan = stack.extreme(CorruptionSurface.WORLD_RENDER)
                 ? 20.0D
@@ -78,8 +80,11 @@ public final class BlockRenderCorruptionHooks {
         }
     }
 
-    public static List<BakedQuad> corruptBlockFaces(BlockState state, Direction side, List<BakedQuad> quads) {
+    public static List<BakedQuad> corruptBlockFaces(BlockState state, BlockPos pos, Direction side, List<BakedQuad> quads) {
         if (quads == null || quads.isEmpty()) {
+            return quads;
+        }
+        if (state == null || pos == null) {
             return quads;
         }
 
@@ -88,10 +93,7 @@ public final class BlockRenderCorruptionHooks {
             return quads;
         }
 
-        Minecraft minecraft = Minecraft.getInstance();
-        String dimension = minecraft.level == null ? "no_level" : minecraft.level.dimension().location().toString();
-        String blockId = state == null ? "unknown" : blockTargetId(state);
-        String targetId = "missing_block_faces:" + dimension + ":" + blockId;
+        String targetId = "missing_block_faces:" + currentDimensionId() + ":" + blockTargetId(state);
         float intensity = Mth.clamp(stack.extreme(CorruptionSurface.WORLD_RENDER) ? 1.0F : stack.intensity(CorruptionSurface.WORLD_RENDER), 0.0F, 1.0F);
         if (intensity <= 0.015F) {
             return quads;
@@ -100,18 +102,18 @@ public final class BlockRenderCorruptionHooks {
         float chance = stack.extreme(CorruptionSurface.WORLD_RENDER)
                 ? 0.98F
                 : Mth.clamp(0.05F + intensity * 0.76F + stack.instability() * 0.10F, 0.0F, 0.92F);
-        int bucket = stack.bucket(CorruptionSurface.WORLD_RENDER, targetId, 0x46414345, 96);
-        if (stack.unit(CorruptionSurface.WORLD_RENDER, targetId + ":enabled", bucket) > chance) {
+        long faceSeed = stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId, 0x46414345) ^ positionSeed(pos);
+        if (unit(faceSeed ^ 0x454E41424C45L) > chance) {
             return quads;
         }
 
         if (side != null) {
-            return faceDropped(stack, targetId, side, bucket, intensity) ? Collections.emptyList() : quads;
+            return faceDropped(stack, faceSeed, side, intensity) ? Collections.emptyList() : quads;
         }
 
         List<BakedQuad> filtered = null;
         for (BakedQuad quad : quads) {
-            if (faceDropped(stack, targetId, quad.getDirection(), bucket, intensity)) {
+            if (faceDropped(stack, faceSeed, quad.getDirection(), intensity)) {
                 if (filtered == null) {
                     filtered = new ArrayList<>(quads.size());
                 }
@@ -124,27 +126,46 @@ public final class BlockRenderCorruptionHooks {
         return filtered == null ? quads : filtered;
     }
 
-    private static boolean faceDropped(CorruptionEffectStack stack, String targetId, Direction direction, int bucket, float intensity) {
+    private static boolean faceDropped(CorruptionEffectStack stack, long faceSeed, Direction direction, float intensity) {
         if (direction == null) {
             return false;
         }
-        Direction primary = missingFaceDirection(stack, targetId, bucket, 0);
-        Direction secondary = missingFaceDirection(stack, targetId, bucket, 1);
+        Direction primary = missingFaceDirection(faceSeed, 0);
+        Direction secondary = missingFaceDirection(faceSeed, 1);
         if (direction == primary) {
             return true;
         }
         float secondaryChance = Mth.clamp(Math.max(0.0F, intensity - 0.32F) * 0.84F + stack.instability() * 0.08F, 0.0F, 0.78F);
-        if (direction == secondary && stack.unit(CorruptionSurface.WORLD_RENDER, targetId + ":secondary", bucket ^ 0x534543) < secondaryChance) {
+        if (direction == secondary && unit(faceSeed ^ 0x5345434F4E444152L) < secondaryChance) {
             return true;
         }
         float scatterChance = Mth.clamp(Math.max(0.0F, intensity - 0.58F) * 0.38F, 0.0F, 0.28F);
-        return stack.unit(CorruptionSurface.WORLD_RENDER, targetId + ":scatter:" + direction.getName(), bucket ^ direction.ordinal()) < scatterChance;
+        return unit(faceSeed ^ ((long) direction.ordinal() + 1L) * 0x9E3779B97F4A7C15L) < scatterChance;
     }
 
-    private static Direction missingFaceDirection(CorruptionEffectStack stack, String targetId, int bucket, int ordinal) {
-        long seed = stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId + ":global_face:" + ordinal, bucket ^ 0x4D495353);
+    private static Direction missingFaceDirection(long faceSeed, int ordinal) {
+        long seed = mixLong(faceSeed ^ (long) ordinal * 0xD1B54A32D192ED03L ^ 0x4D495353L);
         Direction[] directions = Direction.values();
         return directions[Math.floorMod((int) (seed >>> (ordinal * 11)), directions.length)];
+    }
+
+    private static String currentDimensionId() {
+        Minecraft minecraft = Minecraft.getInstance();
+        return minecraft.level == null ? "no_level" : minecraft.level.dimension().location().toString();
+    }
+
+    private static String renderRegionKey(BlockPos pos) {
+        if (pos == null) {
+            return "global";
+        }
+        // Render-space offsets corrupt chunk sections. Keying them to the section
+        // makes the tear deterministic for every client while still producing real
+        // geometry displacement instead of a camera-only illusion.
+        return (pos.getX() >> 4) + ":" + (pos.getY() >> 4) + ":" + (pos.getZ() >> 4);
+    }
+
+    private static long positionSeed(BlockPos pos) {
+        return mixLong(pos.asLong() ^ (long) pos.getX() * 0x9E3779B97F4A7C15L ^ (long) pos.getZ() * 0x632BE59BD9B4E019L);
     }
 
     private static String blockTargetId(BlockState state) {
@@ -172,11 +193,15 @@ public final class BlockRenderCorruptionHooks {
     }
 
     private static double unit(long value) {
+        return ((mixLong(value) >>> 40) & 0xFF_FFFFL) / 16_777_215.0D;
+    }
+
+    private static long mixLong(long value) {
         value ^= value >>> 33;
         value *= 0xff51afd7ed558ccdL;
         value ^= value >>> 33;
         value *= 0xc4ceb9fe1a85ec53L;
         value ^= value >>> 33;
-        return ((value >>> 40) & 0xFF_FFFFL) / 16_777_215.0D;
+        return value;
     }
 }

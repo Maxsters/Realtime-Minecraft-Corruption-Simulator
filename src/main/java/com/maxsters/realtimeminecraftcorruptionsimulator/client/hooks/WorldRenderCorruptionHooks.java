@@ -22,7 +22,7 @@ public final class WorldRenderCorruptionHooks {
 
         Minecraft minecraft = Minecraft.getInstance();
         String dimension = minecraft.level == null ? "no_level" : minecraft.level.dimension().location().toString();
-        String layer = renderType == null ? "unknown" : renderType.toString();
+        String layer = stableChunkLayerId(renderType);
         String targetId = "chunk_layer_failure:" + dimension + ":" + layer;
         float intensity = Mth.clamp(stack.extreme(CorruptionSurface.WORLD_RENDER) ? 1.0F : stack.intensity(CorruptionSurface.WORLD_RENDER), 0.0F, 1.0F);
         if (intensity <= 0.015F) {
@@ -82,6 +82,24 @@ public final class WorldRenderCorruptionHooks {
     private static double repeatedOffset(double component, double phase, int axis) {
         double verticalDamping = axis == 1 ? 0.60D : 1.0D;
         return component * phase * verticalDamping;
+    }
+
+    private static String stableChunkLayerId(RenderType renderType) {
+        if (renderType == null) {
+            return "unknown";
+        }
+
+        // RenderType#toString includes CompositeState details. Those are useful
+        // for debugging but are not a stable corruption address across clients.
+        // Forge gives chunk buffer layers fixed IDs in vanilla render order.
+        return switch (renderType.getChunkLayerId()) {
+            case 0 -> "solid";
+            case 1 -> "cutout_mipped";
+            case 2 -> "cutout";
+            case 3 -> "translucent";
+            case 4 -> "tripwire";
+            default -> "non_chunk";
+        };
     }
 
     private static float unit(long value) {

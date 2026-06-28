@@ -3,6 +3,7 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ClientCorruptionEffects;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.gui.font.glyphs.BakedGlyph;
 import net.minecraft.util.Mth;
@@ -42,6 +43,7 @@ public final class FontRenderCorruptionHooks {
                                    boolean shadow) {
         FontMutation mutation = mutation();
         if (!mutation.active) {
+            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
             renderVanilla(glyph, bold, italic, boldOffset, x, y, matrix, consumer, red, green, blue, alpha, light);
             return;
         }

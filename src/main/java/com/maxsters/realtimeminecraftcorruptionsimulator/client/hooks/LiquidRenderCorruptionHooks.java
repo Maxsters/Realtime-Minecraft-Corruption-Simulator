@@ -24,7 +24,7 @@ public final class LiquidRenderCorruptionHooks {
         }
 
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
-        Vec3 renderOffset = BlockRenderCorruptionHooks.currentRenderSpaceOffset();
+        Vec3 renderOffset = BlockRenderCorruptionHooks.currentRenderSpaceOffset(pos);
         boolean hasRenderOffset = BlockRenderCorruptionHooks.hasRenderSpaceOffset(renderOffset);
         boolean hasGeometryCorruption = stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY);
         if (!hasGeometryCorruption && !hasRenderOffset) {

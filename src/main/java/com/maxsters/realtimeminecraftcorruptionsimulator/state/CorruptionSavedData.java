@@ -22,6 +22,10 @@ public class CorruptionSavedData extends SavedData {
     private boolean clientDriftEnabled;
     private int seedRandomizerIntervalTicks;
     private long lastSeedRandomizerGameTime;
+    // Achievement eligibility is server-wide. One privileged command can affect any player,
+    // so the disqualification must persist with the world instead of living on one client.
+    private boolean serverAchievementDisqualified;
+    private String serverAchievementDisqualificationReason = "";
     private boolean initialized;
 
     public static CorruptionSavedData get(MinecraftServer server) {
@@ -65,6 +69,12 @@ public class CorruptionSavedData extends SavedData {
         if (tag.contains("last_seed_randomizer_game_time", Tag.TAG_LONG)) {
             data.lastSeedRandomizerGameTime = tag.getLong("last_seed_randomizer_game_time");
         }
+        if (tag.contains("server_achievement_disqualified", Tag.TAG_BYTE)) {
+            data.serverAchievementDisqualified = tag.getBoolean("server_achievement_disqualified");
+        }
+        if (tag.contains("server_achievement_disqualification_reason", Tag.TAG_STRING)) {
+            data.serverAchievementDisqualificationReason = sanitizeDisqualificationReason(tag.getString("server_achievement_disqualification_reason"));
+        }
         return data;
     }
 
@@ -80,6 +90,8 @@ public class CorruptionSavedData extends SavedData {
         tag.putBoolean("client_drift_enabled", clientDriftEnabled);
         tag.putInt("seed_randomizer_interval_ticks", seedRandomizerIntervalTicks);
         tag.putLong("last_seed_randomizer_game_time", lastSeedRandomizerGameTime);
+        tag.putBoolean("server_achievement_disqualified", serverAchievementDisqualified);
+        tag.putString("server_achievement_disqualification_reason", serverAchievementDisqualificationReason);
         tag.putBoolean("initialized", true);
         return tag;
     }
@@ -170,6 +182,33 @@ public class CorruptionSavedData extends SavedData {
         setDirty();
     }
 
+    public boolean isServerAchievementDisqualified() {
+        return serverAchievementDisqualified;
+    }
+
+    public boolean hasServerAchievementDisqualificationReason() {
+        return serverAchievementDisqualified && !serverAchievementDisqualificationReason.isBlank();
+    }
+
+    public boolean markServerAchievementDisqualified(String reason) {
+        String sanitizedReason = sanitizeDisqualificationReason(reason);
+        if (serverAchievementDisqualified && !serverAchievementDisqualificationReason.isBlank()) {
+            return false;
+        }
+        serverAchievementDisqualified = true;
+        serverAchievementDisqualificationReason = sanitizedReason;
+        setDirty();
+        return true;
+    }
+
+    public void clearSourceLessServerAchievementDisqualification() {
+        if (!serverAchievementDisqualified || !serverAchievementDisqualificationReason.isBlank()) {
+            return;
+        }
+        serverAchievementDisqualified = false;
+        setDirty();
+    }
+
     public boolean isInitialized() {
         return initialized;
     }
@@ -210,5 +249,13 @@ public class CorruptionSavedData extends SavedData {
         }
         String trimmed = label.trim();
         return trimmed.length() > 96 ? trimmed.substring(0, 96) : trimmed;
+    }
+
+    private static String sanitizeDisqualificationReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "unknown";
+        }
+        String trimmed = reason.trim();
+        return trimmed.length() > 64 ? trimmed.substring(0, 64) : trimmed;
     }
 }

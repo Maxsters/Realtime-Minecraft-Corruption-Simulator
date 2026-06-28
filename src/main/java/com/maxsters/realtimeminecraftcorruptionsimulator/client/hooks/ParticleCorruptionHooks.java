@@ -7,6 +7,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValue
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.util.Mth;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
@@ -46,8 +47,8 @@ public final class ParticleCorruptionHooks {
             return true;
         }
 
-        int identity = particle == null ? 0 : System.identityHashCode(particle);
-        long sample = stack.stableLong(CorruptionSurface.WORLD_RENDER, "particle_budget", identity ^ seen ^ (int) time);
+        int stableParticle = particleSalt(particle);
+        long sample = stack.stableLong(CorruptionSurface.WORLD_RENDER, "particle_budget", stableParticle ^ seen ^ (int) time);
         return unit(sample) < Mth.clamp(0.20F + overflow * 0.72F, 0.0F, 0.95F);
     }
 
@@ -65,16 +66,16 @@ public final class ParticleCorruptionHooks {
 
         Minecraft minecraft = Minecraft.getInstance();
         long time = minecraft.level == null ? 0L : minecraft.level.getGameTime();
-        int identity = particle == null ? 0 : System.identityHashCode(particle);
+        int stableParticle = particleSalt(particle);
         int cadence = stack.extreme(CorruptionSurface.WORLD_RENDER) ? 2 : intensity > 0.68F ? 3 : 5;
-        if (Math.floorMod((int) time + identity, cadence) != 0) {
+        if (Math.floorMod((int) time + stableParticle, cadence) != 0) {
             return false;
         }
 
         float chance = stack.extreme(CorruptionSurface.WORLD_RENDER)
                 ? 0.32F
                 : Mth.clamp(0.025F + intensity * 0.16F + stack.instability() * 0.04F, 0.0F, 0.22F);
-        long sample = stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId, identity ^ ((int) (time / cadence) * 0x1F123BB5));
+        long sample = stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId, stableParticle ^ ((int) (time / cadence) * 0x1F123BB5));
         return unit(sample) < chance;
     }
 
@@ -250,8 +251,26 @@ public final class ParticleCorruptionHooks {
     private static long clock(CorruptionEffectStack stack, String targetId, Particle particle) {
         Minecraft minecraft = Minecraft.getInstance();
         long time = minecraft.level == null ? 0L : minecraft.level.getGameTime();
-        int identity = particle == null ? 0 : System.identityHashCode(particle);
-        return stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId, identity ^ 0x50415254) ^ (time << 16);
+        return stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId, particleSalt(particle) ^ 0x50415254) ^ (time << 16);
+    }
+
+    private static int particleSalt(Particle particle) {
+        if (particle == null) {
+            return 0;
+        }
+        AABB box = particle.getBoundingBox();
+        double x = (box.minX + box.maxX) * 0.5D;
+        double y = box.minY;
+        double z = (box.minZ + box.maxZ) * 0.5D;
+        int qx = Mth.floor(x * 8.0D);
+        int qy = Mth.floor(y * 8.0D);
+        int qz = Mth.floor(z * 8.0D);
+        int hash = particle.getClass().getName().hashCode();
+        hash = 31 * hash + qx;
+        hash = 31 * hash + qy;
+        hash = 31 * hash + qz;
+        hash = 31 * hash + particle.getLifetime();
+        return hash;
     }
 
     private static float unit(long value) {

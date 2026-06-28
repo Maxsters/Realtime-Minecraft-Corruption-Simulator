@@ -58,7 +58,8 @@ public final class ModNetwork {
         }
         CorruptionSavedData data = CorruptionSavedData.get(player.getServer());
         CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
-        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new CorruptionStateSyncPacket(CorruptionStateSnapshot.from(data), serverCheatsExposed(player.getServer())));
+        boolean cheatsExposed = serverCheatsExposed(player.getServer(), data);
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new CorruptionStateSyncPacket(CorruptionStateSnapshot.from(data), cheatsExposed));
     }
 
     public static void broadcastState(MinecraftServer server) {
@@ -67,9 +68,20 @@ public final class ModNetwork {
         }
         CorruptionSavedData data = CorruptionSavedData.get(server);
         CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
-        CorruptionStateSyncPacket packet = new CorruptionStateSyncPacket(CorruptionStateSnapshot.from(data), serverCheatsExposed(server));
+        boolean cheatsExposed = serverCheatsExposed(server, data);
+        CorruptionStateSyncPacket packet = new CorruptionStateSyncPacket(CorruptionStateSnapshot.from(data), cheatsExposed);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
+        }
+    }
+
+    public static void markServerAchievementDisqualified(MinecraftServer server) {
+        if (server == null) {
+            return;
+        }
+        CorruptionSavedData data = CorruptionSavedData.get(server);
+        if (data.markServerAchievementDisqualified("permissioned_command")) {
+            broadcastState(server);
         }
     }
 
@@ -87,18 +99,28 @@ public final class ModNetwork {
         return packetId++;
     }
 
-    private static boolean serverCheatsExposed(MinecraftServer server) {
+    private static boolean serverCheatsExposed(MinecraftServer server, CorruptionSavedData data) {
         if (server == null) {
             return false;
         }
+        if (server.isDedicatedServer() && data.isServerAchievementDisqualified() && !data.hasServerAchievementDisqualificationReason()) {
+            data.clearSourceLessServerAchievementDisqualification();
+        }
+        if (data.hasServerAchievementDisqualificationReason()) {
+            return true;
+        }
         try {
-            if (server.getWorldData() != null && server.getWorldData().getAllowCommands()) {
+            // Dedicated servers are inherently command-capable. Only singleplayer/LAN worlds
+            // use allowCommands as a meaningful "cheats were enabled" signal.
+            if (!server.isDedicatedServer() && server.getWorldData() != null && server.getWorldData().getAllowCommands()) {
+                data.markServerAchievementDisqualified("singleplayer_allow_commands");
                 return true;
             }
         } catch (RuntimeException ignored) {
         }
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             if (player.hasPermissions(2)) {
+                data.markServerAchievementDisqualified("permissioned_player");
                 return true;
             }
         }

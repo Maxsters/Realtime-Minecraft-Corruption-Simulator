@@ -19,16 +19,22 @@ public final class CorruptionEffectStack {
     private final int effectiveLevelBucket;
     private final long fixedSeed;
     private final int enabledTargetsMask;
+    private final boolean clientDriftEnabled;
     private final int layerCount;
     private final float instability;
     private final float[] intensityCache;
 
     private CorruptionEffectStack(int corruptionLevel, long fixedSeed, int enabledTargetsMask) {
+        this(corruptionLevel, fixedSeed, enabledTargetsMask, false);
+    }
+
+    private CorruptionEffectStack(int corruptionLevel, long fixedSeed, int enabledTargetsMask, boolean clientDriftEnabled) {
         this.corruptionLevel = clampPercent(corruptionLevel);
         this.effectiveLevel = mappedPercent(this.corruptionLevel);
         this.effectiveLevelBucket = Math.round(this.effectiveLevel * 100.0F);
         this.fixedSeed = fixedSeed;
         this.enabledTargetsMask = CorruptionTarget.normalizeMask(enabledTargetsMask);
+        this.clientDriftEnabled = clientDriftEnabled;
         this.layerCount = computeLayerCount(this.effectiveLevel);
         this.instability = computeInstability(this.effectiveLevel);
         this.intensityCache = new float[CorruptionSurface.values().length];
@@ -42,7 +48,8 @@ public final class CorruptionEffectStack {
         return new CorruptionEffectStack(
                 data.getCorruptionLevel(),
                 data.getFixedCorruptionSeed(),
-                data.getEnabledTargetsMask()
+                data.getEnabledTargetsMask(),
+                data.isClientDriftEnabled()
         );
     }
 
@@ -53,8 +60,18 @@ public final class CorruptionEffectStack {
         return new CorruptionEffectStack(
                 snapshot.getCorruptionLevel(),
                 snapshot.getEffectiveCorruptionSeed(),
-                snapshot.getEnabledTargetsMask()
+                snapshot.getEnabledTargetsMask(),
+                snapshot.isClientDriftEnabled()
         );
+    }
+
+    public static CorruptionEffectStack fromGameplay(CorruptionStateSnapshot snapshot) {
+        if (snapshot == null) {
+            return local(0);
+        }
+        // Gameplay uses the effective client seed too: with drift off this is the
+        // world seed, while drift on intentionally lets local gameplay diverge.
+        return from(snapshot);
     }
 
     public static CorruptionEffectStack local(int corruptionLevel) {
@@ -79,6 +96,10 @@ public final class CorruptionEffectStack {
 
     public int enabledTargetsMask() {
         return enabledTargetsMask;
+    }
+
+    public boolean clientDriftEnabled() {
+        return clientDriftEnabled;
     }
 
     public boolean targetEnabled(CorruptionTarget target) {

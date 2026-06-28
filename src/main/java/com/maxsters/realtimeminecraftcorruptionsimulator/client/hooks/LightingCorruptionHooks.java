@@ -24,6 +24,7 @@ import java.lang.reflect.Field;
 public final class LightingCorruptionHooks {
     private static int pendingLightTextureRefreshPasses;
     private static int pendingLightTextureResetPasses;
+    private static int guiLightProtectionDepth;
     private static Field lightTextureTextureField;
     private static Field lightTexturePixelsField;
 
@@ -58,6 +59,32 @@ public final class LightingCorruptionHooks {
 
     public static boolean lightingCorruptionActive(CorruptionEffectStack stack) {
         return lightingIntensity(stack) > 0.01F;
+    }
+
+    public static void beginGuiLightProtection() {
+        if (!shouldProtectGuiLightTexture()) {
+            return;
+        }
+        if (guiLightProtectionDepth++ == 0) {
+            restoreLightTextureNow();
+        }
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+    }
+
+    public static void endGuiLightProtection() {
+        if (guiLightProtectionDepth <= 0) {
+            return;
+        }
+        guiLightProtectionDepth--;
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+        if (guiLightProtectionDepth == 0) {
+            requestLightTextureRefresh();
+        }
+    }
+
+    private static boolean shouldProtectGuiLightTexture() {
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
+        return lightingCorruptionActive(stack) && !stack.activeOrExtreme(CorruptionSurface.GUI_SURFACE);
     }
 
     public static void restoreLightTextureNow() {

@@ -29,6 +29,11 @@ public final class ClientCorruptionEffects {
         return fromClientSnapshot();
     }
 
+    public static CorruptionEffectStack currentForGameplay() {
+        CorruptionStateSnapshot snapshot = ClientCorruptionState.snapshot();
+        return snapshot == null ? CorruptionEffectStack.local(0) : CorruptionEffectStack.fromGameplay(snapshot);
+    }
+
     private static CorruptionEffectStack fromClientSnapshot() {
         CorruptionStateSnapshot snapshot = ClientCorruptionState.snapshot();
         return snapshot == null ? CorruptionEffectStack.local(0) : CorruptionEffectStack.from(snapshot);
