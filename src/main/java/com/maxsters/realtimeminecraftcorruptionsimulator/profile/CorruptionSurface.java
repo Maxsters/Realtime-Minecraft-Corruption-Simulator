@@ -22,7 +22,9 @@ public enum CorruptionSurface {
     SPAWN_RULES(0.70F, 0.48F, 0.28F, 0.30F, CorruptionOperation.INVERT, CorruptionOperation.REPLACE, CorruptionOperation.STUTTER, CorruptionOperation.DESYNC),
     GUI_SURFACE(0.72F, 0.44F, 0.24F, 0.30F, CorruptionOperation.NOISE, CorruptionOperation.SMEAR, CorruptionOperation.REMAP, CorruptionOperation.STUTTER),
     PROJECTILE_PHYSICS(0.74F, 0.46F, 0.28F, 0.34F, CorruptionOperation.DRIFT, CorruptionOperation.OFFSET, CorruptionOperation.DESYNC, CorruptionOperation.STUTTER),
-    IMPACT_RESOLUTION(0.68F, 0.48F, 0.30F, 0.30F, CorruptionOperation.DESYNC, CorruptionOperation.ECHO, CorruptionOperation.STUTTER);
+    IMPACT_RESOLUTION(0.68F, 0.48F, 0.30F, 0.30F, CorruptionOperation.DESYNC, CorruptionOperation.ECHO, CorruptionOperation.STUTTER),
+    FIRE_MECHANICS(0.76F, 0.48F, 0.32F, 0.36F, CorruptionOperation.DESYNC, CorruptionOperation.STUTTER, CorruptionOperation.INVERT, CorruptionOperation.DAMPEN, CorruptionOperation.AMPLIFY),
+    POWDER_SNOW_MECHANICS(0.74F, 0.46F, 0.32F, 0.34F, CorruptionOperation.DESYNC, CorruptionOperation.STUTTER, CorruptionOperation.INVERT, CorruptionOperation.DAMPEN, CorruptionOperation.AMPLIFY);
 
     private final float affinity;
     private final float instabilityBias;

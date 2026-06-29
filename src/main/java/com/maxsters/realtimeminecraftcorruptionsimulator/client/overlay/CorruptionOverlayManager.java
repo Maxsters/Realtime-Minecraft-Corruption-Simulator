@@ -619,19 +619,19 @@ public final class CorruptionOverlayManager {
                     submitFunEdit();
                 }
                 CorruptionOverlayPanel.Rect intervalSlider = CorruptionOverlayPanel.funIntervalSliderBounds(LAYOUT, screenWidth, screenHeight);
-                if (intervalSlider.contains(mouseX, mouseY)) {
+                if (CorruptionOverlayPanel.sliderInteractionBounds(intervalSlider).contains(mouseX, mouseY)) {
                     mouseAction = MouseAction.FUN_INTERVAL;
                     updatePendingFunInterval(mouseX);
                     return true;
                 }
                 CorruptionOverlayPanel.Rect amountSlider = CorruptionOverlayPanel.funAmountSliderBounds(LAYOUT, screenWidth, screenHeight);
-                if (amountSlider.contains(mouseX, mouseY)) {
+                if (CorruptionOverlayPanel.sliderInteractionBounds(amountSlider).contains(mouseX, mouseY)) {
                     mouseAction = MouseAction.FUN_AMOUNT;
                     updatePendingFunAmount(mouseX);
                     return true;
                 }
                 CorruptionOverlayPanel.Rect seedRandomizerSlider = CorruptionOverlayPanel.funSeedRandomizerSliderBounds(LAYOUT, screenWidth, screenHeight);
-                if (seedRandomizerSlider.contains(mouseX, mouseY)) {
+                if (CorruptionOverlayPanel.sliderInteractionBounds(seedRandomizerSlider).contains(mouseX, mouseY)) {
                     mouseAction = MouseAction.FUN_SEED_RANDOMIZER;
                     updatePendingSeedRandomizerInterval(mouseX);
                     return true;
@@ -670,7 +670,7 @@ public final class CorruptionOverlayManager {
             }
 
             CorruptionOverlayPanel.Rect slider = CorruptionOverlayPanel.sliderBounds(LAYOUT, screenWidth, screenHeight);
-            if (currentPage == CorruptionOverlayPanel.Page.CONTROL && slider.contains(mouseX, mouseY)) {
+            if (currentPage == CorruptionOverlayPanel.Page.CONTROL && CorruptionOverlayPanel.sliderInteractionBounds(slider).contains(mouseX, mouseY)) {
                 mouseAction = MouseAction.SLIDER;
                 updatePendingLevel(mouseX);
                 return true;
@@ -690,13 +690,17 @@ public final class CorruptionOverlayManager {
     }
 
     private static boolean handleMouseScroll(double mouseX, double mouseY, double delta) {
-        if (LAYOUT.mode() != CorruptionOverlayLayout.Mode.OPEN || currentPage != CorruptionOverlayPanel.Page.ACHIEVEMENTS) {
+        if (LAYOUT.mode() != CorruptionOverlayLayout.Mode.OPEN) {
             return false;
         }
         Minecraft minecraft = Minecraft.getInstance();
         int screenWidth = minecraft.getWindow().getGuiScaledWidth();
         int screenHeight = minecraft.getWindow().getGuiScaledHeight();
         LAYOUT.clampToScreen(screenWidth, screenHeight);
+
+        if (currentPage != CorruptionOverlayPanel.Page.ACHIEVEMENTS) {
+            return false;
+        }
         CorruptionOverlayPanel.Rect list = CorruptionOverlayPanel.achievementsListBounds(LAYOUT, screenWidth, screenHeight);
         if (!list.contains(mouseX, mouseY)) {
             return false;
@@ -706,12 +710,17 @@ public final class CorruptionOverlayManager {
             achievementsScroll = 0;
             return false;
         }
-        int amount = (int) Math.round(delta * 18.0D);
-        if (amount == 0) {
-            amount = delta > 0.0D ? 18 : -18;
-        }
+        int amount = scrollAmount(delta);
         achievementsScroll = Math.max(0, Math.min(maxScroll, achievementsScroll - amount));
         return true;
+    }
+
+    private static int scrollAmount(double delta) {
+        int amount = (int) Math.round(delta * 18.0D);
+        if (amount == 0) {
+            return delta > 0.0D ? 18 : -18;
+        }
+        return amount;
     }
 
     private static int clampAchievementsScroll(int screenWidth, int screenHeight) {
@@ -1108,10 +1117,12 @@ public final class CorruptionOverlayManager {
     }
 
     private static void updatePendingFunInterval(double mouseX) {
+        int screenWidth = Minecraft.getInstance().getWindow().getGuiScaledWidth();
+        int screenHeight = Minecraft.getInstance().getWindow().getGuiScaledHeight();
         CorruptionOverlayPanel.Rect slider = CorruptionOverlayPanel.funIntervalSliderBounds(
                 LAYOUT,
-                Minecraft.getInstance().getWindow().getGuiScaledWidth(),
-                Minecraft.getInstance().getWindow().getGuiScaledHeight()
+                screenWidth,
+                screenHeight
         );
         double ratio = Math.max(0.0D, Math.min(1.0D, (mouseX - slider.x()) / Math.max(1.0D, slider.width())));
         int ticks = (int) Math.round(ratio * CorruptionOverlayPanel.MAX_AUTO_INTERVAL_TICKS);
@@ -1119,20 +1130,24 @@ public final class CorruptionOverlayManager {
     }
 
     private static void updatePendingFunAmount(double mouseX) {
+        int screenWidth = Minecraft.getInstance().getWindow().getGuiScaledWidth();
+        int screenHeight = Minecraft.getInstance().getWindow().getGuiScaledHeight();
         CorruptionOverlayPanel.Rect slider = CorruptionOverlayPanel.funAmountSliderBounds(
                 LAYOUT,
-                Minecraft.getInstance().getWindow().getGuiScaledWidth(),
-                Minecraft.getInstance().getWindow().getGuiScaledHeight()
+                screenWidth,
+                screenHeight
         );
         double ratio = Math.max(0.0D, Math.min(1.0D, (mouseX - slider.x()) / Math.max(1.0D, slider.width())));
         pendingFunValue = CorruptionOverlayPanel.MIN_AUTO_AMOUNT + (int) Math.round(ratio * (CorruptionOverlayPanel.MAX_AUTO_AMOUNT - CorruptionOverlayPanel.MIN_AUTO_AMOUNT));
     }
 
     private static void updatePendingSeedRandomizerInterval(double mouseX) {
+        int screenWidth = Minecraft.getInstance().getWindow().getGuiScaledWidth();
+        int screenHeight = Minecraft.getInstance().getWindow().getGuiScaledHeight();
         CorruptionOverlayPanel.Rect slider = CorruptionOverlayPanel.funSeedRandomizerSliderBounds(
                 LAYOUT,
-                Minecraft.getInstance().getWindow().getGuiScaledWidth(),
-                Minecraft.getInstance().getWindow().getGuiScaledHeight()
+                screenWidth,
+                screenHeight
         );
         double ratio = Math.max(0.0D, Math.min(1.0D, (mouseX - slider.x()) / Math.max(1.0D, slider.width())));
         int ticks = (int) Math.round(ratio * CorruptionOverlayPanel.MAX_AUTO_INTERVAL_TICKS);
@@ -1540,6 +1555,7 @@ public final class CorruptionOverlayManager {
         quickToggleRestore = null;
         seedEditing = false;
         funEditField = FunEditField.NONE;
+        achievementsScroll = 0;
         ClientCorruptionState.reset();
         latestSnapshot = ClientCorruptionState.localSnapshot();
         syncDraftFromSnapshot();

@@ -4,16 +4,18 @@ import java.util.Locale;
 
 public enum CorruptionTarget {
     CAMERA(0, "camera", "Camera", "View drift and FOV changes."),
-    MOBILITY(1, "mobility", "Mobility", "Fluid checks, motion, collision, and phasing."),
-    WORLD_VISUALS(2, "world_visuals", "World visuals", "Chunks, weather, light, biomes."),
+    MOBILITY(1, "mobility", "Mobility", "Fluid checks, powder snow, motion, collision, and phasing."),
+    WORLD_VISUALS(2, "world_visuals", "World Visuals", "Chunks, weather, light, biomes."),
     TEXTURES(3, "textures", "Textures", "Image data for world and UI."),
     AUDIO(4, "audio", "Audio", "Sound playback and placement."),
     GUI(5, "gui", "GUI", "Menus, sliders, title screens."),
-    ENTITY_BEHAVIOR(6, "entity_behavior", "Entities & timing", "Stats, AI, hitboxes, spawns."),
-    PROJECTILES_AND_ITEMS(7, "projectiles_items", "Items & actions", "Crafting, items, impacts."),
-    WORLD_MUTATION(8, "world_mutation", "Worldgen & terrain", "Terrain, carvers, growth."),
+    ENTITY_BEHAVIOR(6, "entity_behavior", "Entities & Timing", "Stats, AI, fire, hitboxes, spawns."),
+    PROJECTILES_AND_ITEMS(7, "projectiles_items", "Items & Actions", "Crafting, items, impacts."),
+    WORLD_MUTATION(8, "world_mutation", "Worldgen & Terrain", "Terrain, carvers, growth."),
     MODELS(9, "models", "Models", "Geometry warping.");
 
+    private static final int LEGACY_FIRE_TARGET_MASK = 1 << 10;
+    private static final int LEGACY_POWDER_SNOW_TARGET_MASK = 1 << 11;
     public static final int ALL_MASK = allMask();
 
     private final int bit;
@@ -49,7 +51,14 @@ public enum CorruptionTarget {
     }
 
     public static int normalizeMask(int mask) {
-        return mask & ALL_MASK;
+        int normalized = mask & ALL_MASK;
+        if ((mask & LEGACY_FIRE_TARGET_MASK) != 0) {
+            normalized |= ENTITY_BEHAVIOR.mask();
+        }
+        if ((mask & LEGACY_POWDER_SNOW_TARGET_MASK) != 0) {
+            normalized |= MOBILITY.mask();
+        }
+        return normalized;
     }
 
     public static boolean enabled(int mask, CorruptionTarget target) {
@@ -63,6 +72,12 @@ public enum CorruptionTarget {
         String normalized = id.toLowerCase(Locale.ROOT);
         if ("textures_models".equals(normalized)) {
             return TEXTURES;
+        }
+        if ("fire".equals(normalized)) {
+            return ENTITY_BEHAVIOR;
+        }
+        if ("powder_snow".equals(normalized)) {
+            return MOBILITY;
         }
         for (CorruptionTarget target : values()) {
             if (target.id.equals(normalized)) {
@@ -84,6 +99,8 @@ public enum CorruptionTarget {
             case ENTITY_KINEMATICS, ENTITY_STATE, SPAWN_RULES, ANIMATION_TIMING, TICK_SPEED -> ENTITY_BEHAVIOR;
             case LOOSE_ENTITY_PHYSICS, PROJECTILE_PHYSICS, IMPACT_RESOLUTION, INTERACTION_ROUTING -> PROJECTILES_AND_ITEMS;
             case WORLDGEN_SURFACE -> WORLD_MUTATION;
+            case FIRE_MECHANICS -> ENTITY_BEHAVIOR;
+            case POWDER_SNOW_MECHANICS -> MOBILITY;
         };
     }
 

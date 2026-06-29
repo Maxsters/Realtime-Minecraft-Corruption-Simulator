@@ -25,6 +25,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.client.renderer.PanoramaRenderer;
 import net.minecraftforge.client.event.ComputeFovModifierEvent;
@@ -205,14 +206,15 @@ public final class VisualCorruptionManager {
     @SubscribeEvent
     public static void onComputeFovModifier(ComputeFovModifierEvent event) {
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
-        if (!stack.activeOrExtreme(CorruptionSurface.CAMERA_TRANSFORM)) {
-            return;
-        }
-
         Minecraft minecraft = Minecraft.getInstance();
         if (!CameraRenderCorruptionHooks.cameraReady(minecraft)) {
             return;
         }
+        applyPowderSnowFovModifier(event, stack, minecraft);
+        if (!stack.activeOrExtreme(CorruptionSurface.CAMERA_TRANSFORM)) {
+            return;
+        }
+
         String targetId = cameraTargetId(event.getPlayer(), minecraft, "fov_modifier");
         float intensity = stack.intensityOrExtreme(CorruptionSurface.CAMERA_TRANSFORM);
         long clock = staticClock(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x464D);
@@ -235,6 +237,58 @@ public final class VisualCorruptionManager {
                     + signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x59, 1.20D));
         }
         event.setNewFovModifier((float) clampDouble(mutated, 0.18D, 4.0D));
+    }
+
+    private static void applyPowderSnowFovModifier(ComputeFovModifierEvent event, CorruptionEffectStack stack, Minecraft minecraft) {
+        if (!stack.activeOrExtreme(CorruptionSurface.POWDER_SNOW_MECHANICS)) {
+            return;
+        }
+        Player player = event.getPlayer();
+        if (player == null || !powderSnowFovContext(player)) {
+            return;
+        }
+
+        String targetId = cameraTargetId(player, minecraft, "powder_snow_fov") + ":frozen=" + player.getTicksFrozen() / 10;
+        float intensity = stack.intensityOrExtreme(CorruptionSurface.POWDER_SNOW_MECHANICS);
+        long clock = staticClock(stack, CorruptionSurface.POWDER_SNOW_MECHANICS, targetId, 0x504F57);
+        float base = event.getNewFovModifier();
+        float mutated = CorruptionValueMutator.mutateScalar(
+                stack,
+                CorruptionSurface.POWDER_SNOW_MECHANICS,
+                targetId,
+                base,
+                0.22F + intensity * 2.65F,
+                0.08F,
+                4.25F,
+                0x46,
+                clock
+        );
+        double frozenPressure = Mth.clamp(player.getTicksFrozen() / (double) Math.max(1, player.getTicksRequiredToFreeze()), 0.0D, 1.0D);
+        mutated = (float) (mutated + frozenPressure * signed(stack, CorruptionSurface.POWDER_SNOW_MECHANICS, targetId, 0x46525A, 0.14D + intensity * 1.10D));
+        if (unit(stack, CorruptionSurface.POWDER_SNOW_MECHANICS, targetId, 0x4C4F434B) < 0.10D + intensity * 0.36D) {
+            int mode = Math.floorMod((int) (clock >>> 24), 4);
+            mutated = switch (mode) {
+                case 0 -> 1.0F;
+                case 1 -> 0.10F + (float) unit(stack, CorruptionSurface.POWDER_SNOW_MECHANICS, targetId, 0x54494E59) * 0.28F;
+                case 2 -> 1.65F + (float) unit(stack, CorruptionSurface.POWDER_SNOW_MECHANICS, targetId, 0x57494445) * (1.35F + intensity * 1.40F);
+                default -> -base;
+            };
+        }
+        event.setNewFovModifier((float) clampDouble(mutated, 0.08D, 4.25D));
+    }
+
+    private static boolean powderSnowFovContext(Player player) {
+        if (player.isFreezing() || player.getTicksFrozen() > 0) {
+            return true;
+        }
+        Level level = player.level();
+        if (level == null) {
+            return false;
+        }
+        BlockPos center = player.blockPosition();
+        return level.getBlockState(center).is(Blocks.POWDER_SNOW)
+                || level.getBlockState(center.above()).is(Blocks.POWDER_SNOW)
+                || level.getBlockState(center.below()).is(Blocks.POWDER_SNOW);
     }
 
     @SubscribeEvent

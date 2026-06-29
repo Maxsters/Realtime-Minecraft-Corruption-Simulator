@@ -8,14 +8,18 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValue
 import com.maxsters.realtimeminecraftcorruptionsimulator.runtime.CorruptionRuntimeManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionSavedData;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.SectionPos;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityDimensions;
@@ -117,6 +121,8 @@ public final class CorruptionMechanicsManager {
     private static final float MIN_AIR_MECHANICS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
     private static final float MIN_COLLISION_MECHANICS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
     private static final float MIN_DAY_TIME_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
+    private static final float MIN_FIRE_MECHANICS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
+    private static final float MIN_POWDER_SNOW_MECHANICS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
     private static final int MAX_CORRUPTED_NO_PHYSICS_TICKS = 24;
     private static volatile boolean serverMutationSuspended;
     private static volatile long serverMutationResumeTick;
@@ -132,6 +138,217 @@ public final class CorruptionMechanicsManager {
     private static final Map<Entity, HitboxSignatureCache> ENTITY_HITBOX_SIGNATURE_CACHE = Collections.synchronizedMap(new WeakHashMap<>());
 
     private CorruptionMechanicsManager() {
+    }
+
+    public static int corruptFireTicks(Entity entity, int requestedTicks) {
+        if (entity == null) {
+            return requestedTicks;
+        }
+        CorruptionEffectStack stack = authoritativeGameplayStackFor(entity);
+        String targetId = "fire_ticks:" + entityTargetId(entity);
+        if (!fireMechanicsActive(stack, targetId)) {
+            return requestedTicks;
+        }
+
+        float intensity = fireMechanicsIntensity(stack, targetId);
+        long seed = stack.stableLong(CorruptionSurface.FIRE_MECHANICS, targetId, entityStableSalt(entity, requestedTicks ^ 0x46545254));
+        int bucket = collisionPositionBucket(entity, seed, intensity);
+        float chance = stack.extreme(CorruptionSurface.FIRE_MECHANICS)
+                ? 0.94F
+                : Mth.clamp(0.08F + intensity * 0.66F + stack.instability() * 0.10F, 0.0F, 0.88F);
+        if (unitHash(seed ^ bucket ^ 0x5449434BL) > chance) {
+            return requestedTicks;
+        }
+
+        int currentTicks = entity.getRemainingFireTicks();
+        int maxTicks = stack.extreme(CorruptionSurface.FIRE_MECHANICS)
+                ? 72_000
+                : Math.max(400, 1_200 + Math.round(intensity * 18_000.0F));
+        int mode = Math.floorMod((int) (seed >>> 28), 7);
+        int mutated = switch (mode) {
+            case 0 -> 0;
+            case 1 -> Math.max(requestedTicks, currentTicks) + 1 + Math.round(unitHash(seed ^ 0x4255524EL) * (80.0F + intensity * 1_600.0F));
+            case 2 -> Math.round(requestedTicks * (0.02F + unitHash(seed ^ 0x534C4F57L) * 0.24F));
+            case 3 -> Math.round(requestedTicks * (2.0F + unitHash(seed ^ 0x46415354L) * (12.0F + intensity * 72.0F)));
+            case 4 -> -Math.round(20.0F + unitHash(seed ^ 0x434F4F4CL) * (60.0F + intensity * 300.0F));
+            case 5 -> currentTicks + Math.round(signedUnit(seed ^ 0x44524946L) * (40.0F + intensity * 900.0F));
+            default -> requestedTicks + Math.round(signedUnit(seed ^ 0x53544154L) * (24.0F + intensity * 420.0F));
+        };
+        return clampInt(mutated, -400, maxTicks);
+    }
+
+    public static boolean corruptIsOnFire(Entity entity, boolean original) {
+        if (entity == null) {
+            return original;
+        }
+        CorruptionEffectStack stack = authoritativeGameplayStackFor(entity);
+        String targetId = "fire_state:" + entityTargetId(entity);
+        if (!fireMechanicsActive(stack, targetId)) {
+            return original;
+        }
+
+        float intensity = fireMechanicsIntensity(stack, targetId);
+        long seed = stack.stableLong(CorruptionSurface.FIRE_MECHANICS, targetId, entityStableSalt(entity, entity.getRemainingFireTicks() ^ 0x46535441));
+        int bucket = collisionPositionBucket(entity, seed, intensity);
+        if (original) {
+            return unitHash(seed ^ bucket ^ 0x46414C53L) >= Mth.clamp(0.06F + intensity * 0.42F, 0.0F, 0.78F);
+        }
+        if (entity.getRemainingFireTicks() <= 0 && !isNearBlock(entity, Blocks.FIRE, 1)) {
+            return false;
+        }
+        return unitHash(seed ^ bucket ^ 0x54525545L) < Mth.clamp(0.04F + intensity * 0.26F, 0.0F, 0.46F);
+    }
+
+    public static boolean shouldDisableSunBurn(Mob mob) {
+        if (mob == null) {
+            return false;
+        }
+        CorruptionEffectStack stack = authoritativeGameplayStackFor(mob);
+        String targetId = "sunlight_burn:" + entityTargetId(mob);
+        if (!fireMechanicsActive(stack, targetId)) {
+            return false;
+        }
+
+        float intensity = fireMechanicsIntensity(stack, targetId);
+        long seed = stack.stableLong(CorruptionSurface.FIRE_MECHANICS, targetId, entityStableSalt(mob, 0x53554E));
+        int bucket = collisionPositionBucket(mob, seed, intensity);
+        float chance = stack.extreme(CorruptionSurface.FIRE_MECHANICS)
+                ? 0.98F
+                : Mth.clamp(0.12F + intensity * 0.76F + stack.instability() * 0.08F, 0.0F, 0.92F);
+        return unitHash(seed ^ bucket ^ 0x4255524EL) < chance;
+    }
+
+    public static boolean shouldCancelFireBlockTick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
+        if (state == null || level == null || pos == null) {
+            return false;
+        }
+        CorruptionEffectStack stack = serverStack(level);
+        String targetId = "fire_spread:" + blockTargetId(state);
+        if (!fireMechanicsActive(stack, targetId)) {
+            return false;
+        }
+
+        float intensity = fireMechanicsIntensity(stack, targetId);
+        long hash = stack.stableLong(CorruptionSurface.FIRE_MECHANICS, targetId, 0x46495245)
+                ^ mixLong(pos.asLong() ^ (level.getGameTime() / Math.max(1, Math.round(8.0F + (1.0F - intensity) * 36.0F))));
+        float chance = stack.extreme(CorruptionSurface.FIRE_MECHANICS)
+                ? 0.94F
+                : Mth.clamp(0.06F + intensity * 0.68F + stack.instability() * 0.10F, 0.0F, 0.86F);
+        if (unitHash(hash ^ 0x5449434BL) > chance || !claimWorldProcessMutation(level)) {
+            return false;
+        }
+
+        int mode = Math.floorMod((int) (hash >>> 30), 5);
+        if (mode == 0) {
+            level.removeBlock(pos, false);
+        } else if (mode == 1) {
+            placeCorruptedFire(level, pos, hash, intensity);
+        } else if (mode == 2) {
+            int delay = 1 + Math.round(unitHash(hash ^ 0x44454C41L) * (6.0F + intensity * 220.0F));
+            level.scheduleTick(pos, state.getBlock(), delay);
+        }
+        return true;
+    }
+
+    public static boolean corruptCanFreeze(LivingEntity entity, boolean original) {
+        if (entity == null) {
+            return original;
+        }
+        CorruptionEffectStack stack = authoritativeGameplayStackFor(entity);
+        String targetId = "powder_snow_can_freeze:" + entityTargetId(entity);
+        if (!powderSnowMechanicsActive(stack, targetId)) {
+            return original;
+        }
+
+        boolean nearPowderSnow = isNearBlock(entity, Blocks.POWDER_SNOW, 1) || entity.getTicksFrozen() > 0;
+        if (!nearPowderSnow) {
+            return original;
+        }
+
+        float intensity = powderSnowMechanicsIntensity(stack, targetId);
+        long seed = stack.stableLong(CorruptionSurface.POWDER_SNOW_MECHANICS, targetId, entityStableSalt(entity, 0x46525A));
+        int bucket = collisionPositionBucket(entity, seed, intensity);
+        float chance = original
+                ? Mth.clamp(0.08F + intensity * 0.54F, 0.0F, 0.82F)
+                : Mth.clamp(0.04F + intensity * 0.38F, 0.0F, 0.62F);
+        return unitHash(seed ^ bucket ^ 0x43414E46L) < chance ? !original : original;
+    }
+
+    public static int corruptTicksFrozen(Entity entity, int requestedTicks) {
+        if (entity == null) {
+            return requestedTicks;
+        }
+        CorruptionEffectStack stack = authoritativeGameplayStackFor(entity);
+        String targetId = "powder_snow_ticks:" + entityTargetId(entity);
+        if (!powderSnowMechanicsActive(stack, targetId)) {
+            return requestedTicks;
+        }
+
+        boolean nearPowderSnow = requestedTicks > 0 || entity.getTicksFrozen() > 0 || isNearBlock(entity, Blocks.POWDER_SNOW, 1);
+        if (!nearPowderSnow) {
+            return requestedTicks;
+        }
+
+        float intensity = powderSnowMechanicsIntensity(stack, targetId);
+        long seed = stack.stableLong(CorruptionSurface.POWDER_SNOW_MECHANICS, targetId, entityStableSalt(entity, requestedTicks ^ 0x46525A));
+        int bucket = collisionPositionBucket(entity, seed, intensity);
+        float chance = stack.extreme(CorruptionSurface.POWDER_SNOW_MECHANICS)
+                ? 0.96F
+                : Mth.clamp(0.08F + intensity * 0.70F + stack.instability() * 0.08F, 0.0F, 0.90F);
+        if (unitHash(seed ^ bucket ^ 0x5449434BL) > chance) {
+            return requestedTicks;
+        }
+
+        int currentTicks = entity.getTicksFrozen();
+        int requiredTicks = Math.max(1, entity.getTicksRequiredToFreeze());
+        int maxTicks = stack.extreme(CorruptionSurface.POWDER_SNOW_MECHANICS)
+                ? Math.max(requiredTicks * 12, requiredTicks + 2_400)
+                : Math.max(requiredTicks + 80, requiredTicks + Math.round(intensity * requiredTicks * 8.0F));
+        int mode = Math.floorMod((int) (seed >>> 29), 7);
+        int mutated = switch (mode) {
+            case 0 -> 0;
+            case 1 -> Math.max(currentTicks, requestedTicks) + 1 + Math.round(unitHash(seed ^ 0x46415354L) * (20.0F + intensity * requiredTicks * 4.0F));
+            case 2 -> Math.round(requestedTicks * (0.02F + unitHash(seed ^ 0x534C4F57L) * 0.30F));
+            case 3 -> requiredTicks + Math.round(unitHash(seed ^ 0x46554C4CL) * (requiredTicks + intensity * requiredTicks * 8.0F));
+            case 4 -> currentTicks - Math.round(1.0F + unitHash(seed ^ 0x54484157L) * (12.0F + intensity * 120.0F));
+            case 5 -> Math.round(currentTicks + signedUnit(seed ^ 0x44524946L) * (12.0F + intensity * requiredTicks * 3.0F));
+            default -> requestedTicks + Math.round(signedUnit(seed ^ 0x53544154L) * (8.0F + intensity * requiredTicks * 2.0F));
+        };
+        return clampInt(mutated, 0, maxTicks);
+    }
+
+    public static boolean corruptPowderSnowDetection(Entity entity, boolean inPowderSnow) {
+        if (entity == null) {
+            return inPowderSnow;
+        }
+        CorruptionEffectStack stack = authoritativeGameplayStackFor(entity);
+        String targetId = "powder_snow_detection:" + entityTargetId(entity);
+        if (!powderSnowMechanicsActive(stack, targetId)) {
+            return inPowderSnow;
+        }
+
+        boolean nearPowderSnow = inPowderSnow || entity.getTicksFrozen() > 0 || isNearBlock(entity, Blocks.POWDER_SNOW, 1);
+        if (!nearPowderSnow) {
+            return inPowderSnow;
+        }
+
+        float intensity = powderSnowMechanicsIntensity(stack, targetId);
+        long seed = stack.stableLong(CorruptionSurface.POWDER_SNOW_MECHANICS, targetId, entityStableSalt(entity, inPowderSnow ? 0x494E : 0x4F5554));
+        int bucket = collisionPositionBucket(entity, seed, intensity);
+        float chance = stack.extreme(CorruptionSurface.POWDER_SNOW_MECHANICS)
+                ? 0.92F
+                : Mth.clamp(0.08F + intensity * 0.62F + stack.instability() * 0.08F, 0.0F, 0.84F);
+        if (unitHash(seed ^ bucket ^ 0x44455445L) > chance) {
+            return inPowderSnow;
+        }
+
+        int mode = Math.floorMod((int) (seed >>> 31), 4);
+        return switch (mode) {
+            case 0 -> false;
+            case 1 -> true;
+            case 2 -> !inPowderSnow;
+            default -> inPowderSnow;
+        };
     }
 
     @SubscribeEvent
@@ -1222,6 +1439,15 @@ public final class CorruptionMechanicsManager {
     }
 
     private static void mutateDamageEvent(LivingHurtEvent event, CorruptionEffectStack stack) {
+        if (isFireDamage(event)) {
+            mutateFireDamageEvent(event, stack);
+            return;
+        }
+        if (isFreezingDamage(event)) {
+            mutateFreezingDamageEvent(event, stack);
+            return;
+        }
+
         boolean drowningMutated = mutateDrowningDamageEvent(event, stack);
         if (event.isCanceled()) {
             return;
@@ -1246,6 +1472,78 @@ public final class CorruptionMechanicsManager {
             amount = Mth.clamp(amount, 0.0F, 768.0F);
         }
         event.setAmount(amount);
+    }
+
+    private static boolean mutateFireDamageEvent(LivingHurtEvent event, CorruptionEffectStack stack) {
+        LivingEntity entity = event.getEntity();
+        String targetId = "fire_damage:" + event.getSource().getMsgId() + ":" + entityTargetId(entity);
+        if (!fireMechanicsActive(stack, targetId)) {
+            return false;
+        }
+
+        float intensity = fireMechanicsIntensity(stack, targetId);
+        long hash = stack.stableLong(CorruptionSurface.FIRE_MECHANICS, targetId, entityStableSalt(entity, Float.floatToIntBits(event.getAmount()) ^ 0x464449));
+        if (unitHash(hash ^ 0x43414E43L) < Mth.clamp(0.08F + intensity * 0.36F, 0.0F, 0.72F)) {
+            event.setCanceled(true);
+            return true;
+        }
+
+        double multiplier = Math.pow(2.0D, signedUnit(hash ^ 0x4D554C54L) * (0.18D + intensity * (stack.extreme(CorruptionSurface.FIRE_MECHANICS) ? 7.2D : 4.8D)));
+        if (unitHash(hash ^ 0x5354414CL) < 0.10F + intensity * (stack.extreme(CorruptionSurface.FIRE_MECHANICS) ? 0.78F : 0.48F)) {
+            int mode = Math.floorMod((int) (hash >>> 27), 6);
+            multiplier = switch (mode) {
+                case 0 -> 0.0D;
+                case 1 -> 0.02D + unitHash(hash ^ 0x534C4F57L) * 0.16D;
+                case 2 -> 5.0D + unitHash(hash ^ 0x46415354L) * (40.0D + intensity * 180.0D);
+                case 3 -> Mth.clamp(multiplier * (0.08D + unitHash(hash ^ 0x53544152L) * 0.42D), 0.0D, 5.0D);
+                case 4 -> Mth.clamp(multiplier * (5.0D + unitHash(hash ^ 0x42555253L) * 56.0D), 0.0D, 320.0D);
+                default -> multiplier;
+            };
+        }
+
+        float amount = (float) Mth.clamp(event.getAmount() * multiplier, 0.0D, stack.extreme(CorruptionSurface.FIRE_MECHANICS) ? 768.0D : 320.0D);
+        if (amount <= 0.0F) {
+            event.setCanceled(true);
+        } else {
+            event.setAmount(amount);
+        }
+        return true;
+    }
+
+    private static boolean mutateFreezingDamageEvent(LivingHurtEvent event, CorruptionEffectStack stack) {
+        LivingEntity entity = event.getEntity();
+        String targetId = "powder_snow_damage:" + entityTargetId(entity);
+        if (!powderSnowMechanicsActive(stack, targetId)) {
+            return false;
+        }
+
+        float intensity = powderSnowMechanicsIntensity(stack, targetId);
+        long hash = stack.stableLong(CorruptionSurface.POWDER_SNOW_MECHANICS, targetId, entityStableSalt(entity, Float.floatToIntBits(event.getAmount()) ^ 0x465244));
+        if (unitHash(hash ^ 0x43414E43L) < Mth.clamp(0.08F + intensity * 0.34F, 0.0F, 0.70F)) {
+            event.setCanceled(true);
+            return true;
+        }
+
+        double multiplier = Math.pow(2.0D, signedUnit(hash ^ 0x4D554C54L) * (0.16D + intensity * (stack.extreme(CorruptionSurface.POWDER_SNOW_MECHANICS) ? 7.0D : 4.6D)));
+        if (unitHash(hash ^ 0x5354414CL) < 0.10F + intensity * (stack.extreme(CorruptionSurface.POWDER_SNOW_MECHANICS) ? 0.78F : 0.48F)) {
+            int mode = Math.floorMod((int) (hash >>> 27), 6);
+            multiplier = switch (mode) {
+                case 0 -> 0.0D;
+                case 1 -> 0.02D + unitHash(hash ^ 0x534C4F57L) * 0.16D;
+                case 2 -> 4.0D + unitHash(hash ^ 0x46415354L) * (34.0D + intensity * 160.0D);
+                case 3 -> Mth.clamp(multiplier * (0.08D + unitHash(hash ^ 0x53544152L) * 0.42D), 0.0D, 5.0D);
+                case 4 -> Mth.clamp(multiplier * (4.0D + unitHash(hash ^ 0x42555253L) * 48.0D), 0.0D, 300.0D);
+                default -> multiplier;
+            };
+        }
+
+        float amount = (float) Mth.clamp(event.getAmount() * multiplier, 0.0D, stack.extreme(CorruptionSurface.POWDER_SNOW_MECHANICS) ? 768.0D : 300.0D);
+        if (amount <= 0.0F) {
+            event.setCanceled(true);
+        } else {
+            event.setAmount(amount);
+        }
+        return true;
     }
 
     private static boolean mutateDrowningDamageEvent(LivingHurtEvent event, CorruptionEffectStack stack) {
@@ -2271,6 +2569,81 @@ public final class CorruptionMechanicsManager {
         return visible * visible * (3.0F - 2.0F * visible);
     }
 
+    private static boolean fireMechanicsActive(CorruptionEffectStack stack, String targetId) {
+        return surfaceActive(stack, CorruptionSurface.FIRE_MECHANICS, MIN_FIRE_MECHANICS_INTENSITY)
+                || targetActive(stack, CorruptionSurface.FIRE_MECHANICS, targetId, MIN_FIRE_MECHANICS_INTENSITY);
+    }
+
+    private static float fireMechanicsIntensity(CorruptionEffectStack stack, String targetId) {
+        return Mth.clamp(weightedSurfaceIntensity(stack, CorruptionSurface.FIRE_MECHANICS, targetId, 1.0F), 0.0F, 1.0F);
+    }
+
+    private static boolean powderSnowMechanicsActive(CorruptionEffectStack stack, String targetId) {
+        return surfaceActive(stack, CorruptionSurface.POWDER_SNOW_MECHANICS, MIN_POWDER_SNOW_MECHANICS_INTENSITY)
+                || targetActive(stack, CorruptionSurface.POWDER_SNOW_MECHANICS, targetId, MIN_POWDER_SNOW_MECHANICS_INTENSITY);
+    }
+
+    private static float powderSnowMechanicsIntensity(CorruptionEffectStack stack, String targetId) {
+        return Mth.clamp(weightedSurfaceIntensity(stack, CorruptionSurface.POWDER_SNOW_MECHANICS, targetId, 1.0F), 0.0F, 1.0F);
+    }
+
+    private static boolean isFireDamage(LivingHurtEvent event) {
+        return event != null && event.getSource().is(DamageTypeTags.IS_FIRE);
+    }
+
+    private static boolean isFreezingDamage(LivingHurtEvent event) {
+        return event != null && event.getSource().is(DamageTypeTags.IS_FREEZING);
+    }
+
+    private static void placeCorruptedFire(ServerLevel level, BlockPos source, long hash, float intensity) {
+        BlockState fire = Blocks.FIRE.defaultBlockState();
+        Direction[] directions = Direction.values();
+        int attempts = 1 + Math.round(intensity * 4.0F);
+        int horizontalRange = Math.max(1, Math.round(1.0F + intensity * 3.0F));
+        int verticalRange = Math.max(1, Math.round(1.0F + intensity * 2.0F));
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            long attemptHash = hash ^ mixLong(attempt * 0x9E3779B97F4A7C15L);
+            Direction direction = directions[Math.floorMod((int) (attemptHash >>> 9), directions.length)];
+            BlockPos target = source.relative(direction)
+                    .offset(
+                            signedRange(attemptHash >>> 17, horizontalRange),
+                            signedRange(attemptHash >>> 29, verticalRange),
+                            signedRange(attemptHash >>> 41, horizontalRange)
+                    );
+            if (target.getY() <= level.getMinBuildHeight() || target.getY() >= level.getMaxBuildHeight() || !hasLoadedChunkAt(level, target)) {
+                continue;
+            }
+            if (level.getBlockState(target).isAir() && fire.canSurvive(level, target)) {
+                level.setBlock(target, fire, 11);
+                return;
+            }
+        }
+    }
+
+    private static boolean isNearBlock(Entity entity, net.minecraft.world.level.block.Block block, int radius) {
+        if (entity == null || block == null || entity.level() == null) {
+            return false;
+        }
+        Level level = entity.level();
+        int range = Math.max(0, radius);
+        BlockPos center = entity.blockPosition();
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (int x = -range; x <= range; x++) {
+            for (int y = -range; y <= range; y++) {
+                for (int z = -range; z <= range; z++) {
+                    cursor.set(center.getX() + x, center.getY() + y, center.getZ() + z);
+                    if (cursor.getY() <= level.getMinBuildHeight() || cursor.getY() >= level.getMaxBuildHeight() || !hasLoadedChunkAt(level, cursor)) {
+                        continue;
+                    }
+                    if (level.getBlockState(cursor).is(block)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     private static boolean airSupplyMechanicsActive(CorruptionEffectStack stack, String targetId, boolean player) {
         return airSurfaceActive(stack, CorruptionSurface.ENTITY_STATE, targetId);
     }
@@ -2482,6 +2855,10 @@ public final class CorruptionMechanicsManager {
             return Fluids.EMPTY.defaultFluidState();
         }
         return level.getChunk(chunkX, chunkZ).getFluidState(pos);
+    }
+
+    private static boolean hasLoadedChunkAt(Level level, BlockPos pos) {
+        return level.hasChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()));
     }
 
     private record FluidFeatureFault(

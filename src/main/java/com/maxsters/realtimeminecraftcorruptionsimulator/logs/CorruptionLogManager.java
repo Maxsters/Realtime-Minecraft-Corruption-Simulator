@@ -12,10 +12,9 @@ public final class CorruptionLogManager {
 
     public static List<String> buildStatusLines(CorruptionStateSnapshot snapshot) {
         List<String> logs = new ArrayList<>();
-        logs.add("Active corruption: " + snapshot.getCorruptionLevel() + "%.");
+        logs.add("Active Corruption: " + snapshot.getCorruptionLevel() + "%.");
         logs.add("Seed: " + snapshot.getCorruptionSeedLabel() + ".");
-        logs.add("Target areas enabled: " + countEnabledTargets(snapshot.getEnabledTargetsMask()) + "/" + CorruptionTarget.values().length + ".");
-        logs.add("Runtime settings are synchronized.");
+        logs.add("Target Areas Enabled: " + countEnabledTargets(snapshot.getEnabledTargetsMask()) + "/" + CorruptionTarget.values().length + ".");
         return logs;
     }
 

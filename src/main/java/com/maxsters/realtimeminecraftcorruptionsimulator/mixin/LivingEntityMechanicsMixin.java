@@ -73,4 +73,20 @@ public abstract class LivingEntityMechanicsMixin {
     private Vec3 rmc$corruptTravelVector(Vec3 travel) {
         return CorruptionMechanicsManager.corruptTravelVector((LivingEntity) (Object) this, travel);
     }
+
+    @Inject(
+            method = {
+                    "canFreeze()Z",
+                    "m_6094_()Z",
+                    "m_142079_()Z"
+            },
+            at = @At("RETURN"),
+            cancellable = true,
+            remap = false,
+            require = 0
+    )
+    @Dynamic("Targets both mapped dev names and SRG runtime aliases for LivingEntity#canFreeze.")
+    private void rmc$corruptCanFreeze(CallbackInfoReturnable<Boolean> callback) {
+        callback.setReturnValue(CorruptionMechanicsManager.corruptCanFreeze((LivingEntity) (Object) this, callback.getReturnValue()));
+    }
 }
