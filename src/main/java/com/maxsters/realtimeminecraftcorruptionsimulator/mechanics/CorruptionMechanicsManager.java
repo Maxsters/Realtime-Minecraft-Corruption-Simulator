@@ -2610,10 +2610,11 @@ public final class CorruptionMechanicsManager {
                             signedRange(attemptHash >>> 29, verticalRange),
                             signedRange(attemptHash >>> 41, horizontalRange)
                     );
-            if (target.getY() <= level.getMinBuildHeight() || target.getY() >= level.getMaxBuildHeight() || !hasLoadedChunkAt(level, target)) {
+            if (target.getY() <= level.getMinBuildHeight() || target.getY() >= level.getMaxBuildHeight()) {
                 continue;
             }
-            if (level.getBlockState(target).isAir() && fire.canSurvive(level, target)) {
+            BlockState targetState = loadedBlockState(level, target);
+            if (targetState != null && targetState.isAir()) {
                 level.setBlock(target, fire, 11);
                 return;
             }
@@ -2632,10 +2633,11 @@ public final class CorruptionMechanicsManager {
             for (int y = -range; y <= range; y++) {
                 for (int z = -range; z <= range; z++) {
                     cursor.set(center.getX() + x, center.getY() + y, center.getZ() + z);
-                    if (cursor.getY() <= level.getMinBuildHeight() || cursor.getY() >= level.getMaxBuildHeight() || !hasLoadedChunkAt(level, cursor)) {
+                    if (cursor.getY() <= level.getMinBuildHeight() || cursor.getY() >= level.getMaxBuildHeight()) {
                         continue;
                     }
-                    if (level.getBlockState(cursor).is(block)) {
+                    BlockState state = loadedBlockState(level, cursor);
+                    if (state != null && state.is(block)) {
                         return true;
                     }
                 }
@@ -2857,8 +2859,17 @@ public final class CorruptionMechanicsManager {
         return level.getChunk(chunkX, chunkZ).getFluidState(pos);
     }
 
-    private static boolean hasLoadedChunkAt(Level level, BlockPos pos) {
-        return level.hasChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()));
+    private static BlockState loadedBlockState(Level level, BlockPos pos) {
+        int chunkX = SectionPos.blockToSectionCoord(pos.getX());
+        int chunkZ = SectionPos.blockToSectionCoord(pos.getZ());
+        if (level instanceof ServerLevel serverLevel) {
+            LevelChunk chunk = serverLevel.getChunkSource().getChunkNow(chunkX, chunkZ);
+            return chunk == null ? null : chunk.getBlockState(pos);
+        }
+        if (!level.hasChunk(chunkX, chunkZ)) {
+            return null;
+        }
+        return level.getChunk(chunkX, chunkZ).getBlockState(pos);
     }
 
     private record FluidFeatureFault(
@@ -2993,7 +3004,10 @@ public final class CorruptionMechanicsManager {
             return fallback;
         }
 
-        BlockState sampled = level.getBlockState(sourcePos);
+        BlockState sampled = loadedBlockState(level, sourcePos);
+        if (sampled == null) {
+            return fallback;
+        }
         if (isTerrainLogicMutationReplaceable(sampled)) {
             return sampled;
         }

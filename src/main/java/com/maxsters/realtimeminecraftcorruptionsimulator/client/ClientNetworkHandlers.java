@@ -7,7 +7,10 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ItemText
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.TextureMutationManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.VisualCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.overlay.CorruptionOverlayManager;
+import com.maxsters.realtimeminecraftcorruptionsimulator.network.ModNetwork;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.AchievementEventPacket;
+import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.InitializeCorruptionSettingsPacket;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.AchievementWorldStateSnapshot;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.api.distmarker.Dist;
@@ -19,13 +22,22 @@ public final class ClientNetworkHandlers {
     }
 
     public static void handleState(CorruptionStateSnapshot snapshot) {
-        handleState(snapshot, false);
+        handleState(snapshot, false, true, AchievementWorldStateSnapshot.empty());
     }
 
     public static void handleState(CorruptionStateSnapshot snapshot, boolean serverCheatsExposed) {
+        handleState(snapshot, serverCheatsExposed, true, AchievementWorldStateSnapshot.empty());
+    }
+
+    public static void handleState(CorruptionStateSnapshot snapshot, boolean serverCheatsExposed, boolean serverSettingsInitialized, AchievementWorldStateSnapshot achievementWorldState) {
         Minecraft.getInstance().execute(() -> {
+            if (!serverSettingsInitialized) {
+                ModNetwork.sendToServer(new InitializeCorruptionSettingsPacket(ClientCorruptionState.localSnapshot()));
+                return;
+            }
             CorruptionStateSnapshot previous = ClientCorruptionState.snapshot();
             CorruptionAchievementManager.setServerCheatsExposed(serverCheatsExposed);
+            CorruptionAchievementManager.applyServerWorldState(achievementWorldState);
             ClientCorruptionState.applySnapshot(snapshot);
             CorruptionStateSnapshot current = ClientCorruptionState.snapshot();
             CorruptionOverlayManager.applySnapshot(current);
@@ -46,6 +58,8 @@ public final class ClientNetworkHandlers {
         Minecraft.getInstance().execute(() -> {
             if (AchievementEventPacket.DIAMOND_ORE_MINED.equals(eventId)) {
                 CorruptionAchievementManager.recordDiamondOreMined();
+            } else if (AchievementEventPacket.WARRANTY_VOIDED.equals(eventId)) {
+                CorruptionAchievementManager.recordWarrantyVoided();
             }
         });
     }

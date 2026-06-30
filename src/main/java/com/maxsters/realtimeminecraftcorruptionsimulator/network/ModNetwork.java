@@ -1,12 +1,15 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.network;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
+import com.maxsters.realtimeminecraftcorruptionsimulator.achievements.ServerAchievementStateManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.AchievementEventPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.ApplyCorruptionSettingsPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.CorruptionStateSyncPacket;
+import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.InitializeCorruptionSettingsPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.OpenCorruptionToolPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.RequestCorruptionStatePacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.runtime.CorruptionRuntimeManager;
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.AchievementWorldStateSnapshot;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionSavedData;
 import net.minecraft.resources.ResourceLocation;
@@ -20,7 +23,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import java.util.Optional;
 
 public final class ModNetwork {
-    private static final String PROTOCOL_VERSION = "5";
+    private static final String PROTOCOL_VERSION = "6";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(RealtimeMinecraftCorruptionSimulator.MOD_ID, "main"),
@@ -40,6 +43,7 @@ public final class ModNetwork {
             return;
         }
         CHANNEL.registerMessage(nextId(), RequestCorruptionStatePacket.class, RequestCorruptionStatePacket::encode, RequestCorruptionStatePacket::decode, RequestCorruptionStatePacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(nextId(), InitializeCorruptionSettingsPacket.class, InitializeCorruptionSettingsPacket::encode, InitializeCorruptionSettingsPacket::decode, InitializeCorruptionSettingsPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(nextId(), ApplyCorruptionSettingsPacket.class, ApplyCorruptionSettingsPacket::encode, ApplyCorruptionSettingsPacket::decode, ApplyCorruptionSettingsPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(nextId(), CorruptionStateSyncPacket.class, CorruptionStateSyncPacket::encode, CorruptionStateSyncPacket::decode, CorruptionStateSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(nextId(), OpenCorruptionToolPacket.class, OpenCorruptionToolPacket::encode, OpenCorruptionToolPacket::decode, OpenCorruptionToolPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
@@ -57,9 +61,12 @@ public final class ModNetwork {
             return;
         }
         CorruptionSavedData data = CorruptionSavedData.get(player.getServer());
-        CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
-        boolean cheatsExposed = serverCheatsExposed(player.getServer(), data);
-        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new CorruptionStateSyncPacket(CorruptionStateSnapshot.from(data), cheatsExposed));
+        boolean initialized = data.isInitialized();
+        if (initialized) {
+            CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
+        }
+        ServerAchievementStateManager.refresh(player.getServer());
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), syncPacket(data, initialized));
     }
 
     public static void broadcastState(MinecraftServer server) {
@@ -67,9 +74,12 @@ public final class ModNetwork {
             return;
         }
         CorruptionSavedData data = CorruptionSavedData.get(server);
-        CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
-        boolean cheatsExposed = serverCheatsExposed(server, data);
-        CorruptionStateSyncPacket packet = new CorruptionStateSyncPacket(CorruptionStateSnapshot.from(data), cheatsExposed);
+        boolean initialized = data.isInitialized();
+        if (initialized) {
+            CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
+        }
+        ServerAchievementStateManager.refresh(server);
+        CorruptionStateSyncPacket packet = syncPacket(data, initialized);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
         }
@@ -79,8 +89,7 @@ public final class ModNetwork {
         if (server == null) {
             return;
         }
-        CorruptionSavedData data = CorruptionSavedData.get(server);
-        if (data.markServerAchievementDisqualified("permissioned_command")) {
+        if (ServerAchievementStateManager.markDisqualified(server, "permissioned_command")) {
             broadcastState(server);
         }
     }
@@ -99,31 +108,13 @@ public final class ModNetwork {
         return packetId++;
     }
 
-    private static boolean serverCheatsExposed(MinecraftServer server, CorruptionSavedData data) {
-        if (server == null) {
-            return false;
-        }
-        if (server.isDedicatedServer() && data.isServerAchievementDisqualified() && !data.hasServerAchievementDisqualificationReason()) {
-            data.clearSourceLessServerAchievementDisqualification();
-        }
-        if (data.hasServerAchievementDisqualificationReason()) {
-            return true;
-        }
-        try {
-            // Dedicated servers are inherently command-capable. Only singleplayer/LAN worlds
-            // use allowCommands as a meaningful "cheats were enabled" signal.
-            if (!server.isDedicatedServer() && server.getWorldData() != null && server.getWorldData().getAllowCommands()) {
-                data.markServerAchievementDisqualified("singleplayer_allow_commands");
-                return true;
-            }
-        } catch (RuntimeException ignored) {
-        }
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            if (player.hasPermissions(2)) {
-                data.markServerAchievementDisqualified("permissioned_player");
-                return true;
-            }
-        }
-        return false;
+    private static CorruptionStateSyncPacket syncPacket(CorruptionSavedData data, boolean initialized) {
+        AchievementWorldStateSnapshot achievementWorldState = AchievementWorldStateSnapshot.from(data);
+        return new CorruptionStateSyncPacket(
+                CorruptionStateSnapshot.from(data),
+                achievementWorldState.disqualified(),
+                initialized,
+                achievementWorldState
+        );
     }
 }

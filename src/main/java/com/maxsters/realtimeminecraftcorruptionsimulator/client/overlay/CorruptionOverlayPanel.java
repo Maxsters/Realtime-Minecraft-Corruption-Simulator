@@ -297,15 +297,15 @@ public final class CorruptionOverlayPanel {
         return new Rect(panel.x() + panel.width() - RESIZE_HANDLE_SIZE, panel.y() + panel.height() - RESIZE_HANDLE_SIZE, RESIZE_HANDLE_SIZE, RESIZE_HANDLE_SIZE);
     }
 
-    public static void renderOpen(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionStateSnapshot snapshot, CorruptionStateSnapshot draftSnapshot, int pendingLevel, int pendingAutoIntervalTicks, int pendingAutoAmount, int pendingSeedRandomizerIntervalTicks, boolean draftDirty, Page page, boolean seedEditing, String seedEditText, boolean funIntervalEditing, String funIntervalEditText, boolean funAmountEditing, String funAmountEditText, boolean funSeedRandomizerEditing, String funSeedRandomizerEditText, int achievementsScroll, int achievementResetPresses, CorruptionAchievementManager.HudCorner pinnedCorner, int mouseX, int mouseY) {
+    public static void renderOpen(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionStateSnapshot snapshot, CorruptionStateSnapshot draftSnapshot, int pendingLevel, int pendingAutoIntervalTicks, int pendingAutoAmount, int pendingSeedRandomizerIntervalTicks, boolean draftDirty, Page page, boolean seedEditing, String seedEditText, boolean funIntervalEditing, String funIntervalEditText, boolean funAmountEditing, String funAmountEditText, boolean funSeedRandomizerEditing, String funSeedRandomizerEditText, int textCursor, int textSelectionAnchor, int achievementsScroll, int achievementResetPresses, CorruptionAchievementManager.HudCorner pinnedCorner, int mouseX, int mouseY) {
         Rect panel = panelBounds(layout, graphics.guiWidth(), graphics.guiHeight());
         fillPanel(graphics, panel);
         renderHeader(graphics, font, layout, snapshot, panel, mouseX, mouseY, false);
         renderTabs(graphics, font, layout, page, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         if (page == Page.SETTINGS) {
-            renderSettings(graphics, font, layout, draftSnapshot, seedEditing, seedEditText, draftDirty, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
+            renderSettings(graphics, font, layout, draftSnapshot, seedEditing, seedEditText, textCursor, textSelectionAnchor, draftDirty, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         } else if (page == Page.FUN) {
-            renderFun(graphics, font, layout, draftSnapshot, pendingAutoIntervalTicks, pendingAutoAmount, pendingSeedRandomizerIntervalTicks, funIntervalEditing, funIntervalEditText, funAmountEditing, funAmountEditText, funSeedRandomizerEditing, funSeedRandomizerEditText, draftDirty, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
+            renderFun(graphics, font, layout, draftSnapshot, pendingAutoIntervalTicks, pendingAutoAmount, pendingSeedRandomizerIntervalTicks, funIntervalEditing, funIntervalEditText, funAmountEditing, funAmountEditText, funSeedRandomizerEditing, funSeedRandomizerEditText, textCursor, textSelectionAnchor, draftDirty, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         } else if (page == Page.ACHIEVEMENTS) {
             renderAchievements(graphics, font, layout, achievementsScroll, achievementResetPresses, mouseX, mouseY, graphics.guiWidth(), graphics.guiHeight());
         } else if (page == Page.HUD) {
@@ -416,14 +416,14 @@ public final class CorruptionOverlayPanel {
         drawClipped(graphics, font, status, slider.x(), slider.y() + 23, textWidth, draftDirty ? 0xFFD4DEE1 : 0xFF9FAEB4);
     }
 
-    private static void renderSettings(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionStateSnapshot snapshot, boolean seedEditing, String seedEditText, boolean draftDirty, int mouseX, int mouseY, int screenWidth, int screenHeight) {
+    private static void renderSettings(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionStateSnapshot snapshot, boolean seedEditing, String seedEditText, int textCursor, int textSelectionAnchor, boolean draftDirty, int mouseX, int mouseY, int screenWidth, int screenHeight) {
         Rect field = seedFieldBounds(layout, screenWidth, screenHeight);
         Rect copy = seedCopyButtonBounds(layout, screenWidth, screenHeight);
         Rect paste = seedPasteButtonBounds(layout, screenWidth, screenHeight);
         Rect apply = seedApplyButtonBounds(layout, screenWidth, screenHeight);
         Rect random = randomSeedButtonBounds(layout, screenWidth, screenHeight);
         drawSectionTitle(graphics, font, "Seed", field.x(), field.y() - 14, Math.max(40, random.x() + random.width() - field.x()));
-        drawTextField(graphics, font, field, seedEditing ? seedEditText : snapshot.getCorruptionSeedLabel(), seedEditing);
+        drawTextField(graphics, font, field, seedEditing ? seedEditText : snapshot.getCorruptionSeedLabel(), seedEditing, seedEditing ? textCursor : 0, seedEditing ? textSelectionAnchor : 0);
         drawButton(graphics, font, copy, "Copy", true, copy.contains(mouseX, mouseY));
         drawButton(graphics, font, paste, "Paste", true, paste.contains(mouseX, mouseY));
         drawButton(graphics, font, apply, "Set", seedEditing, seedEditing && apply.contains(mouseX, mouseY));
@@ -486,13 +486,13 @@ public final class CorruptionOverlayPanel {
         }
     }
 
-    private static void renderFun(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionStateSnapshot snapshot, int pendingAutoIntervalTicks, int pendingAutoAmount, int pendingSeedRandomizerIntervalTicks, boolean intervalEditing, String intervalEditText, boolean amountEditing, String amountEditText, boolean seedRandomizerEditing, String seedRandomizerEditText, boolean draftDirty, int mouseX, int mouseY, int screenWidth, int screenHeight) {
+    private static void renderFun(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionStateSnapshot snapshot, int pendingAutoIntervalTicks, int pendingAutoAmount, int pendingSeedRandomizerIntervalTicks, boolean intervalEditing, String intervalEditText, boolean amountEditing, String amountEditText, boolean seedRandomizerEditing, String seedRandomizerEditText, int textCursor, int textSelectionAnchor, boolean draftDirty, int mouseX, int mouseY, int screenWidth, int screenHeight) {
         Rect intervalArea = funIntervalArea(layout, screenWidth, screenHeight);
         drawSectionTitle(graphics, font, "Auto Increase Interval", intervalArea.x(), intervalArea.y(), intervalArea.width());
         Rect intervalSlider = funIntervalSliderBounds(layout, screenWidth, screenHeight);
         Rect intervalInput = funIntervalInputBounds(layout, screenWidth, screenHeight);
         drawValueSlider(graphics, font, intervalSlider, intervalRatio(pendingAutoIntervalTicks), intervalLabel(pendingAutoIntervalTicks), mouseX, mouseY);
-        drawTextField(graphics, font, intervalInput, intervalEditing ? intervalEditText : intervalLabel(pendingAutoIntervalTicks), intervalEditing);
+        drawTextField(graphics, font, intervalInput, intervalEditing ? intervalEditText : intervalLabel(pendingAutoIntervalTicks), intervalEditing, intervalEditing ? textCursor : 0, intervalEditing ? textSelectionAnchor : 0);
         drawMarqueeClipped(graphics, font, "Off, seconds, or values like 30s, 5m, 2h.", intervalArea.x(), intervalSlider.y() + 18, intervalArea.width(), 0xFF9AA8AD, 0x464E544C);
 
         Rect amountArea = funAmountArea(layout, screenWidth, screenHeight);
@@ -500,7 +500,7 @@ public final class CorruptionOverlayPanel {
         Rect amountSlider = funAmountSliderBounds(layout, screenWidth, screenHeight);
         Rect amountInput = funAmountInputBounds(layout, screenWidth, screenHeight);
         drawValueSlider(graphics, font, amountSlider, amountRatio(pendingAutoAmount), signedPercentLabel(pendingAutoAmount), mouseX, mouseY);
-        drawTextField(graphics, font, amountInput, amountEditing ? amountEditText : signedPercentLabel(pendingAutoAmount), amountEditing);
+        drawTextField(graphics, font, amountInput, amountEditing ? amountEditText : signedPercentLabel(pendingAutoAmount), amountEditing, amountEditing ? textCursor : 0, amountEditing ? textSelectionAnchor : 0);
         drawMarqueeClipped(graphics, font, "-100% to +100% per automatic step.", amountArea.x(), amountSlider.y() + 18, amountArea.width(), 0xFF9AA8AD, 0x46414D54);
 
         Rect seedArea = funSeedRandomizerArea(layout, screenWidth, screenHeight);
@@ -508,7 +508,7 @@ public final class CorruptionOverlayPanel {
         Rect seedSlider = funSeedRandomizerSliderBounds(layout, screenWidth, screenHeight);
         Rect seedInput = funSeedRandomizerInputBounds(layout, screenWidth, screenHeight);
         drawValueSlider(graphics, font, seedSlider, intervalRatio(pendingSeedRandomizerIntervalTicks), intervalLabel(pendingSeedRandomizerIntervalTicks), mouseX, mouseY);
-        drawTextField(graphics, font, seedInput, seedRandomizerEditing ? seedRandomizerEditText : intervalLabel(pendingSeedRandomizerIntervalTicks), seedRandomizerEditing);
+        drawTextField(graphics, font, seedInput, seedRandomizerEditing ? seedRandomizerEditText : intervalLabel(pendingSeedRandomizerIntervalTicks), seedRandomizerEditing, seedRandomizerEditing ? textCursor : 0, seedRandomizerEditing ? textSelectionAnchor : 0);
         drawMarqueeClipped(graphics, font, "Randomizes the shared seed on this interval.", seedArea.x(), seedSlider.y() + 18, seedArea.width(), 0xFF9AA8AD, 0x46534544);
 
         Rect driftArea = funClientDriftArea(layout, screenWidth, screenHeight);
@@ -880,19 +880,68 @@ public final class CorruptionOverlayPanel {
         return (amount > 0 ? "+" : "") + amount + "%";
     }
 
-    private static void drawTextField(GuiGraphics graphics, Font font, Rect rect, String text, boolean active) {
+    private static void drawTextField(GuiGraphics graphics, Font font, Rect rect, String text, boolean active, int cursor, int selectionAnchor) {
         graphics.fill(rect.x(), rect.y(), rect.x() + rect.width(), rect.y() + rect.height(), active ? 0xFF172126 : 0xFF101719);
         int edge = active ? 0xFF83A3AC : 0xFF465157;
         graphics.fill(rect.x(), rect.y(), rect.x() + rect.width(), rect.y() + 1, edge);
         graphics.fill(rect.x(), rect.y() + rect.height() - 1, rect.x() + rect.width(), rect.y() + rect.height(), edge);
         graphics.fill(rect.x(), rect.y(), rect.x() + 1, rect.y() + rect.height(), edge);
         graphics.fill(rect.x() + rect.width() - 1, rect.y(), rect.x() + rect.width(), rect.y() + rect.height(), edge);
-        drawClipped(graphics, font, text + (active && System.currentTimeMillis() / 400L % 2L == 0L ? "_" : ""), rect.x() + 4, rect.y() + 5, rect.width() - 8, active ? 0xFFEAF4F7 : 0xFFC8D4D8);
+
+        String value = text == null ? "" : text;
+        int textX = rect.x() + 4;
+        int textY = rect.y() + 5;
+        int textWidth = rect.width() - 8;
+        if (!active) {
+            drawClipped(graphics, font, value, textX, textY, textWidth, 0xFFC8D4D8);
+            return;
+        }
+
+        int cursorIndex = clampIndex(cursor, value.length());
+        int anchorIndex = clampIndex(selectionAnchor, value.length());
+        int visibleStart = textFieldVisibleStart(value, cursorIndex, textWidth);
+        String visibleText = visibleStart >= value.length() ? "" : ProtectedTextRenderer.plainSubstrByWidth(value.substring(visibleStart), textWidth);
+        int visibleEnd = visibleStart + visibleText.length();
+        int selectionStart = Math.min(cursorIndex, anchorIndex);
+        int selectionEnd = Math.max(cursorIndex, anchorIndex);
+
+        graphics.enableScissor(textX, textY - 1, textX + textWidth, textY + ProtectedTextRenderer.LINE_HEIGHT + 1);
+        if (selectionStart < selectionEnd && selectionEnd > visibleStart && selectionStart < visibleEnd) {
+            int highlightStartIndex = Math.max(selectionStart, visibleStart);
+            int highlightEndIndex = Math.min(selectionEnd, visibleEnd);
+            int highlightX = textX + ProtectedTextRenderer.width(value.substring(visibleStart, highlightStartIndex));
+            int highlightEndX = textX + ProtectedTextRenderer.width(value.substring(visibleStart, highlightEndIndex));
+            graphics.fill(highlightX, textY - 1, Math.max(highlightX + 1, highlightEndX), textY + ProtectedTextRenderer.LINE_HEIGHT, 0xAA5CA7B2);
+        }
+
+        ProtectedTextRenderer.drawString(graphics, visibleText, textX, textY, 0xFFEAF4F7);
+        if (System.currentTimeMillis() / 500L % 2L == 0L) {
+            int caretIndex = Math.max(visibleStart, Math.min(cursorIndex, visibleEnd));
+            int caretX = textX + ProtectedTextRenderer.width(value.substring(visibleStart, caretIndex));
+            graphics.fill(caretX, textY - 1, caretX + 1, textY + ProtectedTextRenderer.LINE_HEIGHT, 0xFFEAF4F7);
+        }
+        graphics.disableScissor();
     }
 
     private static void drawLabelValue(GuiGraphics graphics, Font font, String label, String value, int x, int y, int width) {
         String text = label + ": " + value;
         drawClipped(graphics, font, text, x, y, width, 0xFFC8D4D8);
+    }
+
+    private static int textFieldVisibleStart(String text, int cursor, int maxWidth) {
+        if (text == null || text.isEmpty() || maxWidth <= 0 || ProtectedTextRenderer.width(text) <= maxWidth) {
+            return 0;
+        }
+        int clampedCursor = clampIndex(cursor, text.length());
+        String throughCursor = text.substring(0, clampedCursor);
+        while (ProtectedTextRenderer.width(throughCursor) > maxWidth && !throughCursor.isEmpty()) {
+            throughCursor = throughCursor.substring(1);
+        }
+        return clampedCursor - throughCursor.length();
+    }
+
+    private static int clampIndex(int index, int length) {
+        return Math.max(0, Math.min(length, index));
     }
 
     private static void drawSectionTitle(GuiGraphics graphics, Font font, String title, int x, int y, int width) {

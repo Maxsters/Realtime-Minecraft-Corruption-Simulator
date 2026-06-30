@@ -10,6 +10,7 @@ import java.util.function.Supplier;
 
 public final class AchievementEventPacket {
     public static final String DIAMOND_ORE_MINED = "diamond_ore_mined";
+    public static final String WARRANTY_VOIDED = "warranty_voided";
 
     private final String eventId;
 

@@ -5,9 +5,12 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.network.ModNetwork;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.AchievementEventPacket;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.event.CommandEvent;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -27,8 +30,28 @@ public final class AchievementServerHooks {
         // CommandEvent fires before execution. Flagging permissioned sources here prevents
         // command teleports from producing achievement progress before clients learn about it.
         if (source != null && source.hasPermission(2)) {
-            ModNetwork.markServerAchievementDisqualified(source.getServer());
+            if (ServerAchievementStateManager.markDisqualified(source.getServer(), "permissioned_command")) {
+                ModNetwork.broadcastState(source.getServer());
+            }
         }
+    }
+
+    @SubscribeEvent
+    public static void onServerTick(TickEvent.ServerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END || event.getServer() == null) {
+            return;
+        }
+        if (ServerAchievementStateManager.refresh(event.getServer())) {
+            ModNetwork.broadcastState(event.getServer());
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onLivingDeath(LivingDeathEvent event) {
+        if (event.isCanceled() || !(event.getEntity() instanceof EnderDragon dragon)) {
+            return;
+        }
+        ServerAchievementStateManager.handleDragonDeath(dragon);
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)

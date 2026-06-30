@@ -7,8 +7,12 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.saveddata.SavedData;
 
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 public class CorruptionSavedData extends SavedData {
     public static final String DATA_NAME = "realtime_minecraft_corruption_simulator";
+    private static final int MAX_DRAGON_IDS = 64;
 
     // Keep world persistence to settings that actually change runtime behavior.
     // Old progression keys are intentionally ignored on load.
@@ -22,10 +26,14 @@ public class CorruptionSavedData extends SavedData {
     private boolean clientDriftEnabled;
     private int seedRandomizerIntervalTicks;
     private long lastSeedRandomizerGameTime;
-    // Achievement eligibility is server-wide. One privileged command can affect any player,
-    // so the disqualification must persist with the world instead of living on one client.
+    // Achievement eligibility is server-owned. Clients only mirror this state for display and
+    // local award progress; deleting client config must not restore a world's qualification.
     private boolean serverAchievementDisqualified;
     private String serverAchievementDisqualificationReason = "";
+    private boolean warrantyStarted;
+    private boolean warrantyDisqualified;
+    private final Set<String> armedDragonIds = new LinkedHashSet<>();
+    private final Set<String> spoiledDragonIds = new LinkedHashSet<>();
     private boolean initialized;
 
     public static CorruptionSavedData get(MinecraftServer server) {
@@ -75,6 +83,18 @@ public class CorruptionSavedData extends SavedData {
         if (tag.contains("server_achievement_disqualification_reason", Tag.TAG_STRING)) {
             data.serverAchievementDisqualificationReason = sanitizeDisqualificationReason(tag.getString("server_achievement_disqualification_reason"));
         }
+        if (tag.contains("warranty_started", Tag.TAG_BYTE)) {
+            data.warrantyStarted = tag.getBoolean("warranty_started");
+        }
+        if (tag.contains("warranty_disqualified", Tag.TAG_BYTE)) {
+            data.warrantyDisqualified = tag.getBoolean("warranty_disqualified");
+        }
+        if (tag.contains("armed_dragon_ids", Tag.TAG_STRING)) {
+            data.armedDragonIds.addAll(parseCsvSet(tag.getString("armed_dragon_ids")));
+        }
+        if (tag.contains("spoiled_dragon_ids", Tag.TAG_STRING)) {
+            data.spoiledDragonIds.addAll(parseCsvSet(tag.getString("spoiled_dragon_ids")));
+        }
         return data;
     }
 
@@ -92,6 +112,10 @@ public class CorruptionSavedData extends SavedData {
         tag.putLong("last_seed_randomizer_game_time", lastSeedRandomizerGameTime);
         tag.putBoolean("server_achievement_disqualified", serverAchievementDisqualified);
         tag.putString("server_achievement_disqualification_reason", serverAchievementDisqualificationReason);
+        tag.putBoolean("warranty_started", warrantyStarted);
+        tag.putBoolean("warranty_disqualified", warrantyDisqualified);
+        tag.putString("armed_dragon_ids", csv(armedDragonIds));
+        tag.putString("spoiled_dragon_ids", csv(spoiledDragonIds));
         tag.putBoolean("initialized", true);
         return tag;
     }
@@ -186,6 +210,10 @@ public class CorruptionSavedData extends SavedData {
         return serverAchievementDisqualified;
     }
 
+    public boolean isAchievementWorldDisqualified() {
+        return serverAchievementDisqualified;
+    }
+
     public boolean hasServerAchievementDisqualificationReason() {
         return serverAchievementDisqualified && !serverAchievementDisqualificationReason.isBlank();
     }
@@ -197,6 +225,86 @@ public class CorruptionSavedData extends SavedData {
         }
         serverAchievementDisqualified = true;
         serverAchievementDisqualificationReason = sanitizedReason;
+        setDirty();
+        return true;
+    }
+
+    public boolean isWarrantyStarted() {
+        return warrantyStarted;
+    }
+
+    public boolean setWarrantyStarted(boolean warrantyStarted) {
+        if (this.warrantyStarted == warrantyStarted) {
+            return false;
+        }
+        this.warrantyStarted = warrantyStarted;
+        setDirty();
+        return true;
+    }
+
+    public boolean isWarrantyDisqualified() {
+        return warrantyDisqualified;
+    }
+
+    public boolean setWarrantyDisqualified(boolean warrantyDisqualified) {
+        if (this.warrantyDisqualified == warrantyDisqualified) {
+            return false;
+        }
+        this.warrantyDisqualified = warrantyDisqualified;
+        setDirty();
+        return true;
+    }
+
+    public Set<String> armedDragonIds() {
+        return Set.copyOf(armedDragonIds);
+    }
+
+    public Set<String> spoiledDragonIds() {
+        return Set.copyOf(spoiledDragonIds);
+    }
+
+    public boolean armDragonFight(String dragonId) {
+        String sanitized = sanitizeDragonId(dragonId);
+        if (sanitized.isBlank() || armedDragonIds.contains(sanitized) || armedDragonIds.size() >= MAX_DRAGON_IDS) {
+            return false;
+        }
+        armedDragonIds.add(sanitized);
+        setDirty();
+        return true;
+    }
+
+    public boolean disarmDragonFight(String dragonId) {
+        String sanitized = sanitizeDragonId(dragonId);
+        if (sanitized.isBlank() || !armedDragonIds.remove(sanitized)) {
+            return false;
+        }
+        setDirty();
+        return true;
+    }
+
+    public boolean spoilDragonFight(String dragonId) {
+        String sanitized = sanitizeDragonId(dragonId);
+        if (sanitized.isBlank() || spoiledDragonIds.contains(sanitized) || spoiledDragonIds.size() >= MAX_DRAGON_IDS) {
+            return false;
+        }
+        spoiledDragonIds.add(sanitized);
+        setDirty();
+        return true;
+    }
+
+    public boolean isDragonFightArmed(String dragonId) {
+        return armedDragonIds.contains(sanitizeDragonId(dragonId));
+    }
+
+    public boolean isDragonFightSpoiled(String dragonId) {
+        return spoiledDragonIds.contains(sanitizeDragonId(dragonId));
+    }
+
+    public boolean clearArmedDragonFights() {
+        if (armedDragonIds.isEmpty()) {
+            return false;
+        }
+        armedDragonIds.clear();
         setDirty();
         return true;
     }
@@ -257,5 +365,37 @@ public class CorruptionSavedData extends SavedData {
         }
         String trimmed = reason.trim();
         return trimmed.length() > 64 ? trimmed.substring(0, 64) : trimmed;
+    }
+
+    private static String sanitizeDragonId(String dragonId) {
+        if (dragonId == null || dragonId.isBlank()) {
+            return "";
+        }
+        String trimmed = dragonId.trim();
+        return trimmed.length() > 64 ? trimmed.substring(0, 64) : trimmed;
+    }
+
+    private static Set<String> parseCsvSet(String value) {
+        Set<String> result = new LinkedHashSet<>();
+        if (value == null || value.isBlank()) {
+            return result;
+        }
+        for (String part : value.split(",")) {
+            String sanitized = sanitizeDragonId(part);
+            if (!sanitized.isBlank()) {
+                result.add(sanitized);
+            }
+            if (result.size() >= MAX_DRAGON_IDS) {
+                break;
+            }
+        }
+        return result;
+    }
+
+    private static String csv(Set<String> values) {
+        if (values == null || values.isEmpty()) {
+            return "";
+        }
+        return String.join(",", values);
     }
 }

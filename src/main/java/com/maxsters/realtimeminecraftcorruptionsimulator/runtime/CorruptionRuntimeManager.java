@@ -56,7 +56,7 @@ public final class CorruptionRuntimeManager {
             return false;
         }
         if (!data.isInitialized()) {
-            return copyGlobalSettingsToData(data);
+            return false;
         }
         int activeLevel = GlobalCorruptionSettings.activeLevel();
         long seed = GlobalCorruptionSettings.seed();

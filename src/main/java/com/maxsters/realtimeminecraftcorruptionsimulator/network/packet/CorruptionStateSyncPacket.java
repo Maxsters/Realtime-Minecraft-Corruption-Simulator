@@ -1,5 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.network.packet;
 
+import com.maxsters.realtimeminecraftcorruptionsimulator.state.AchievementWorldStateSnapshot;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraftforge.api.distmarker.Dist;
@@ -12,41 +13,53 @@ import java.util.function.Supplier;
 public final class CorruptionStateSyncPacket {
     private final CorruptionStateSnapshot snapshot;
     private final boolean serverCheatsExposed;
+    private final boolean serverSettingsInitialized;
+    private final AchievementWorldStateSnapshot achievementWorldState;
 
     public CorruptionStateSyncPacket(CorruptionStateSnapshot snapshot) {
         this(snapshot, false);
     }
 
     public CorruptionStateSyncPacket(CorruptionStateSnapshot snapshot, boolean serverCheatsExposed) {
+        this(snapshot, serverCheatsExposed, true, AchievementWorldStateSnapshot.empty());
+    }
+
+    public CorruptionStateSyncPacket(CorruptionStateSnapshot snapshot, boolean serverCheatsExposed, boolean serverSettingsInitialized, AchievementWorldStateSnapshot achievementWorldState) {
         this.snapshot = snapshot;
         this.serverCheatsExposed = serverCheatsExposed;
+        this.serverSettingsInitialized = serverSettingsInitialized;
+        this.achievementWorldState = achievementWorldState == null ? AchievementWorldStateSnapshot.empty() : achievementWorldState;
     }
 
     public void encode(FriendlyByteBuf buffer) {
         snapshot.encode(buffer);
         buffer.writeBoolean(serverCheatsExposed);
+        buffer.writeBoolean(serverSettingsInitialized);
+        achievementWorldState.encode(buffer);
     }
 
     public static CorruptionStateSyncPacket decode(FriendlyByteBuf buffer) {
         CorruptionStateSnapshot snapshot = CorruptionStateSnapshot.decode(buffer);
         boolean serverCheatsExposed = buffer.isReadable() && buffer.readBoolean();
-        return new CorruptionStateSyncPacket(snapshot, serverCheatsExposed);
+        boolean serverSettingsInitialized = !buffer.isReadable() || buffer.readBoolean();
+        AchievementWorldStateSnapshot achievementWorldState = buffer.isReadable() ? AchievementWorldStateSnapshot.decode(buffer) : AchievementWorldStateSnapshot.empty();
+        return new CorruptionStateSyncPacket(snapshot, serverCheatsExposed, serverSettingsInitialized, achievementWorldState);
     }
 
     public static void handle(CorruptionStateSyncPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
         NetworkEvent.Context context = contextSupplier.get();
-        context.enqueueWork(() -> handleClientState(packet.snapshot, packet.serverCheatsExposed));
+        context.enqueueWork(() -> handleClientState(packet.snapshot, packet.serverCheatsExposed, packet.serverSettingsInitialized, packet.achievementWorldState));
         context.setPacketHandled(true);
     }
 
-    private static void handleClientState(CorruptionStateSnapshot snapshot, boolean serverCheatsExposed) {
+    private static void handleClientState(CorruptionStateSnapshot snapshot, boolean serverCheatsExposed, boolean serverSettingsInitialized, AchievementWorldStateSnapshot achievementWorldState) {
         if (FMLEnvironment.dist != Dist.CLIENT) {
             return;
         }
         try {
             Class<?> type = Class.forName("com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientNetworkHandlers");
-            Method method = type.getMethod("handleState", CorruptionStateSnapshot.class, boolean.class);
-            method.invoke(null, snapshot, serverCheatsExposed);
+            Method method = type.getMethod("handleState", CorruptionStateSnapshot.class, boolean.class, boolean.class, AchievementWorldStateSnapshot.class);
+            method.invoke(null, snapshot, serverCheatsExposed, serverSettingsInitialized, achievementWorldState);
         } catch (ReflectiveOperationException | LinkageError ignored) {
             try {
                 Class<?> type = Class.forName("com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientNetworkHandlers");
