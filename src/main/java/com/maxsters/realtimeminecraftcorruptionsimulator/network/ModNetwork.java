@@ -7,7 +7,9 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.ApplyCor
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.CorruptionStateSyncPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.InitializeCorruptionSettingsPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.OpenCorruptionToolPacket;
+import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.QuickToggleCorruptionPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.RequestCorruptionStatePacket;
+import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.UpdateSettingsAccessPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.runtime.CorruptionRuntimeManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.AchievementWorldStateSnapshot;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
@@ -23,7 +25,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import java.util.Optional;
 
 public final class ModNetwork {
-    private static final String PROTOCOL_VERSION = "6";
+    private static final String PROTOCOL_VERSION = "7";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(RealtimeMinecraftCorruptionSimulator.MOD_ID, "main"),
@@ -45,6 +47,8 @@ public final class ModNetwork {
         CHANNEL.registerMessage(nextId(), RequestCorruptionStatePacket.class, RequestCorruptionStatePacket::encode, RequestCorruptionStatePacket::decode, RequestCorruptionStatePacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(nextId(), InitializeCorruptionSettingsPacket.class, InitializeCorruptionSettingsPacket::encode, InitializeCorruptionSettingsPacket::decode, InitializeCorruptionSettingsPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(nextId(), ApplyCorruptionSettingsPacket.class, ApplyCorruptionSettingsPacket::encode, ApplyCorruptionSettingsPacket::decode, ApplyCorruptionSettingsPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(nextId(), QuickToggleCorruptionPacket.class, QuickToggleCorruptionPacket::encode, QuickToggleCorruptionPacket::decode, QuickToggleCorruptionPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(nextId(), UpdateSettingsAccessPacket.class, UpdateSettingsAccessPacket::encode, UpdateSettingsAccessPacket::decode, UpdateSettingsAccessPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(nextId(), CorruptionStateSyncPacket.class, CorruptionStateSyncPacket::encode, CorruptionStateSyncPacket::decode, CorruptionStateSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(nextId(), OpenCorruptionToolPacket.class, OpenCorruptionToolPacket::encode, OpenCorruptionToolPacket::decode, OpenCorruptionToolPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(nextId(), AchievementEventPacket.class, AchievementEventPacket::encode, AchievementEventPacket::decode, AchievementEventPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
@@ -66,7 +70,7 @@ public final class ModNetwork {
             CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
         }
         ServerAchievementStateManager.refresh(player.getServer());
-        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), syncPacket(data, initialized));
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), syncPacket(data, initialized, player));
     }
 
     public static void broadcastState(MinecraftServer server) {
@@ -79,8 +83,8 @@ public final class ModNetwork {
             CorruptionRuntimeManager.applySavedDataToGlobalSettings(data);
         }
         ServerAchievementStateManager.refresh(server);
-        CorruptionStateSyncPacket packet = syncPacket(data, initialized);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            CorruptionStateSyncPacket packet = syncPacket(data, initialized, player);
             CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
         }
     }
@@ -104,17 +108,36 @@ public final class ModNetwork {
         }
     }
 
+    public static boolean isSettingsOperator(ServerPlayer player) {
+        return player != null && player.hasPermissions(2);
+    }
+
+    public static boolean canUpdateSettings(ServerPlayer player) {
+        if (player == null || player.getServer() == null) {
+            return false;
+        }
+        if (isSettingsOperator(player)) {
+            return true;
+        }
+        return CorruptionSavedData.get(player.getServer()).allowNonOpSettingsUpdates();
+    }
+
     private static int nextId() {
         return packetId++;
     }
 
-    private static CorruptionStateSyncPacket syncPacket(CorruptionSavedData data, boolean initialized) {
+    private static CorruptionStateSyncPacket syncPacket(CorruptionSavedData data, boolean initialized, ServerPlayer player) {
         AchievementWorldStateSnapshot achievementWorldState = AchievementWorldStateSnapshot.from(data);
+        boolean operator = isSettingsOperator(player);
+        boolean allowNonOpSettingsUpdates = data.allowNonOpSettingsUpdates();
         return new CorruptionStateSyncPacket(
                 CorruptionStateSnapshot.from(data),
                 achievementWorldState.disqualified(),
                 initialized,
-                achievementWorldState
+                achievementWorldState,
+                allowNonOpSettingsUpdates,
+                operator || allowNonOpSettingsUpdates,
+                operator
         );
     }
 }

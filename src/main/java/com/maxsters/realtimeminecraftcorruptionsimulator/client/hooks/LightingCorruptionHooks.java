@@ -84,7 +84,7 @@ public final class LightingCorruptionHooks {
 
     private static boolean shouldProtectGuiLightTexture() {
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
-        return lightingCorruptionActive(stack) && !stack.activeOrExtreme(CorruptionSurface.GUI_SURFACE);
+        return lightingCorruptionActive(stack);
     }
 
     public static void restoreLightTextureNow() {
@@ -279,6 +279,9 @@ public final class LightingCorruptionHooks {
     }
 
     public static int mutateLightmapPixel(int x, int y, int color) {
+        if (guiLightProtectionDepth > 0) {
+            return color;
+        }
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         float intensity = lightingIntensity(stack);
         if (intensity <= 0.01F) {

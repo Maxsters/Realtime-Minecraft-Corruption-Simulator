@@ -61,12 +61,17 @@ public final class ApplyCorruptionSettingsPacket {
         context.enqueueWork(() -> {
             ServerPlayer sender = context.getSender();
             if (sender != null && sender.getServer() != null) {
+                if (!ModNetwork.canUpdateSettings(sender)) {
+                    ModNetwork.sendState(sender);
+                    return;
+                }
                 RealtimeMinecraftCorruptionSimulator.LOGGER.info(
                         "Applying corruption settings: level={} seed={} targets={}",
                         packet.requestedLevel,
                         CorruptionSavedData.seedLabel(packet.seed),
                         packet.enabledTargetsMask
                 );
+                CorruptionSavedData.get(sender.getServer()).clearQuickToggleRestore();
                 GlobalCorruptionSettings.apply(packet.requestedLevel, packet.seed, packet.seedLabel, packet.enabledTargetsMask, packet.autoIncreaseIntervalTicks, packet.autoIncreaseAmount, packet.clientDriftEnabled, packet.seedRandomizerIntervalTicks);
                 CorruptionMechanicsManager.onGlobalSettingsApplied(sender.getServer());
                 ModNetwork.broadcastState(sender.getServer());

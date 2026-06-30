@@ -22,15 +22,20 @@ public final class ClientNetworkHandlers {
     }
 
     public static void handleState(CorruptionStateSnapshot snapshot) {
-        handleState(snapshot, false, true, AchievementWorldStateSnapshot.empty());
+        handleState(snapshot, false, true, AchievementWorldStateSnapshot.empty(), false, true, true);
     }
 
     public static void handleState(CorruptionStateSnapshot snapshot, boolean serverCheatsExposed) {
-        handleState(snapshot, serverCheatsExposed, true, AchievementWorldStateSnapshot.empty());
+        handleState(snapshot, serverCheatsExposed, true, AchievementWorldStateSnapshot.empty(), false, true, true);
     }
 
     public static void handleState(CorruptionStateSnapshot snapshot, boolean serverCheatsExposed, boolean serverSettingsInitialized, AchievementWorldStateSnapshot achievementWorldState) {
+        handleState(snapshot, serverCheatsExposed, serverSettingsInitialized, achievementWorldState, false, true, true);
+    }
+
+    public static void handleState(CorruptionStateSnapshot snapshot, boolean serverCheatsExposed, boolean serverSettingsInitialized, AchievementWorldStateSnapshot achievementWorldState, boolean allowNonOpSettingsUpdates, boolean canUpdateSettings, boolean settingsOperator) {
         Minecraft.getInstance().execute(() -> {
+            CorruptionOverlayManager.applyServerPermissions(allowNonOpSettingsUpdates, canUpdateSettings, settingsOperator);
             if (!serverSettingsInitialized) {
                 ModNetwork.sendToServer(new InitializeCorruptionSettingsPacket(ClientCorruptionState.localSnapshot()));
                 return;

@@ -125,12 +125,12 @@ public final class TextureMutationManager {
             }
             pendingGuiTextureScan = null;
         }
-        if (!startupTextureScanRequested) {
-            return;
-        }
         if (signature.equals(appliedGuiTextureSignature)) {
             startupTextureScanRequested = false;
             return;
+        }
+        if (!startupTextureScanRequested) {
+            startupTextureScanRequested = true;
         }
 
         long now = System.currentTimeMillis();

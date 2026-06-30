@@ -26,6 +26,16 @@ public class CorruptionSavedData extends SavedData {
     private boolean clientDriftEnabled;
     private int seedRandomizerIntervalTicks;
     private long lastSeedRandomizerGameTime;
+    private boolean allowNonOpSettingsUpdates = true;
+    private boolean quickToggleRestorePresent;
+    private int quickToggleRestoreLevel;
+    private long quickToggleRestoreSeed = DeterministicCorruption.DEFAULT_SEED;
+    private String quickToggleRestoreSeedLabel = defaultSeedLabel();
+    private int quickToggleRestoreTargetsMask = CorruptionTarget.ALL_MASK;
+    private int quickToggleRestoreAutoIncreaseIntervalTicks;
+    private int quickToggleRestoreAutoIncreaseAmount = 1;
+    private boolean quickToggleRestoreClientDriftEnabled;
+    private int quickToggleRestoreSeedRandomizerIntervalTicks;
     // Achievement eligibility is server-owned. Clients only mirror this state for display and
     // local award progress; deleting client config must not restore a world's qualification.
     private boolean serverAchievementDisqualified;
@@ -77,6 +87,38 @@ public class CorruptionSavedData extends SavedData {
         if (tag.contains("last_seed_randomizer_game_time", Tag.TAG_LONG)) {
             data.lastSeedRandomizerGameTime = tag.getLong("last_seed_randomizer_game_time");
         }
+        if (tag.contains("allow_non_op_settings_updates", Tag.TAG_BYTE)) {
+            data.allowNonOpSettingsUpdates = tag.getBoolean("allow_non_op_settings_updates");
+        }
+        if (tag.contains("quick_toggle_restore_present", Tag.TAG_BYTE)) {
+            data.quickToggleRestorePresent = tag.getBoolean("quick_toggle_restore_present");
+        }
+        if (tag.contains("quick_toggle_restore_level", Tag.TAG_INT)) {
+            data.quickToggleRestoreLevel = clampPercent(tag.getInt("quick_toggle_restore_level"));
+        }
+        if (tag.contains("quick_toggle_restore_seed", Tag.TAG_LONG)) {
+            data.quickToggleRestoreSeed = tag.getLong("quick_toggle_restore_seed");
+        }
+        if (tag.contains("quick_toggle_restore_seed_label", Tag.TAG_STRING)) {
+            data.quickToggleRestoreSeedLabel = sanitizeSeedLabel(tag.getString("quick_toggle_restore_seed_label"), data.quickToggleRestoreSeed);
+        } else {
+            data.quickToggleRestoreSeedLabel = seedLabel(data.quickToggleRestoreSeed);
+        }
+        if (tag.contains("quick_toggle_restore_targets_mask", Tag.TAG_INT)) {
+            data.quickToggleRestoreTargetsMask = CorruptionTarget.normalizeMask(tag.getInt("quick_toggle_restore_targets_mask"));
+        }
+        if (tag.contains("quick_toggle_restore_auto_interval_ticks", Tag.TAG_INT)) {
+            data.quickToggleRestoreAutoIncreaseIntervalTicks = clampIntervalTicks(tag.getInt("quick_toggle_restore_auto_interval_ticks"));
+        }
+        if (tag.contains("quick_toggle_restore_auto_amount", Tag.TAG_INT)) {
+            data.quickToggleRestoreAutoIncreaseAmount = clampAutoAmount(tag.getInt("quick_toggle_restore_auto_amount"));
+        }
+        if (tag.contains("quick_toggle_restore_client_drift", Tag.TAG_BYTE)) {
+            data.quickToggleRestoreClientDriftEnabled = tag.getBoolean("quick_toggle_restore_client_drift");
+        }
+        if (tag.contains("quick_toggle_restore_seed_randomizer_ticks", Tag.TAG_INT)) {
+            data.quickToggleRestoreSeedRandomizerIntervalTicks = clampIntervalTicks(tag.getInt("quick_toggle_restore_seed_randomizer_ticks"));
+        }
         if (tag.contains("server_achievement_disqualified", Tag.TAG_BYTE)) {
             data.serverAchievementDisqualified = tag.getBoolean("server_achievement_disqualified");
         }
@@ -110,6 +152,16 @@ public class CorruptionSavedData extends SavedData {
         tag.putBoolean("client_drift_enabled", clientDriftEnabled);
         tag.putInt("seed_randomizer_interval_ticks", seedRandomizerIntervalTicks);
         tag.putLong("last_seed_randomizer_game_time", lastSeedRandomizerGameTime);
+        tag.putBoolean("allow_non_op_settings_updates", allowNonOpSettingsUpdates);
+        tag.putBoolean("quick_toggle_restore_present", quickToggleRestorePresent);
+        tag.putInt("quick_toggle_restore_level", quickToggleRestoreLevel);
+        tag.putLong("quick_toggle_restore_seed", quickToggleRestoreSeed);
+        tag.putString("quick_toggle_restore_seed_label", quickToggleRestoreSeedLabel);
+        tag.putInt("quick_toggle_restore_targets_mask", quickToggleRestoreTargetsMask);
+        tag.putInt("quick_toggle_restore_auto_interval_ticks", quickToggleRestoreAutoIncreaseIntervalTicks);
+        tag.putInt("quick_toggle_restore_auto_amount", quickToggleRestoreAutoIncreaseAmount);
+        tag.putBoolean("quick_toggle_restore_client_drift", quickToggleRestoreClientDriftEnabled);
+        tag.putInt("quick_toggle_restore_seed_randomizer_ticks", quickToggleRestoreSeedRandomizerIntervalTicks);
         tag.putBoolean("server_achievement_disqualified", serverAchievementDisqualified);
         tag.putString("server_achievement_disqualification_reason", serverAchievementDisqualificationReason);
         tag.putBoolean("warranty_started", warrantyStarted);
@@ -204,6 +256,62 @@ public class CorruptionSavedData extends SavedData {
     public void setLastSeedRandomizerGameTime(long lastSeedRandomizerGameTime) {
         this.lastSeedRandomizerGameTime = Math.max(0L, lastSeedRandomizerGameTime);
         setDirty();
+    }
+
+    public boolean allowNonOpSettingsUpdates() {
+        return allowNonOpSettingsUpdates;
+    }
+
+    public boolean setAllowNonOpSettingsUpdates(boolean allowNonOpSettingsUpdates) {
+        if (this.allowNonOpSettingsUpdates == allowNonOpSettingsUpdates) {
+            return false;
+        }
+        this.allowNonOpSettingsUpdates = allowNonOpSettingsUpdates;
+        setDirty();
+        return true;
+    }
+
+    public boolean hasQuickToggleRestore() {
+        return quickToggleRestorePresent;
+    }
+
+    public CorruptionStateSnapshot quickToggleRestoreSnapshot() {
+        return new CorruptionStateSnapshot(
+                quickToggleRestoreLevel,
+                quickToggleRestoreSeed,
+                quickToggleRestoreSeedLabel,
+                quickToggleRestoreTargetsMask,
+                quickToggleRestoreAutoIncreaseIntervalTicks,
+                quickToggleRestoreAutoIncreaseAmount,
+                quickToggleRestoreClientDriftEnabled,
+                quickToggleRestoreSeedRandomizerIntervalTicks
+        );
+    }
+
+    public void setQuickToggleRestore(CorruptionStateSnapshot snapshot) {
+        if (snapshot == null) {
+            clearQuickToggleRestore();
+            return;
+        }
+        quickToggleRestorePresent = true;
+        quickToggleRestoreLevel = clampPercent(snapshot.getCorruptionLevel());
+        quickToggleRestoreSeed = snapshot.getFixedCorruptionSeed();
+        quickToggleRestoreSeedLabel = sanitizeSeedLabel(snapshot.getCorruptionSeedLabel(), quickToggleRestoreSeed);
+        quickToggleRestoreTargetsMask = CorruptionTarget.normalizeMask(snapshot.getEnabledTargetsMask());
+        quickToggleRestoreAutoIncreaseIntervalTicks = clampIntervalTicks(snapshot.getAutoIncreaseIntervalTicks());
+        quickToggleRestoreAutoIncreaseAmount = clampAutoAmount(snapshot.getAutoIncreaseAmount());
+        quickToggleRestoreClientDriftEnabled = snapshot.isClientDriftEnabled();
+        quickToggleRestoreSeedRandomizerIntervalTicks = clampIntervalTicks(snapshot.getSeedRandomizerIntervalTicks());
+        setDirty();
+    }
+
+    public boolean clearQuickToggleRestore() {
+        if (!quickToggleRestorePresent) {
+            return false;
+        }
+        quickToggleRestorePresent = false;
+        setDirty();
+        return true;
     }
 
     public boolean isServerAchievementDisqualified() {
