@@ -29,6 +29,9 @@ public final class InteractionCorruptionHooks {
         }
 
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForGameplay();
+        if (!stack.clientDriftEnabled()) {
+            return;
+        }
         if (!stack.activeOrExtreme(CorruptionSurface.INTERACTION_ROUTING)) {
             return;
         }

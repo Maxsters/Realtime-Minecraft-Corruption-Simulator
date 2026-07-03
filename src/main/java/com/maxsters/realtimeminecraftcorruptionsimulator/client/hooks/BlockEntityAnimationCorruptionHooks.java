@@ -4,6 +4,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ClientCo
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
@@ -33,6 +34,52 @@ public final class BlockEntityAnimationCorruptionHooks {
 
     public static float mutateConduitRotation(BlockEntity blockEntity, float partialTick, float original) {
         return mutateScalarAnimation(blockEntity, partialTick, original, "conduit_rotation", 0.28F, 7.20F, -48.0F, 48.0F, 0x434F4E44);
+    }
+
+    public static float mutateConduitBob(BlockEntity blockEntity, float phase, float original) {
+        return mutateScalarAnimation(blockEntity, phase, original, "conduit_bob", 0.28F, 7.80F, -9.0F, 9.0F, 0x434F4242);
+    }
+
+    public static boolean beginConduitRenderPose(BlockEntity blockEntity, float partialTick, PoseStack poseStack) {
+        if (poseStack == null) {
+            return false;
+        }
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
+        if (!stack.activeOrExtreme(CorruptionSurface.ANIMATION_TIMING)) {
+            return false;
+        }
+
+        String targetId = targetId(blockEntity, "conduit_vertical_motion");
+        float intensity = stack.extreme(CorruptionSurface.ANIMATION_TIMING)
+                ? 1.0F
+                : Mth.clamp(Math.max(
+                stack.targetIntensity(CorruptionSurface.ANIMATION_TIMING, targetId),
+                stack.intensity(CorruptionSurface.ANIMATION_TIMING) * 0.94F
+        ), 0.0F, 1.0F);
+        if (intensity <= 0.0F) {
+            return false;
+        }
+
+        long seed = stack.stableLong(CorruptionSurface.ANIMATION_TIMING, targetId, 0x434F4E59);
+        float time = gameTime(blockEntity) + partialTick;
+        float amplitude = 0.10F + intensity * (stack.extreme(CorruptionSurface.ANIMATION_TIMING) ? 4.80F : 2.40F);
+        float primary = oscillatorSigned(time, seed, intensity, amplitude);
+        float drift = signed(seed ^ 0x42494153L, intensity * (stack.extreme(CorruptionSurface.ANIMATION_TIMING) ? 1.85F : 0.85F));
+        float offset = primary + drift;
+        if (stack.extreme(CorruptionSurface.ANIMATION_TIMING) || unit(seed ^ 0x53544550L) < 0.18F + intensity * 0.48F) {
+            float step = 0.0625F + unit(seed ^ 0x5155414EL) * (0.18F + intensity * 0.78F);
+            offset = quantize(offset, step);
+        }
+
+        poseStack.pushPose();
+        poseStack.translate(0.0D, Mth.clamp(offset, -5.25F, 5.25F), 0.0D);
+        return true;
+    }
+
+    public static void endConduitRenderPose(PoseStack poseStack, boolean applied) {
+        if (applied && poseStack != null) {
+            poseStack.popPose();
+        }
     }
 
     public static float mutateSkullAnimation(BlockEntity blockEntity, float partialTick, float original) {

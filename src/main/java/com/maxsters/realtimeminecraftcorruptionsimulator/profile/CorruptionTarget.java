@@ -3,14 +3,14 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.profile;
 import java.util.Locale;
 
 public enum CorruptionTarget {
-    CAMERA(0, "camera", "Camera", "View drift and FOV changes."),
-    MOBILITY(1, "mobility", "Mobility", "Fluid checks, motion, collision, and phasing."),
+    CAMERA(0, "camera", "Camera", "View drift, FOV changes."),
+    MOBILITY(1, "mobility", "Mobility", "Fluid checks, motion, collision, phasing."),
     WORLD_VISUALS(2, "world_visuals", "World Visuals", "Chunks, weather, light, biomes."),
     TEXTURES(3, "textures", "Textures", "Image data for world and UI."),
     AUDIO(4, "audio", "Audio", "Sound playback and placement."),
-    GUI(5, "gui", "GUI", "Menus, sliders, title screens."),
+    GUI(5, "gui", "GUI", "Menus, sliders, container actions."),
     ENTITY_BEHAVIOR(6, "entity_behavior", "Entities & Timing", "Stats, AI, fire, hitboxes, spawns."),
-    PROJECTILES_AND_ITEMS(7, "projectiles_items", "Items & Actions", "Crafting, items, impacts."),
+    PROJECTILES_AND_ITEMS(7, "projectiles_items", "Items & Actions", "Crafting, items, impacts, redstone."),
     WORLD_MUTATION(8, "world_mutation", "Worldgen & Terrain", "Terrain, carvers, growth."),
     MODELS(9, "models", "Models", "Geometry warping.");
 
@@ -95,9 +95,9 @@ public enum CorruptionTarget {
             case MODEL_GEOMETRY -> MODELS;
             case MODEL_UV, TEXTURE_MEMORY -> TEXTURES;
             case SOUND_STREAM -> AUDIO;
-            case GUI_SURFACE, TITLE_RENDER -> GUI;
+            case GUI_SURFACE, GUI_FUNCTIONALITY, TITLE_RENDER -> GUI;
             case ENTITY_KINEMATICS, ENTITY_STATE, SPAWN_RULES, ANIMATION_TIMING, TICK_SPEED -> ENTITY_BEHAVIOR;
-            case LOOSE_ENTITY_PHYSICS, PROJECTILE_PHYSICS, IMPACT_RESOLUTION, INTERACTION_ROUTING -> PROJECTILES_AND_ITEMS;
+            case LOOSE_ENTITY_PHYSICS, PROJECTILE_PHYSICS, IMPACT_RESOLUTION, INTERACTION_ROUTING, REDSTONE_MECHANICS -> PROJECTILES_AND_ITEMS;
             case WORLDGEN_SURFACE -> WORLD_MUTATION;
             case FIRE_MECHANICS -> ENTITY_BEHAVIOR;
             case POWDER_SNOW_MECHANICS -> MOBILITY;

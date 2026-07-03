@@ -38,10 +38,14 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.CraftingContainer;
 import net.minecraft.world.inventory.ResultContainer;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.trading.Merchant;
+import net.minecraft.world.item.trading.MerchantOffer;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FallingBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.material.Fluid;
@@ -1185,6 +1189,114 @@ public final class CorruptionMechanicsManager {
         serverPlayer.connection.send(new ClientboundContainerSetSlotPacket(menu.containerId, menu.incrementStateId(), 0, ItemStack.EMPTY));
     }
 
+    public static int corruptFurnaceBurnDuration(BlockEntity blockEntity, ItemStack fuel, int original) {
+        if (blockEntity == null || fuel == null || fuel.isEmpty() || original <= 0) {
+            return original;
+        }
+
+        CorruptionEffectStack stack = blockEntityStack(blockEntity);
+        String targetId = "gui_container:furnace_fuel:" + blockEntityTargetId(blockEntity) + ":" + itemTargetId(fuel);
+        if (!guiFunctionalityActive(stack, targetId)) {
+            return original;
+        }
+
+        float intensity = guiFunctionalityIntensity(stack, targetId);
+        long clock = blockEntityClock(blockEntity);
+        long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, 0x4655454C) ^ clock;
+        float chance = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
+                ? 0.98F
+                : Mth.clamp(0.08F + intensity * 0.72F + stack.instability() * 0.08F, 0.0F, 0.92F);
+        if (unitHash(seed ^ 0x4255524EL) > chance) {
+            return original;
+        }
+
+        int mode = Math.floorMod((int) (seed >>> 28), 6);
+        int mutated = switch (mode) {
+            case 0, 1, 2 -> 0;
+            case 3 -> Math.max(1, Math.round(original * (0.01F + unitHash(seed ^ 0x534C4F57L) * 0.16F)));
+            case 4 -> Math.round(original * (2.0F + unitHash(seed ^ 0x46415354L) * (8.0F + intensity * 48.0F)));
+            default -> Math.round(CorruptionValueMutator.mutateScalar(
+                    stack,
+                    CorruptionSurface.GUI_FUNCTIONALITY,
+                    targetId,
+                    original,
+                    80.0F + intensity * 3600.0F,
+                    0.0F,
+                    Math.max(1_200.0F, original * (stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) ? 96.0F : 24.0F)),
+                    0x4655,
+                    seed
+            ));
+        };
+        return clampInt(mutated, 0, Math.max(32_000, original * 128));
+    }
+
+    public static boolean corruptFurnaceCanBurn(BlockEntity blockEntity, boolean original) {
+        if (blockEntity == null || !original) {
+            return original;
+        }
+
+        CorruptionEffectStack stack = blockEntityStack(blockEntity);
+        String targetId = "gui_container:furnace_burn:" + blockEntityTargetId(blockEntity);
+        if (!guiFunctionalityActive(stack, targetId)) {
+            return original;
+        }
+
+        float intensity = guiFunctionalityIntensity(stack, targetId);
+        long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, 0x434F4F4B) ^ blockEntityClock(blockEntity);
+        float chance = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
+                ? 0.96F
+                : Mth.clamp(0.05F + intensity * 0.66F + stack.instability() * 0.08F, 0.0F, 0.88F);
+        return unitHash(seed ^ 0x53544F50L) < chance ? false : original;
+    }
+
+    public static boolean corruptBrewingStandBrewable(BlockEntity blockEntity, boolean original) {
+        if (blockEntity == null || !original) {
+            return original;
+        }
+
+        CorruptionEffectStack stack = blockEntityStack(blockEntity);
+        String targetId = "gui_container:brewing_stand:" + blockEntityTargetId(blockEntity);
+        if (!guiFunctionalityActive(stack, targetId)) {
+            return original;
+        }
+
+        float intensity = guiFunctionalityIntensity(stack, targetId);
+        long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, 0x42524557) ^ blockEntityClock(blockEntity);
+        float chance = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
+                ? 0.96F
+                : Mth.clamp(0.05F + intensity * 0.68F + stack.instability() * 0.08F, 0.0F, 0.88F);
+        return unitHash(seed ^ 0x4E4F4252L) < chance ? false : original;
+    }
+
+    public static boolean shouldBlockMerchantTrade(Merchant merchant, Player player, MerchantOffer offer) {
+        if (merchant == null || player == null || offer == null || player.level().isClientSide) {
+            return false;
+        }
+
+        Entity merchantEntity = merchant instanceof Entity entity ? entity : null;
+        CorruptionEffectStack stack = merchantEntity == null ? activeStackFor(player) : authoritativeGameplayStackFor(merchantEntity);
+        String targetId = "gui_container:villager_trade:" + merchantTradeTargetId(merchantEntity, offer);
+        if (!guiFunctionalityActive(stack, targetId)) {
+            return false;
+        }
+
+        float intensity = guiFunctionalityIntensity(stack, targetId);
+        int salt = merchantEntity == null ? player.level().dimension().location().hashCode() : entityStableSalt(merchantEntity, 0x54524144);
+        long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, salt);
+        float chance = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
+                ? 0.98F
+                : Mth.clamp(0.05F + intensity * 0.74F + stack.instability() * 0.08F, 0.0F, 0.92F);
+        return unitHash(seed ^ 0x4F464652L) < chance;
+    }
+
+    public static int corruptRedstoneSignal(BlockState state, BlockGetter level, BlockPos pos, Direction direction, int original, String channel) {
+        return corruptRedstoneValue(state, level, pos, direction, original, channel, false);
+    }
+
+    public static int corruptRedstoneAnalogSignal(BlockState state, Level level, BlockPos pos, int original) {
+        return corruptRedstoneValue(state, level, pos, null, original, "analog", true);
+    }
+
     @SubscribeEvent
     public static void onProjectileImpact(ProjectileImpactEvent event) {
         Projectile projectile = event.getProjectile();
@@ -1368,7 +1480,18 @@ public final class CorruptionMechanicsManager {
         }
 
         CorruptionEffectStack stack = serverStack(level);
-        if (shouldMutateWorldProcess(level, stack, CorruptionSurface.INTERACTION_ROUTING, "neighbor_notify", event.getState(), event.getPos(), 0x4E4F5449, 0.74F)) {
+        String targetId = "redstone_neighbor_notify:" + blockTargetId(event.getState());
+        if (!redstoneMechanicsActive(stack, targetId)) {
+            return;
+        }
+
+        float intensity = redstoneMechanicsIntensity(stack, targetId);
+        long hash = stack.stableLong(CorruptionSurface.REDSTONE_MECHANICS, targetId, event.getPos().hashCode() ^ 0x4E4F5449)
+                ^ mixLong(event.getPos().asLong() ^ level.getGameTime() * 0x9E3779B97F4A7C15L);
+        float chance = stack.extreme(CorruptionSurface.REDSTONE_MECHANICS)
+                ? 0.74F
+                : Mth.clamp(0.03F + intensity * 0.48F + stack.instability() * 0.08F, 0.0F, 0.62F);
+        if (unitHash(hash ^ 0x4E4F5449L) < chance && claimWorldProcessMutation(level)) {
             event.setCanceled(true);
         }
     }
@@ -1423,19 +1546,148 @@ public final class CorruptionMechanicsManager {
         String targetId = "crafting_system";
         float intensity = craftingIntensity(stack);
         long dimensionSalt = level == null ? 0L : level.dimension().location().hashCode();
-        long hash = stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, targetId, (int) (dimensionSalt ^ 0x43524654));
-        float chance = stack.extreme(CorruptionSurface.INTERACTION_ROUTING)
+        long hash = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, (int) (dimensionSalt ^ 0x43524654));
+        float chance = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
                 ? 0.96F
                 : Mth.clamp(0.04F + intensity * 0.62F + stack.instability() * 0.10F, 0.0F, 0.82F);
         return unitHash(hash ^ 0x42524F4BL) < chance;
     }
 
     private static boolean craftingMechanicsActive(CorruptionEffectStack stack) {
-        return surfaceActive(stack, CorruptionSurface.INTERACTION_ROUTING, MIN_WORLD_PROCESS_INTENSITY);
+        return surfaceActive(stack, CorruptionSurface.GUI_FUNCTIONALITY, MIN_WORLD_PROCESS_INTENSITY);
     }
 
     private static float craftingIntensity(CorruptionEffectStack stack) {
-        return Mth.clamp(stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING), 0.0F, 1.0F);
+        return Mth.clamp(stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) ? 1.0F : stack.intensity(CorruptionSurface.GUI_FUNCTIONALITY), 0.0F, 1.0F);
+    }
+
+    private static int corruptRedstoneValue(BlockState state, BlockGetter level, BlockPos pos, Direction direction, int original, String channel, boolean analog) {
+        if (state == null || level == null || pos == null) {
+            return original;
+        }
+        if (!isRelevantRedstoneState(state, original, analog)) {
+            return original;
+        }
+
+        CorruptionEffectStack stack = redstoneStack(level);
+        String directionId = direction == null ? "none" : direction.getName();
+        String targetId = "redstone:" + channel + ":" + blockTargetId(state) + ":" + directionId;
+        if (!redstoneMechanicsActive(stack, targetId)) {
+            return original;
+        }
+
+        float intensity = redstoneMechanicsIntensity(stack, targetId);
+        long gameTime = redstoneGameTime(level);
+        long cadence = Math.max(1L, Math.round(Mth.lerp(intensity, 8.0F, 1.0F)));
+        long bucket = Math.floorDiv(gameTime, cadence);
+        long seed = stack.stableLong(CorruptionSurface.REDSTONE_MECHANICS, targetId, pos.hashCode() ^ channel.hashCode() ^ 0x525344)
+                ^ mixLong(pos.asLong() + bucket * 0x9E3779B97F4A7C15L)
+                ^ (long) original * 0xBF58476D1CE4E5B9L;
+        float chance = stack.extreme(CorruptionSurface.REDSTONE_MECHANICS)
+                ? 0.98F
+                : Mth.clamp(0.06F + intensity * 0.72F + stack.instability() * 0.08F, 0.0F, 0.92F);
+        if (unitHash(seed ^ 0x5349474EL) > chance) {
+            return original;
+        }
+
+        int mode = Math.floorMod((int) (seed >>> 28), 7);
+        int mutated = switch (mode) {
+            case 0 -> 0;
+            case 1 -> 15;
+            case 2 -> 15 - original;
+            case 3 -> Math.round(unitHash(seed ^ 0x52414E44L) * 15.0F);
+            case 4 -> unitHash(seed ^ 0x464C4950L) < 0.5F ? 0 : 15;
+            case 5 -> clampInt(original + Math.round(signedUnit(seed ^ 0x44524946L) * (2.0F + intensity * 18.0F)), 0, 15);
+            default -> Math.round(CorruptionValueMutator.mutateScalar(
+                    stack,
+                    CorruptionSurface.REDSTONE_MECHANICS,
+                    targetId,
+                    original,
+                    2.0F + intensity * 18.0F,
+                    0.0F,
+                    15.0F,
+                    0x5253,
+                    seed
+            ));
+        };
+        return clampInt(mutated, 0, 15);
+    }
+
+    private static boolean isRelevantRedstoneState(BlockState state, int original, boolean analog) {
+        return original > 0 || state.isSignalSource() || (analog && state.hasAnalogOutputSignal());
+    }
+
+    private static CorruptionEffectStack redstoneStack(BlockGetter level) {
+        if (level instanceof ServerLevel serverLevel) {
+            return serverStack(serverLevel);
+        }
+        if (level instanceof Level gameLevel && gameLevel.isClientSide) {
+            return clientStack();
+        }
+        return CorruptionEffectStack.local(0);
+    }
+
+    private static long redstoneGameTime(BlockGetter level) {
+        return level instanceof Level gameLevel ? gameLevel.getGameTime() : 0L;
+    }
+
+    private static boolean redstoneMechanicsActive(CorruptionEffectStack stack, String targetId) {
+        return surfaceActive(stack, CorruptionSurface.REDSTONE_MECHANICS, MIN_WORLD_PROCESS_INTENSITY)
+                || targetActive(stack, CorruptionSurface.REDSTONE_MECHANICS, targetId, MIN_WORLD_PROCESS_INTENSITY);
+    }
+
+    private static float redstoneMechanicsIntensity(CorruptionEffectStack stack, String targetId) {
+        return Mth.clamp(weightedSurfaceIntensity(stack, CorruptionSurface.REDSTONE_MECHANICS, targetId, 1.0F), 0.0F, 1.0F);
+    }
+
+    private static CorruptionEffectStack blockEntityStack(BlockEntity blockEntity) {
+        Level level = blockEntity == null ? null : blockEntity.getLevel();
+        if (level instanceof ServerLevel serverLevel) {
+            return serverStack(serverLevel);
+        }
+        if (level != null && level.isClientSide) {
+            return clientStack();
+        }
+        return CorruptionEffectStack.local(0);
+    }
+
+    private static boolean guiFunctionalityActive(CorruptionEffectStack stack, String targetId) {
+        return surfaceActive(stack, CorruptionSurface.GUI_FUNCTIONALITY, MIN_WORLD_PROCESS_INTENSITY)
+                || targetActive(stack, CorruptionSurface.GUI_FUNCTIONALITY, targetId, MIN_WORLD_PROCESS_INTENSITY);
+    }
+
+    private static float guiFunctionalityIntensity(CorruptionEffectStack stack, String targetId) {
+        return Mth.clamp(weightedSurfaceIntensity(stack, CorruptionSurface.GUI_FUNCTIONALITY, targetId, 1.0F), 0.0F, 1.0F);
+    }
+
+    private static String merchantTradeTargetId(Entity merchant, MerchantOffer offer) {
+        String owner = merchant == null ? "merchant" : entityTargetId(merchant);
+        String result = itemTargetId(offer.getResult());
+        String costA = itemTargetId(offer.getCostA());
+        String costB = itemTargetId(offer.getCostB());
+        return owner + ":" + costA + "+" + costB + "->" + result;
+    }
+
+    private static long blockEntityClock(BlockEntity blockEntity) {
+        Level level = blockEntity == null ? null : blockEntity.getLevel();
+        long gameTime = level == null ? 0L : level.getGameTime();
+        long pos = blockEntity == null || blockEntity.getBlockPos() == null ? 0L : blockEntity.getBlockPos().asLong();
+        return mixLong(pos ^ Math.floorDiv(gameTime, 4L) * 0x9E3779B97F4A7C15L);
+    }
+
+    private static String blockEntityTargetId(BlockEntity blockEntity) {
+        if (blockEntity == null) {
+            return "unknown";
+        }
+        ResourceLocation typeId = ForgeRegistries.BLOCK_ENTITY_TYPES.getKey(blockEntity.getType());
+        BlockPos pos = blockEntity.getBlockPos();
+        String position = pos == null ? "no_pos" : pos.getX() + "," + pos.getY() + "," + pos.getZ();
+        return (typeId == null ? blockEntity.getType().toString() : typeId.toString()) + ":" + position;
+    }
+
+    private static String itemTargetId(ItemStack stack) {
+        ResourceLocation itemId = stack == null || stack.isEmpty() ? null : ForgeRegistries.ITEMS.getKey(stack.getItem());
+        return itemId == null ? "unknown" : itemId.toString();
     }
 
     private static void mutateDamageEvent(LivingHurtEvent event, CorruptionEffectStack stack) {

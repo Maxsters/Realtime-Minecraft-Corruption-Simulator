@@ -277,6 +277,63 @@ public final class ModelRenderCorruptionHooks {
         }
     }
 
+    public static void mutateBeaconBeamGeometry(PoseStack poseStack, ResourceLocation texture, long gameTime, int yOffset, int height, float radius, float glowRadius) {
+        if (poseStack == null) {
+            return;
+        }
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
+        if (!modelMutationActive(stack)) {
+            return;
+        }
+
+        String textureId = texture == null ? "unknown" : texture.toString();
+        String targetId = "beacon_beam:" + textureId + ":" + yOffset + ":" + height;
+        float intensity = partGeometryIntensity(stack, targetId);
+        if (intensity <= 0.0F) {
+            return;
+        }
+
+        long cadence = Math.max(1L, Math.round(Mth.lerp(intensity, 14.0F, 2.0F)));
+        long clock = stack.stableLong(CorruptionSurface.MODEL_GEOMETRY, targetId, 0x4245414D)
+                ^ mix(Math.floorDiv(gameTime, cadence) * 0x9E3779B97F4A7C15L)
+                ^ ((long) yOffset << 32)
+                ^ height
+                ^ Float.floatToIntBits(radius)
+                ^ ((long) Float.floatToIntBits(glowRadius) << 17);
+
+        double offsetSpan = (0.06D + intensity * 0.92D) * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 5.25D : 1.0D);
+        poseStack.translate(
+                signedUnit(clock ^ 0x584245414DL) * offsetSpan,
+                signedUnit(clock ^ 0x594245414DL) * offsetSpan * 0.74D,
+                signedUnit(clock ^ 0x5A4245414DL) * offsetSpan
+        );
+
+        float scaleSpan = 0.16F + intensity * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 8.40F : 3.20F);
+        float xScale = scaleMutation(stack, CorruptionSurface.MODEL_GEOMETRY, targetId + ":beam_scale_x", scaleSpan, 0x4258, clock);
+        float yScale = Mth.clamp(1.0F + signedUnit(clock ^ 0x42594C454E47L) * intensity * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 12.0F : 4.5F), 0.035F, stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 18.0F : 7.0F);
+        float zScale = scaleMutation(stack, CorruptionSurface.MODEL_GEOMETRY, targetId + ":beam_scale_z", scaleSpan, 0x425A, clock);
+        poseStack.scale(xScale, yScale, zScale);
+
+        float angle = CorruptionValueMutator.mutateScalar(
+                stack,
+                CorruptionSurface.MODEL_GEOMETRY,
+                targetId + ":beam_angle",
+                0.0F,
+                0.22F + intensity * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 7.20F : 2.85F),
+                -7.80F,
+                7.80F,
+                0x4241,
+                clock
+        );
+        float axisX = signedUnit(clock ^ 0x58424D524F54L);
+        float axisY = signedUnit(clock ^ 0x59424D524F54L);
+        float axisZ = signedUnit(clock ^ 0x5A424D524F54L);
+        if (Math.abs(axisX) + Math.abs(axisY) + Math.abs(axisZ) < 0.001F) {
+            axisY = 1.0F;
+        }
+        poseStack.mulPose(new Quaternionf(new AxisAngle4f(angle, axisX, axisY, axisZ)));
+    }
+
     private static RenderContext currentContext() {
         Deque<RenderContext> stack = CONTEXT_STACK.get();
         return stack.isEmpty() ? null : stack.peek();
