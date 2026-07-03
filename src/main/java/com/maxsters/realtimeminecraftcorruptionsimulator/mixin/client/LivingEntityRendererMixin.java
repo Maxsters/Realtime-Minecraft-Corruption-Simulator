@@ -26,6 +26,7 @@ public abstract class LivingEntityRendererMixin {
     )
     private void rmc$beginCorruptedEntityModelRender(LivingEntity entity, float entityYaw, float partialTick, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, CallbackInfo callback) {
         ModelRenderCorruptionHooks.beginEntityRender(entity, partialTick);
+        ModelRenderCorruptionHooks.mutateEntityRenderPositionFallback(entity, partialTick, poseStack);
     }
 
     @Inject(
@@ -39,6 +40,7 @@ public abstract class LivingEntityRendererMixin {
     )
     private void rmc$endCorruptedEntityModelRender(LivingEntity entity, float entityYaw, float partialTick, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, CallbackInfo callback) {
         ModelRenderCorruptionHooks.endEntityRender();
+        ModelRenderCorruptionHooks.clearEntityRenderPositionMarker(entity);
     }
 
     @Redirect(

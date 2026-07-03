@@ -1,16 +1,46 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.ModelRenderCorruptionHooks;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.model.ListModel;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.BoatRenderer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.vehicle.Boat;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(BoatRenderer.class)
 public abstract class BoatRendererMixin {
+    @Inject(
+            method = {
+                    "render(Lnet/minecraft/world/entity/vehicle/Boat;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
+                    "m_7392_"
+            },
+            at = @At("HEAD"),
+            remap = false,
+            require = 0
+    )
+    private void rmc$beginCorruptedBoatRenderPosition(Boat boat, float entityYaw, float partialTick, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, CallbackInfo callback) {
+        ModelRenderCorruptionHooks.mutateEntityRenderPositionFallback(boat, partialTick, poseStack);
+    }
+
+    @Inject(
+            method = {
+                    "render(Lnet/minecraft/world/entity/vehicle/Boat;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
+                    "m_7392_"
+            },
+            at = @At("RETURN"),
+            remap = false,
+            require = 0
+    )
+    private void rmc$endCorruptedBoatRenderPosition(Boat boat, float entityYaw, float partialTick, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, CallbackInfo callback) {
+        ModelRenderCorruptionHooks.clearEntityRenderPositionMarker(boat);
+    }
+
     @Redirect(
             method = {
                     "render(Lnet/minecraft/world/entity/vehicle/Boat;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",

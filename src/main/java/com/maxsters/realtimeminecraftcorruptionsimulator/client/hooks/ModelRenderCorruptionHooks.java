@@ -11,6 +11,11 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.vehicle.Boat;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -23,16 +28,17 @@ import java.util.Deque;
 @OnlyIn(Dist.CLIENT)
 public final class ModelRenderCorruptionHooks {
     private static final ThreadLocal<Deque<RenderContext>> CONTEXT_STACK = ThreadLocal.withInitial(ArrayDeque::new);
+    private static final ThreadLocal<Integer> ENTITY_RENDER_OFFSET_APPLIED = new ThreadLocal<>();
 
     private ModelRenderCorruptionHooks() {
     }
 
     public static void beginEntityRender(LivingEntity entity, float partialTick) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         RenderContext context = RenderContext.inactive();
         if (entity != null && modelMutationActive(stack)) {
             String targetId = entityTargetId(entity);
-            context = new RenderContext(entity.getId(), entity.tickCount + partialTick, targetId, stack);
+            context = new RenderContext(targetId, stack);
         }
         CONTEXT_STACK.get().push(context);
     }
@@ -47,8 +53,38 @@ public final class ModelRenderCorruptionHooks {
         }
     }
 
-    public static float[] mutatePrepareArgs(Entity entity, float limbSwing, float limbSwingAmount, float partialTick) {
+    public static void beginBlockEntityItemRender(ItemStack itemStack, ItemDisplayContext displayContext) {
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        RenderContext context = RenderContext.inactive();
+        if (isBlockEntityItem(itemStack) && modelMutationActive(stack)) {
+            ResourceLocation itemId = ForgeRegistries.ITEMS.getKey(itemStack.getItem());
+            String targetId = "block_entity_item:" + (itemId == null ? itemStack.getItem().toString() : itemId) + ":" + displayContext.name();
+            context = new RenderContext(targetId, stack);
+        }
+        CONTEXT_STACK.get().push(context);
+    }
+
+    public static void endBlockEntityItemRender() {
+        endEntityRender();
+    }
+
+    public static void beginBlockEntityRender(net.minecraft.world.level.block.entity.BlockEntity blockEntity, float partialTick) {
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
+        RenderContext context = RenderContext.inactive();
+        if (blockEntity != null && modelMutationActive(stack)) {
+            ResourceLocation typeId = ForgeRegistries.BLOCK_ENTITY_TYPES.getKey(blockEntity.getType());
+            String targetId = "block_entity_model:" + (typeId == null ? blockEntity.getType().toString() : typeId);
+            context = new RenderContext(targetId, stack);
+        }
+        CONTEXT_STACK.get().push(context);
+    }
+
+    public static void endBlockEntityRender() {
+        endEntityRender();
+    }
+
+    public static float[] mutatePrepareArgs(Entity entity, float limbSwing, float limbSwingAmount, float partialTick) {
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         String targetId = animationTargetId(entity, "prepare");
         if (!stack.activeOrExtreme(CorruptionSurface.ANIMATION_TIMING) && !stack.activeOrExtreme(CorruptionSurface.ANIMATION_TIMING, targetId)) {
             return new float[]{limbSwing, limbSwingAmount, partialTick};
@@ -65,7 +101,7 @@ public final class ModelRenderCorruptionHooks {
     }
 
     public static float[] mutateSetupAnimArgs(Entity entity, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         String targetId = animationTargetId(entity, "setup");
         if (!stack.activeOrExtreme(CorruptionSurface.ANIMATION_TIMING) && !stack.activeOrExtreme(CorruptionSurface.ANIMATION_TIMING, targetId)) {
             return new float[]{limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch};
@@ -84,7 +120,7 @@ public final class ModelRenderCorruptionHooks {
     }
 
     public static float[] mutateBoatSetupAnimArgs(Boat boat, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         String targetId = animationTargetId(boat, "boat_rowing");
         if (boat == null || (!stack.activeOrExtreme(CorruptionSurface.ANIMATION_TIMING) && !stack.activeOrExtreme(CorruptionSurface.ANIMATION_TIMING, targetId))) {
             return new float[]{limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch};
@@ -110,8 +146,41 @@ public final class ModelRenderCorruptionHooks {
         };
     }
 
+    public static void mutateEntityRenderPosition(Entity entity, float partialTick, PoseStack poseStack) {
+        if (entity == null || poseStack == null) {
+            return;
+        }
+
+        Vec3 offset = WorldRenderCorruptionHooks.cameraRenderOffset("entity:" + entityTargetId(entity), 0x454E5450);
+        if (BlockRenderCorruptionHooks.hasRenderSpaceOffset(offset)) {
+            poseStack.translate(offset.x, offset.y, offset.z);
+            ENTITY_RENDER_OFFSET_APPLIED.set(entity.getId());
+        }
+    }
+
+    public static void mutateEntityRenderPositionFallback(Entity entity, float partialTick, PoseStack poseStack) {
+        if (entity == null) {
+            return;
+        }
+        Integer appliedEntity = ENTITY_RENDER_OFFSET_APPLIED.get();
+        if (appliedEntity != null && appliedEntity == entity.getId()) {
+            return;
+        }
+        mutateEntityRenderPosition(entity, partialTick, poseStack);
+    }
+
+    public static void clearEntityRenderPositionMarker(Entity entity) {
+        if (entity == null) {
+            return;
+        }
+        Integer appliedEntity = ENTITY_RENDER_OFFSET_APPLIED.get();
+        if (appliedEntity != null && appliedEntity == entity.getId()) {
+            ENTITY_RENDER_OFFSET_APPLIED.remove();
+        }
+    }
+
     public static void mutateNonLivingEntityTransform(Entity entity, float partialTick, PoseStack poseStack) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         if (entity == null || entity instanceof LivingEntity || poseStack == null || !stack.activeOrExtreme(CorruptionSurface.ANIMATION_TIMING)) {
             return;
         }
@@ -141,7 +210,7 @@ public final class ModelRenderCorruptionHooks {
     }
 
     public static boolean shouldSkipShadowRender(Entity entity, float opacity, float radius) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         if (entity == null || !stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
             return false;
         }
@@ -180,34 +249,32 @@ public final class ModelRenderCorruptionHooks {
         int ordinal = context.nextPartOrdinal();
         String geometryTargetId = context.geometryTargetId() + ":part:" + ordinal;
         float geometryIntensity = partGeometryIntensity(stack, geometryTargetId);
-        if (geometryIntensity <= 0.0F) {
-            return;
+        if (geometryIntensity > 0.0F) {
+            long geometryClock = stack.stableLong(CorruptionSurface.MODEL_GEOMETRY, geometryTargetId, 0x50415254) ^ (long) ordinal * 0x9E3779B97F4A7C15L;
+
+            double offsetSpan = (0.025D + geometryIntensity * 0.58D) * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 4.40D : 1.0D);
+            double offsetClamp = stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 3.25D : 1.35D;
+            double x = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":offset_x", 0.0D, offsetSpan, -offsetClamp, offsetClamp, 0x11, geometryClock);
+            double y = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":offset_y", 0.0D, offsetSpan, -offsetClamp, offsetClamp, 0x23, geometryClock);
+            double z = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":offset_z", 0.0D, offsetSpan, -offsetClamp, offsetClamp, 0x35, geometryClock);
+            poseStack.translate(x, y, z);
+
+            float scaleSpan = 0.12F + geometryIntensity * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 7.20F : 2.35F);
+            float xScale = scaleMutation(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":scale_x", scaleSpan, 0x58, geometryClock);
+            float yScale = scaleMutation(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":scale_y", scaleSpan, 0x59, geometryClock);
+            float zScale = scaleMutation(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":scale_z", scaleSpan, 0x5A, geometryClock);
+            poseStack.scale(xScale, yScale, zScale);
+
+            float rotationSpan = 0.10F + geometryIntensity * 1.12F;
+            float angle = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":angle", 0.0F, rotationSpan, -3.35F, 3.35F, 0x41, geometryClock);
+            float axisX = signedUnit(geometryClock ^ 0x58524F54415445L);
+            float axisY = signedUnit(geometryClock ^ 0x59524F54415445L);
+            float axisZ = signedUnit(geometryClock ^ 0x5A524F54415445L);
+            if (Math.abs(axisX) + Math.abs(axisY) + Math.abs(axisZ) < 0.001F) {
+                axisY = 1.0F;
+            }
+            poseStack.mulPose(new Quaternionf(new AxisAngle4f(angle, axisX, axisY, axisZ)));
         }
-
-        long geometryClock = stack.stableLong(CorruptionSurface.MODEL_GEOMETRY, geometryTargetId, 0x50415254) ^ (long) ordinal * 0x9E3779B97F4A7C15L;
-
-        double offsetSpan = (0.025D + geometryIntensity * 0.58D) * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 4.40D : 1.0D);
-        double offsetClamp = stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 3.25D : 1.35D;
-        double x = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":offset_x", 0.0D, offsetSpan, -offsetClamp, offsetClamp, 0x11, geometryClock);
-        double y = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":offset_y", 0.0D, offsetSpan, -offsetClamp, offsetClamp, 0x23, geometryClock);
-        double z = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":offset_z", 0.0D, offsetSpan, -offsetClamp, offsetClamp, 0x35, geometryClock);
-        poseStack.translate(x, y, z);
-
-        float scaleSpan = 0.12F + geometryIntensity * (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) ? 7.20F : 2.35F);
-        float xScale = scaleMutation(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":scale_x", scaleSpan, 0x58, geometryClock);
-        float yScale = scaleMutation(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":scale_y", scaleSpan, 0x59, geometryClock);
-        float zScale = scaleMutation(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":scale_z", scaleSpan, 0x5A, geometryClock);
-        poseStack.scale(xScale, yScale, zScale);
-
-        float rotationSpan = 0.10F + geometryIntensity * 1.12F;
-        float angle = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.MODEL_GEOMETRY, geometryTargetId + ":angle", 0.0F, rotationSpan, -3.35F, 3.35F, 0x41, geometryClock);
-        float axisX = signedUnit(geometryClock ^ 0x58524F54415445L);
-        float axisY = signedUnit(geometryClock ^ 0x59524F54415445L);
-        float axisZ = signedUnit(geometryClock ^ 0x5A524F54415445L);
-        if (Math.abs(axisX) + Math.abs(axisY) + Math.abs(axisZ) < 0.001F) {
-            axisY = 1.0F;
-        }
-        poseStack.mulPose(new Quaternionf(new AxisAngle4f(angle, axisX, axisY, axisZ)));
     }
 
     private static RenderContext currentContext() {
@@ -217,6 +284,13 @@ public final class ModelRenderCorruptionHooks {
 
     private static boolean modelMutationActive(CorruptionEffectStack stack) {
         return stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY);
+    }
+
+    private static boolean isBlockEntityItem(ItemStack itemStack) {
+        return itemStack != null
+                && !itemStack.isEmpty()
+                && itemStack.getItem() instanceof BlockItem blockItem
+                && blockItem.getBlock() instanceof EntityBlock;
     }
 
     private static float partGeometryIntensity(CorruptionEffectStack stack, String targetId) {
@@ -284,13 +358,13 @@ public final class ModelRenderCorruptionHooks {
     }
 
     private static final class RenderContext {
-        private static final RenderContext INACTIVE = new RenderContext(0, 0.0F, "", CorruptionEffectStack.local(0));
+        private static final RenderContext INACTIVE = new RenderContext("", CorruptionEffectStack.local(0));
 
         private final String targetId;
         private final CorruptionEffectStack stack;
         private int partOrdinal;
 
-        private RenderContext(int entityId, float renderTime, String targetId, CorruptionEffectStack stack) {
+        private RenderContext(String targetId, CorruptionEffectStack stack) {
             this.targetId = targetId;
             this.stack = stack;
         }

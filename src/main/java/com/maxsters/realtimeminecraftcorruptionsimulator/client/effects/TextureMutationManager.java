@@ -2,6 +2,7 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.effects;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.GuiAtlasSpriteCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
@@ -45,6 +46,8 @@ public final class TextureMutationManager {
     private static PendingGlobalTextureScan pendingGlobalTextureScan;
     private static boolean startupTextureScanRequested;
     private static boolean startupGlobalTextureScanRequested;
+    private static ResourceManager cachedGuiResourceManager;
+    private static GuiTextureInventory cachedGuiTextureInventory = GuiTextureInventory.empty();
     private static String appliedGuiTextureSignature = "";
     private static String appliedGlobalTextureSignature = "";
     private static long lastTextureScanAttemptMs;
@@ -62,7 +65,9 @@ public final class TextureMutationManager {
         List<ResourceLocation> spriteIds = new ArrayList<>(atlas.getTextureLocations());
         spriteIds.sort(Comparator.comparing(ResourceLocation::toString));
         for (ResourceLocation spriteId : spriteIds) {
-            ItemTextureCorruptionManager.rememberAtlasSprite(atlas.getSprite(spriteId));
+            var sprite = atlas.getSprite(spriteId);
+            ItemTextureCorruptionManager.rememberAtlasSprite(sprite);
+            GuiAtlasSpriteCorruptionHooks.rememberAtlasSprite(sprite);
         }
     }
 
@@ -98,7 +103,8 @@ public final class TextureMutationManager {
             return;
         }
 
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        refreshResourceInventoryCache(minecraft.getResourceManager());
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentUnsuppressed();
         if (ClientCorruptionProtection.shouldSuppressClientCorruption() && stack.level() > 0) {
             return;
         }
@@ -160,11 +166,12 @@ public final class TextureMutationManager {
             }
             pendingGlobalTextureScan = null;
         }
-        if (!startupGlobalTextureScanRequested) {
-            if (signature.equals(appliedGlobalTextureSignature)) {
-                return;
-            }
+        if (signature.equals(appliedGlobalTextureSignature)) {
+            startupGlobalTextureScanRequested = false;
             return;
+        }
+        if (!startupGlobalTextureScanRequested) {
+            startupGlobalTextureScanRequested = true;
         }
 
         long now = System.currentTimeMillis();
@@ -205,17 +212,42 @@ public final class TextureMutationManager {
 
     private static void applyGuiTextureMutations(Minecraft minecraft, CorruptionEffectStack stack, String signature) {
         ResourceManager resourceManager = minecraft.getResourceManager();
+        GuiTextureInventory inventory = guiTextureInventory(resourceManager);
+        List<ResourceLocation> donorTextureIds = List.of();
+
+        pendingGuiTextureScan = new PendingGuiTextureScan(signature, stack, inventory.resources(), inventory.textureIds(), donorTextureIds, new HashSet<>(MUTATED_GUI_TEXTURES));
+        processPendingGuiTextureMutations(minecraft);
+    }
+
+    private static void refreshResourceInventoryCache(ResourceManager resourceManager) {
+        if (resourceManager == cachedGuiResourceManager) {
+            return;
+        }
+        cachedGuiResourceManager = resourceManager;
+        cachedGuiTextureInventory = GuiTextureInventory.empty();
+        pendingGuiTextureScan = null;
+        appliedGuiTextureSignature = "";
+        pendingGlobalTextureScan = null;
+        appliedGlobalTextureSignature = "";
+        if (resourceManager != null) {
+            startupTextureScanRequested = true;
+            startupGlobalTextureScanRequested = true;
+        }
+    }
+
+    private static GuiTextureInventory guiTextureInventory(ResourceManager resourceManager) {
+        if (resourceManager == cachedGuiResourceManager && !cachedGuiTextureInventory.textureIds().isEmpty()) {
+            return cachedGuiTextureInventory;
+        }
         Map<ResourceLocation, Resource> resources = resourceManager.listResources(
                 GUI_TEXTURE_PREFIX,
                 location -> "minecraft".equals(location.getNamespace()) && location.getPath().endsWith(".png")
         );
-
         List<ResourceLocation> textureIds = new ArrayList<>(resources.keySet());
         textureIds.sort(Comparator.comparing(ResourceLocation::toString));
-        List<ResourceLocation> donorTextureIds = List.of();
-
-        pendingGuiTextureScan = new PendingGuiTextureScan(signature, stack, resources, textureIds, donorTextureIds, new HashSet<>(MUTATED_GUI_TEXTURES));
-        processPendingGuiTextureMutations(minecraft);
+        cachedGuiResourceManager = resourceManager;
+        cachedGuiTextureInventory = new GuiTextureInventory(resources, List.copyOf(textureIds));
+        return cachedGuiTextureInventory;
     }
 
     private static void applyGlobalTextureMutations(Minecraft minecraft, CorruptionEffectStack stack, String signature) {
@@ -444,16 +476,42 @@ public final class TextureMutationManager {
 
     private static int globalTexturePriority(ResourceLocation id) {
         String path = id.getPath();
-        if (path.startsWith("textures/environment/")) {
+        if (isBlockEntityTexturePath(path)) {
             return 0;
         }
-        if (path.startsWith("textures/misc/") || path.startsWith("textures/effect/")) {
+        if (path.startsWith("textures/environment/")) {
             return 1;
+        }
+        if (path.startsWith("textures/misc/") || path.startsWith("textures/effect/")) {
+            return 2;
         }
         if (path.startsWith("textures/entity/") || path.startsWith("textures/models/") || path.startsWith("textures/painting/")) {
             return 3;
         }
         return 4;
+    }
+
+    private static boolean isBlockEntityTexturePath(String path) {
+        return path.startsWith("textures/entity/banner/")
+                || path.startsWith("textures/entity/beacon_beam")
+                || path.startsWith("textures/entity/bed/")
+                || path.startsWith("textures/entity/bell/")
+                || path.startsWith("textures/entity/chest/")
+                || path.startsWith("textures/entity/conduit/")
+                || path.startsWith("textures/entity/creeper/creeper")
+                || path.startsWith("textures/entity/decorated_pot/")
+                || path.startsWith("textures/entity/end_gateway_beam")
+                || path.startsWith("textures/entity/end_portal")
+                || path.startsWith("textures/entity/enderdragon/dragon")
+                || path.startsWith("textures/entity/hanging_signs/")
+                || path.startsWith("textures/entity/lectern_book")
+                || path.startsWith("textures/entity/piglin/piglin")
+                || path.startsWith("textures/entity/skeleton/skeleton")
+                || path.startsWith("textures/entity/skeleton/wither_skeleton")
+                || path.startsWith("textures/entity/shulker/")
+                || path.startsWith("textures/entity/signs/")
+                || path.startsWith("textures/entity/trapped_chest")
+                || path.startsWith("textures/entity/zombie/zombie");
     }
 
     private static float textureSpecificIntensity(ResourceLocation textureId, float intensity) {
@@ -614,6 +672,12 @@ public final class TextureMutationManager {
             this.textureIds = textureIds;
             this.donorTextureIds = donorTextureIds;
             this.staleTextureIds = staleTextureIds;
+        }
+    }
+
+    private record GuiTextureInventory(Map<ResourceLocation, Resource> resources, List<ResourceLocation> textureIds) {
+        private static GuiTextureInventory empty() {
+            return new GuiTextureInventory(Map.of(), List.of());
         }
     }
 

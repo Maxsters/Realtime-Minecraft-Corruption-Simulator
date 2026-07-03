@@ -177,6 +177,10 @@ public final class CorruptionOverlayManager {
         Minecraft minecraft = Minecraft.getInstance();
         resetQuickToggleScreenKeyIfReleased(minecraft);
         if (minecraft.level == null || minecraft.player == null) {
+            if (minecraft.getConnection() != null) {
+                updateDragFromCurrentMouse();
+                return;
+            }
             if (!currentWorldKey.isEmpty()) {
                 resetClientWorldState();
             }

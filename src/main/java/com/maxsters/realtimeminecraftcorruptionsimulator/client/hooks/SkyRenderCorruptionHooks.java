@@ -15,6 +15,7 @@ import java.lang.reflect.Method;
 @OnlyIn(Dist.CLIENT)
 public final class SkyRenderCorruptionHooks {
     private static final ThreadLocal<BuildContext> BUILD_CONTEXT = new ThreadLocal<>();
+    private static final ThreadLocal<Boolean> ALLOW_STAR_BUILD_CORRUPTION = ThreadLocal.withInitial(() -> false);
     private static Method createStarsMethod;
     private static boolean createStarsMethodChecked;
     private static String appliedSignature = "";
@@ -32,15 +33,23 @@ public final class SkyRenderCorruptionHooks {
         if (method == null || renderer == null) {
             return;
         }
+        ALLOW_STAR_BUILD_CORRUPTION.set(true);
         try {
             method.invoke(renderer);
             appliedSignature = signature;
         } catch (ReflectiveOperationException | RuntimeException ignored) {
+        } finally {
+            ALLOW_STAR_BUILD_CORRUPTION.remove();
         }
     }
 
     public static void beginBuild() {
-        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
+        if (!ALLOW_STAR_BUILD_CORRUPTION.get()) {
+            BUILD_CONTEXT.remove();
+            return;
+        }
+
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentUnsuppressed();
         if (!starMutationActive(stack)) {
             BUILD_CONTEXT.remove();
             return;

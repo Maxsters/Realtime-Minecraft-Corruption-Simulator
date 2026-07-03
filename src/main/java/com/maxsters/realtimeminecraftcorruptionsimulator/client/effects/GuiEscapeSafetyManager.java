@@ -30,7 +30,7 @@ public final class GuiEscapeSafetyManager {
         if (screen == null) {
             return;
         }
-        if (ClientCorruptionProtection.isSaveCriticalScreen(screen)) {
+        if (ClientCorruptionProtection.isSaveCriticalScreen(screen) || ClientCorruptionProtection.isDeathScreen(screen)) {
             return;
         }
         if (!ClientCorruptionEffects.current().activeOrExtreme(CorruptionSurface.GUI_SURFACE)) {

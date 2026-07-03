@@ -9,6 +9,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValue
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
@@ -49,6 +50,9 @@ public final class GuiTextureCorruptionManager {
 
     @SubscribeEvent
     public static void onScreenInitPost(ScreenEvent.Init.Post event) {
+        if (ClientCorruptionProtection.isDeathScreen(event.getScreen())) {
+            forceDeathScreenButtonsInteractable(event.getScreen(), event.getListenersList());
+        }
         if (ClientCorruptionProtection.isModScreen(event.getScreen()) || ClientCorruptionProtection.isSaveCriticalScreen(event.getScreen())) {
             return;
         }
@@ -58,6 +62,9 @@ public final class GuiTextureCorruptionManager {
         }
         TextureMutationManager.requestGuiTextureScan();
         mutateWidgetState(event.getScreen(), event.getListenersList(), stack);
+        if (ClientCorruptionProtection.isDeathScreen(event.getScreen())) {
+            forceDeathScreenButtonsInteractable(event.getScreen(), event.getListenersList());
+        }
     }
 
     @SubscribeEvent
@@ -76,6 +83,9 @@ public final class GuiTextureCorruptionManager {
             mutateWidgetState(screen, screen.children(), stack);
         } else {
             restoreWidgetState(screen, screen.children());
+        }
+        if (ClientCorruptionProtection.isDeathScreen(screen)) {
+            forceDeathScreenButtonsInteractable(screen, screen.children());
         }
     }
 
@@ -185,10 +195,12 @@ public final class GuiTextureCorruptionManager {
                 ? 1.0F
                 : Math.max(stack.targetIntensity(CorruptionSurface.GUI_SURFACE, targetId), stack.intensity(CorruptionSurface.GUI_SURFACE) * 0.58F);
         if (intensity <= 0.035F) {
+            original.restore(widget);
             return false;
         }
         float chance = Math.min(1.0F, 0.16F + intensity * 0.78F + stack.instability() * 0.16F);
         if (stack.unit(CorruptionSurface.GUI_SURFACE, targetId, 0x515549) > chance) {
+            original.restore(widget);
             return false;
         }
 
@@ -238,6 +250,9 @@ public final class GuiTextureCorruptionManager {
             return;
         }
         restoreWidgetState(screen, screen.children());
+        if (ClientCorruptionProtection.isDeathScreen(screen)) {
+            forceDeathScreenButtonsInteractable(screen, screen.children());
+        }
     }
 
     private static void restoreWidgetState(Screen screen, Iterable<? extends GuiEventListener> listeners) {
@@ -260,6 +275,7 @@ public final class GuiTextureCorruptionManager {
         if (screen == null
                 || !stack.activeOrExtreme(CorruptionSurface.GUI_SURFACE)
                 || ClientCorruptionProtection.isModScreen(screen)
+                || ClientCorruptionProtection.isDeathScreen(screen)
                 || ClientCorruptionProtection.isLifecycleAccessScreen(screen)) {
             return false;
         }
@@ -278,6 +294,23 @@ public final class GuiTextureCorruptionManager {
 
     private static String widgetTarget(Screen screen, AbstractWidget widget, int index, WidgetSnapshot original) {
         return screen.getClass().getName() + ":" + widget.getClass().getName() + ":" + index + ":" + original.x() + "," + original.y() + ":" + original.width() + "x" + widget.getHeight();
+    }
+
+    private static void forceDeathScreenButtonsInteractable(Screen screen, Iterable<? extends GuiEventListener> listeners) {
+        if (!ClientCorruptionProtection.isDeathScreen(screen)) {
+            return;
+        }
+        for (AbstractWidget widget : collectWidgets(screen, listeners)) {
+            if (!(widget instanceof Button)) {
+                continue;
+            }
+            WidgetSnapshot original = ORIGINAL_WIDGETS.computeIfAbsent(widget, WidgetSnapshot::capture);
+            original.restoreLayoutAndText(widget);
+            widget.active = true;
+            widget.visible = true;
+            widget.setAlpha(1.0F);
+            original.restoreFgColor(widget);
+        }
     }
 
     private static int stableHash(long value) {
@@ -347,6 +380,13 @@ public final class GuiTextureCorruptionManager {
             widget.visible = visible;
             widget.setAlpha(alpha);
             restoreFgColor(widget);
+            widget.setMessage(message);
+        }
+
+        private void restoreLayoutAndText(AbstractWidget widget) {
+            widget.setX(x);
+            widget.setY(y);
+            widget.setWidth(width);
             widget.setMessage(message);
         }
 

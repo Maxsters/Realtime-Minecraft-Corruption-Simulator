@@ -24,7 +24,33 @@ public abstract class EntityRenderDispatcherMixin {
             require = 0
     )
     private <E extends Entity> void rmc$corruptNonLivingEntityAnimation(E entity, double x, double y, double z, float entityYaw, float partialTick, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, CallbackInfo callback) {
-        ModelRenderCorruptionHooks.mutateNonLivingEntityTransform(entity, partialTick, poseStack);
+        ModelRenderCorruptionHooks.mutateEntityRenderPosition(entity, partialTick, poseStack);
+    }
+
+    @Inject(
+            method = {
+                    "render(Lnet/minecraft/world/entity/Entity;DDDFFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
+                    "m_114384_"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/entity/EntityRenderer;m_7392_(Lnet/minecraft/world/entity/Entity;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V", remap = false),
+            remap = false,
+            require = 0
+    )
+    private <E extends Entity> void rmc$corruptNonLivingEntityAnimationSrg(E entity, double x, double y, double z, float entityYaw, float partialTick, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, CallbackInfo callback) {
+        ModelRenderCorruptionHooks.mutateEntityRenderPosition(entity, partialTick, poseStack);
+    }
+
+    @Inject(
+            method = {
+                    "render(Lnet/minecraft/world/entity/Entity;DDDFFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
+                    "m_114384_"
+            },
+            at = @At("RETURN"),
+            remap = false,
+            require = 0
+    )
+    private <E extends Entity> void rmc$clearCorruptedEntityRenderPosition(E entity, double x, double y, double z, float entityYaw, float partialTick, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, CallbackInfo callback) {
+        ModelRenderCorruptionHooks.clearEntityRenderPositionMarker(entity);
     }
 
     @Inject(

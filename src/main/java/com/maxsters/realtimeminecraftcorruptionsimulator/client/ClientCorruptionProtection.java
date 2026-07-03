@@ -65,6 +65,10 @@ public final class ClientCorruptionProtection {
                 || name.contains("ConfirmScreen");
     }
 
+    public static boolean isDeathScreen(Screen screen) {
+        return screen != null && screen.getClass().getName().endsWith("DeathScreen");
+    }
+
     public static boolean isSaveCriticalScreen(Screen screen) {
         if (screen == null) {
             return false;
@@ -74,7 +78,6 @@ public final class ClientCorruptionProtection {
                 || name.endsWith("ReceivingLevelScreen")
                 || name.endsWith("GenericDirtMessageScreen")
                 || name.endsWith("LevelLoadingScreen")
-                || name.endsWith("DeathScreen")
                 || name.endsWith("DisconnectedScreen");
     }
 

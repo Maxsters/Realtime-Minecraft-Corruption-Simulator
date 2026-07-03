@@ -21,6 +21,10 @@ public final class ClientCorruptionEffects {
         return fromClientSnapshot();
     }
 
+    public static CorruptionEffectStack currentUnsuppressed() {
+        return fromClientSnapshot();
+    }
+
     public static CorruptionEffectStack currentForWorldRendering() {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null || minecraft.level == null) {
