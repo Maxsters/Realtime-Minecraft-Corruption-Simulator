@@ -6,7 +6,6 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.Achievem
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.ApplyCorruptionSettingsPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.CorruptionStateSyncPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.InitializeCorruptionSettingsPacket;
-import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.OpenCorruptionToolPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.QuickToggleCorruptionPacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.RequestCorruptionStatePacket;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.UpdateSettingsAccessPacket;
@@ -25,7 +24,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import java.util.Optional;
 
 public final class ModNetwork {
-    private static final String PROTOCOL_VERSION = "7";
+    private static final String PROTOCOL_VERSION = "8";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(RealtimeMinecraftCorruptionSimulator.MOD_ID, "main"),
@@ -50,14 +49,8 @@ public final class ModNetwork {
         CHANNEL.registerMessage(nextId(), QuickToggleCorruptionPacket.class, QuickToggleCorruptionPacket::encode, QuickToggleCorruptionPacket::decode, QuickToggleCorruptionPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(nextId(), UpdateSettingsAccessPacket.class, UpdateSettingsAccessPacket::encode, UpdateSettingsAccessPacket::decode, UpdateSettingsAccessPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(nextId(), CorruptionStateSyncPacket.class, CorruptionStateSyncPacket::encode, CorruptionStateSyncPacket::decode, CorruptionStateSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-        CHANNEL.registerMessage(nextId(), OpenCorruptionToolPacket.class, OpenCorruptionToolPacket::encode, OpenCorruptionToolPacket::decode, OpenCorruptionToolPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(nextId(), AchievementEventPacket.class, AchievementEventPacket::encode, AchievementEventPacket::decode, AchievementEventPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         registered = true;
-    }
-
-    public static void openTool(ServerPlayer player) {
-        sendState(player);
-        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new OpenCorruptionToolPacket());
     }
 
     public static void sendState(ServerPlayer player) {

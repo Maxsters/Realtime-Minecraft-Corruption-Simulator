@@ -55,10 +55,6 @@ public final class ClientNetworkHandlers {
         });
     }
 
-    public static void openOverlayFromServer() {
-        Minecraft.getInstance().execute(CorruptionOverlayManager::openOverlayForInteraction);
-    }
-
     public static void handleAchievementEvent(String eventId) {
         Minecraft.getInstance().execute(() -> {
             if (AchievementEventPacket.DIAMOND_ORE_MINED.equals(eventId)) {

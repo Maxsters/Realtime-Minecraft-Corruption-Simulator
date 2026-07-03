@@ -3,17 +3,14 @@ package com.maxsters.realtimeminecraftcorruptionsimulator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.config.GlobalCorruptionSettings;
 import com.maxsters.realtimeminecraftcorruptionsimulator.diagnostics.CorruptionStallWatchdog;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.ModNetwork;
-import com.maxsters.realtimeminecraftcorruptionsimulator.registry.ModItems;
 import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
 
 import java.util.HashMap;
@@ -29,9 +26,7 @@ public final class RealtimeMinecraftCorruptionSimulator {
     private final Map<UUID, Boolean> knownOperatorStatus = new HashMap<>();
     private int permissionSyncTicker;
 
-    public RealtimeMinecraftCorruptionSimulator(FMLJavaModLoadingContext context) {
-        IEventBus modEventBus = context.getModEventBus();
-        ModItems.ITEMS.register(modEventBus);
+    public RealtimeMinecraftCorruptionSimulator() {
         GlobalCorruptionSettings.ensureLoaded();
         ModNetwork.register();
         CorruptionStallWatchdog.bootstrap();
