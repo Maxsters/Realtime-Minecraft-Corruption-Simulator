@@ -35,6 +35,7 @@ public final class CorruptionStallWatchdog {
         if (!STARTED.compareAndSet(false, true)) {
             return;
         }
+        resetThreadDumpLog();
         Thread thread = new Thread(CorruptionStallWatchdog::watchLoop, "RMC corruption stall watchdog");
         thread.setDaemon(true);
         thread.start();
@@ -80,7 +81,7 @@ public final class CorruptionStallWatchdog {
     }
 
     private static void writeThreadDump(String side, long stalledMs) {
-        Path path = FMLPaths.GAMEDIR.get().resolve("logs").resolve("realtime_minecraft_corruption_simulator-stall.txt");
+        Path path = threadDumpPath();
         try {
             Files.createDirectories(path.getParent());
             try (BufferedWriter writer = Files.newBufferedWriter(
@@ -101,6 +102,26 @@ public final class CorruptionStallWatchdog {
         } catch (IOException exception) {
             RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to write Realtime Minecraft Corruption Simulator stall dump", exception);
         }
+    }
+
+    private static void resetThreadDumpLog() {
+        Path path = threadDumpPath();
+        try {
+            Files.createDirectories(path.getParent());
+            Files.writeString(
+                    path,
+                    "",
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING
+            );
+        } catch (IOException exception) {
+            RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to reset Realtime Minecraft Corruption Simulator stall dump", exception);
+        }
+    }
+
+    private static Path threadDumpPath() {
+        return FMLPaths.GAMEDIR.get().resolve("logs").resolve("realtime_minecraft_corruption_simulator-stall.txt");
     }
 
     private static void writeThread(BufferedWriter writer, Map.Entry<Thread, StackTraceElement[]> entry) {
