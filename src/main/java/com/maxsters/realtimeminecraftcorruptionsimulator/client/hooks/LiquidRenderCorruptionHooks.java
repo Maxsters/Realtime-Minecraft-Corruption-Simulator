@@ -27,29 +27,49 @@ public final class LiquidRenderCorruptionHooks {
         Vec3 renderOffset = BlockRenderCorruptionHooks.currentRenderSpaceOffset(pos);
         boolean hasRenderOffset = BlockRenderCorruptionHooks.hasRenderSpaceOffset(renderOffset);
         boolean hasGeometryCorruption = stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY);
-        if (!hasGeometryCorruption && !hasRenderOffset) {
+        boolean hasTextureCorruption = stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY);
+        if (!hasGeometryCorruption && !hasRenderOffset && !hasTextureCorruption) {
             return consumer;
-        }
-        if (!hasGeometryCorruption) {
-            return new CorruptedLiquidVertexConsumer(consumer, LiquidGeometryContext.renderOffsetOnly(renderOffset));
         }
 
         ResourceLocation fluidId = ForgeRegistries.FLUIDS.getKey(fluidState.getType());
-        String targetId = "liquid_geometry:" + (fluidId == null ? "unknown" : fluidId) + ":" + pos.getX() + ":" + pos.getY() + ":" + pos.getZ();
-        float intensity = stack.extreme(CorruptionSurface.MODEL_GEOMETRY)
-                ? 1.0F
-                : Math.max(stack.targetIntensity(CorruptionSurface.MODEL_GEOMETRY, targetId), stack.intensity(CorruptionSurface.MODEL_GEOMETRY) * 0.85F);
-        if (intensity <= 0.01F && !hasRenderOffset) {
-            return consumer;
+        String fluidName = fluidId == null ? "unknown" : fluidId.toString();
+        LiquidGeometryContext geometry = LiquidGeometryContext.none(renderOffset);
+        if (hasGeometryCorruption) {
+            String targetId = "liquid_geometry:" + fluidName + ":" + pos.getX() + ":" + pos.getY() + ":" + pos.getZ();
+            float intensity = stack.extreme(CorruptionSurface.MODEL_GEOMETRY)
+                    ? 1.0F
+                    : Math.max(stack.targetIntensity(CorruptionSurface.MODEL_GEOMETRY, targetId), stack.intensity(CorruptionSurface.MODEL_GEOMETRY) * 0.85F);
+            if (intensity > 0.01F || hasRenderOffset) {
+                geometry = new LiquidGeometryContext(
+                        stack,
+                        stack.stableLong(CorruptionSurface.MODEL_GEOMETRY, targetId, 0x4C495147),
+                        intensity,
+                        stack.extreme(CorruptionSurface.MODEL_GEOMETRY),
+                        renderOffset
+                );
+            }
         }
 
-        return new CorruptedLiquidVertexConsumer(consumer, new LiquidGeometryContext(
-                stack,
-                stack.stableLong(CorruptionSurface.MODEL_GEOMETRY, targetId, 0x4C495147),
-                intensity,
-                stack.extreme(CorruptionSurface.MODEL_GEOMETRY),
-                renderOffset
-        ));
+        LiquidTextureContext texture = LiquidTextureContext.none();
+        if (hasTextureCorruption) {
+            String targetId = "liquid_texture:" + fluidName + ":" + pos.getX() + ":" + pos.getY() + ":" + pos.getZ();
+            float intensity = stack.extreme(CorruptionSurface.TEXTURE_MEMORY)
+                    ? 1.0F
+                    : Math.max(stack.targetIntensity(CorruptionSurface.TEXTURE_MEMORY, targetId), stack.intensity(CorruptionSurface.TEXTURE_MEMORY) * 0.88F);
+            if (intensity > 0.015F) {
+                texture = new LiquidTextureContext(
+                        stack.stableLong(CorruptionSurface.TEXTURE_MEMORY, targetId, 0x4C495154),
+                        intensity,
+                        stack.extreme(CorruptionSurface.TEXTURE_MEMORY)
+                );
+            }
+        }
+
+        if (!geometry.active() && !texture.active()) {
+            return consumer;
+        }
+        return new CorruptedLiquidVertexConsumer(consumer, geometry, texture);
     }
 
     public static boolean shouldDropLiquidMesh(BlockPos pos, FluidState fluidState) {
@@ -90,8 +110,12 @@ public final class LiquidRenderCorruptionHooks {
             this.geometryCorruption = intensity > 0.01F;
         }
 
-        private static LiquidGeometryContext renderOffsetOnly(Vec3 renderOffset) {
+        private static LiquidGeometryContext none(Vec3 renderOffset) {
             return new LiquidGeometryContext(null, 0L, 0.0F, false, renderOffset);
+        }
+
+        private boolean active() {
+            return geometryCorruption || BlockRenderCorruptionHooks.hasRenderSpaceOffset(renderOffset);
         }
 
         private double[] corrupt(double x, double y, double z) {
@@ -197,33 +221,143 @@ public final class LiquidRenderCorruptionHooks {
         }
     }
 
+    private static final class LiquidTextureContext {
+        private final long seed;
+        private final float intensity;
+        private final boolean extreme;
+        private final boolean textureCorruption;
+        private int vertexOrdinal;
+
+        private LiquidTextureContext(long seed, float intensity, boolean extreme) {
+            this.seed = seed;
+            this.intensity = intensity;
+            this.extreme = extreme;
+            this.textureCorruption = intensity > 0.015F || extreme;
+        }
+
+        private static LiquidTextureContext none() {
+            return new LiquidTextureContext(0L, 0.0F, false);
+        }
+
+        private boolean active() {
+            return textureCorruption;
+        }
+
+        private float[] corruptUv(float u, float v) {
+            if (!textureCorruption) {
+                return new float[]{u, v};
+            }
+
+            int ordinal = vertexOrdinal++;
+            int face = ordinal >> 2;
+            int corner = ordinal & 3;
+            long faceSeed = mixLong(seed ^ (long) face * 0x9E3779B97F4A7C15L);
+            long vertexSeed = mixLong(faceSeed ^ (long) corner * 0xD1B54A32D192ED03L);
+            float chance = extreme ? 1.0F : Mth.clamp(0.12F + intensity * 0.78F, 0.0F, 0.96F);
+            if (unit(vertexSeed ^ 0x55564741L) > chance) {
+                return new float[]{u, v};
+            }
+
+            float du = u - 0.5F;
+            float dv = v - 0.5F;
+            float power = intensity * intensity;
+            int mode = Math.floorMod((int) (faceSeed >>> 29), 8);
+            float scaleU = 1.0F + (float) unit(faceSeed ^ 0x55534341L) * (2.0F + power * 28.0F);
+            float scaleV = 1.0F + (float) unit(faceSeed ^ 0x56534341L) * (2.0F + power * 24.0F);
+            if (mode == 1 || mode == 5) {
+                scaleU = Math.max(0.012F, 0.32F - intensity * 0.28F);
+            }
+            if (mode == 2 || mode == 5) {
+                scaleV = Math.max(0.012F, 0.32F - intensity * 0.28F);
+            }
+
+            float shearU = (float) signed(faceSeed ^ 0x55534852L, power * 4.2D);
+            float shearV = (float) signed(faceSeed ^ 0x56534852L, power * 3.8D);
+            float offsetU = (float) signed(faceSeed ^ 0x554F4646L, 0.20D + power * 8.0D);
+            float offsetV = (float) signed(faceSeed ^ 0x564F4646L, 0.20D + power * 7.2D);
+            float corruptedU = 0.5F + du * scaleU + dv * shearU + offsetU;
+            float corruptedV = 0.5F + dv * scaleV + du * shearV + offsetV;
+
+            if (mode == 3 || mode == 6) {
+                float step = 0.015625F + (float) unit(vertexSeed ^ 0x51554155L) * (0.08F + intensity * 0.70F);
+                corruptedU = Math.round(corruptedU / step) * step;
+            }
+            if (mode == 4 || mode == 6) {
+                float step = 0.015625F + (float) unit(vertexSeed ^ 0x51554156L) * (0.08F + intensity * 0.64F);
+                corruptedV = Math.round(corruptedV / step) * step;
+            }
+            if (mode == 7 || (extreme && unit(vertexSeed ^ 0x45444745L) < 0.32D)) {
+                corruptedU = (float) signed(vertexSeed ^ 0x55454447L, 2.8D + intensity * 9.0D);
+                corruptedV = (float) signed(vertexSeed ^ 0x56454447L, 2.8D + intensity * 8.0D);
+            }
+
+            return new float[]{
+                    Mth.clamp(corruptedU, -12.0F, 13.0F),
+                    Mth.clamp(corruptedV, -12.0F, 13.0F)
+            };
+        }
+
+        private int corruptColor(int red, int green, int blue, int alpha) {
+            if (!textureCorruption) {
+                return alpha << 24 | red << 16 | green << 8 | blue;
+            }
+
+            long colorSeed = mixLong(seed ^ (long) Math.max(0, vertexOrdinal - 1) * 0xC2B2AE3D27D4EB4FL);
+            if (!extreme && unit(colorSeed ^ 0x434F4C52L) > 0.08D + intensity * 0.46D) {
+                return alpha << 24 | red << 16 | green << 8 | blue;
+            }
+
+            int mode = Math.floorMod((int) (seed >>> 41), 6);
+            if (mode == 0) {
+                return Math.max(alpha, 0xB0) << 24 | 0xFF00FF;
+            }
+            if (mode == 1) {
+                int channel = unit(colorSeed ^ 0x57484954L) < 0.5D ? 0 : 255;
+                return alpha << 24 | channel << 16 | channel << 8 | channel;
+            }
+
+            float wash = Mth.clamp(0.25F + intensity * 0.70F, 0.0F, 1.0F);
+            int targetRed = Math.round((float) unit(seed ^ 0x524544L) * 255.0F);
+            int targetGreen = Math.round((float) unit(seed ^ 0x475245L) * 255.0F);
+            int targetBlue = Math.round((float) unit(seed ^ 0x424C55L) * 255.0F);
+            int corruptedRed = Mth.clamp(Math.round(red * (1.0F - wash) + targetRed * wash), 0, 255);
+            int corruptedGreen = Mth.clamp(Math.round(green * (1.0F - wash) + targetGreen * wash), 0, 255);
+            int corruptedBlue = Mth.clamp(Math.round(blue * (1.0F - wash) + targetBlue * wash), 0, 255);
+            return alpha << 24 | corruptedRed << 16 | corruptedGreen << 8 | corruptedBlue;
+        }
+    }
+
     private static final class CorruptedLiquidVertexConsumer implements VertexConsumer {
         private final VertexConsumer delegate;
-        private final LiquidGeometryContext context;
+        private final LiquidGeometryContext geometry;
+        private final LiquidTextureContext texture;
         private VertexConsumer active;
 
-        private CorruptedLiquidVertexConsumer(VertexConsumer delegate, LiquidGeometryContext context) {
+        private CorruptedLiquidVertexConsumer(VertexConsumer delegate, LiquidGeometryContext geometry, LiquidTextureContext texture) {
             this.delegate = delegate;
-            this.context = context;
+            this.geometry = geometry;
+            this.texture = texture;
             this.active = delegate;
         }
 
         @Override
         public VertexConsumer vertex(double x, double y, double z) {
-            double[] corrupted = context.corrupt(x, y, z);
+            double[] corrupted = geometry.corrupt(x, y, z);
             active = delegate.vertex(corrupted[0], corrupted[1], corrupted[2]);
             return this;
         }
 
         @Override
         public VertexConsumer color(int red, int green, int blue, int alpha) {
-            active = active.color(red, green, blue, alpha);
+            int color = texture.corruptColor(red, green, blue, alpha);
+            active = active.color((color >>> 16) & 0xFF, (color >>> 8) & 0xFF, color & 0xFF, (color >>> 24) & 0xFF);
             return this;
         }
 
         @Override
         public VertexConsumer uv(float u, float v) {
-            active = active.uv(u, v);
+            float[] corrupted = texture.corruptUv(u, v);
+            active = active.uv(corrupted[0], corrupted[1]);
             return this;
         }
 

@@ -1,11 +1,13 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.diagnostics;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
+import net.minecraft.client.Minecraft;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import net.minecraftforge.fml.loading.FMLPaths;
 
 import java.io.BufferedWriter;
@@ -63,6 +65,13 @@ public final class CorruptionStallWatchdog {
             try {
                 Thread.sleep(2_000L);
                 long now = System.currentTimeMillis();
+                if (isIntegratedServerPaused()) {
+                    lastClientTickMs = now;
+                    lastServerTickMs = now;
+                    clientDumped = false;
+                    serverDumped = false;
+                    continue;
+                }
                 if (lastClientTickMs > 0L && !clientDumped && now - lastClientTickMs >= STALL_THRESHOLD_MS) {
                     clientDumped = true;
                     writeThreadDump("CLIENT", now - lastClientTickMs);
@@ -77,6 +86,21 @@ public final class CorruptionStallWatchdog {
             } catch (RuntimeException exception) {
                 RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Realtime Minecraft Corruption Simulator stall watchdog failed", exception);
             }
+        }
+    }
+
+    private static boolean isIntegratedServerPaused() {
+        return FMLEnvironment.dist == Dist.CLIENT && ClientPauseState.isPaused();
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static final class ClientPauseState {
+        private ClientPauseState() {
+        }
+
+        private static boolean isPaused() {
+            Minecraft minecraft = Minecraft.getInstance();
+            return minecraft != null && minecraft.getSingleplayerServer() != null && minecraft.isPaused();
         }
     }
 

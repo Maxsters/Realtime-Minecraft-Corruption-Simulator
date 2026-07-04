@@ -64,6 +64,7 @@
     "client.ScreenMixin",
     "client.SheetedDecalTextureGeneratorMixin",
     "client.ShulkerBoxBlockEntityAnimationMixin",
+    "client.SingleQuadParticleTextureMixin",
     "client.SimpleBakedModelMixin",
     "client.SkullBlockEntityAnimationMixin",
     "client.TheEndGatewayBlockEntityAnimationMixin",

@@ -45,7 +45,7 @@ public abstract class TerrainParticleMixin {
 
     private void rmc$corruptTerrainSprite(BlockState state, BlockPos pos) {
         TextureAtlasSprite original = rmc$getSprite();
-        TextureAtlasSprite corrupted = ItemTextureCorruptionManager.corruptParticleSprite(original, rmc$targetId(state, pos), pos == null ? 0x50415254 : pos.hashCode());
+        TextureAtlasSprite corrupted = ItemTextureCorruptionManager.corruptParticleSprite(original, rmc$targetId(original, state), rmc$salt(original, state));
         if (corrupted != null && corrupted != original) {
             rmc$setSprite(corrupted);
         }
@@ -99,8 +99,16 @@ public abstract class TerrainParticleMixin {
         }
     }
 
-    private static String rmc$targetId(BlockState state, BlockPos pos) {
+    private static String rmc$targetId(TextureAtlasSprite sprite, BlockState state) {
+        if (sprite != null && sprite.contents() != null && sprite.contents().name() != null) {
+            ResourceLocation atlas = sprite.atlasLocation();
+            return "terrain_particle_sprite:" + (atlas == null ? "unknown_atlas" : atlas) + ":" + sprite.contents().name();
+        }
         ResourceLocation id = state == null ? null : ForgeRegistries.BLOCKS.getKey(state.getBlock());
-        return "terrain_particle:" + (id == null ? "unknown" : id) + ":" + (pos == null ? "none" : pos.asLong());
+        return "terrain_particle_block:" + (id == null ? "unknown" : id);
+    }
+
+    private static int rmc$salt(TextureAtlasSprite sprite, BlockState state) {
+        return rmc$targetId(sprite, state).hashCode() ^ 0x54455250;
     }
 }

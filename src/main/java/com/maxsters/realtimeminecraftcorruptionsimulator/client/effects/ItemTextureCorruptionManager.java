@@ -12,6 +12,7 @@ import com.mojang.math.Axis;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.block.model.ItemOverrides;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.BlockPos;
@@ -19,6 +20,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.BlockAndTintGetter;
@@ -32,6 +34,8 @@ import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.lang.reflect.Array;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -50,9 +54,12 @@ public final class ItemTextureCorruptionManager {
     private static final Set<ResourceLocation> SPRITE_POOL_IDS = new HashSet<>();
     private static final Map<ResourceLocation, List<TextureAtlasSprite>> SPRITES_BY_ATLAS = new HashMap<>();
     private static final Set<CorruptedItemBakedModel> MODEL_WRAPPERS = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private static final ConcurrentMap<BakedModel, CorruptedItemBakedModel> RUNTIME_ITEM_MODEL_WRAPPERS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<BakedModel, CorruptedItemBakedModel> RUNTIME_BLOCK_MODEL_WRAPPERS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<ResourceLocation, CorruptedItemBakedModel> RENDERED_BLOCK_QUAD_WRAPPERS = new ConcurrentHashMap<>();
     private static final ThreadLocal<Boolean> SUPPRESS_RETURNED_QUAD_HOOK = ThreadLocal.withInitial(() -> false);
+    private static final Field ITEM_OVERRIDES_FIELD = field(ItemOverrides.class, "overrides", "f_111735_");
+    private static final ConcurrentMap<Class<?>, Field> BAKED_OVERRIDE_MODEL_FIELDS = new ConcurrentHashMap<>();
 
     private ItemTextureCorruptionManager() {
     }
@@ -259,7 +266,11 @@ public final class ItemTextureCorruptionManager {
         for (CorruptedItemBakedModel wrapper : MODEL_WRAPPERS) {
             wrapper.clearCache();
         }
+        for (CorruptedItemBakedModel wrapper : RUNTIME_ITEM_MODEL_WRAPPERS.values()) {
+            wrapper.clearCache();
+        }
         RUNTIME_BLOCK_MODEL_WRAPPERS.clear();
+        RUNTIME_ITEM_MODEL_WRAPPERS.clear();
         RENDERED_BLOCK_QUAD_WRAPPERS.clear();
     }
 
@@ -341,14 +352,20 @@ public final class ItemTextureCorruptionManager {
         private final String modelId;
         private final boolean blockModel;
         private final int effectHash;
+        private final ItemOverrides overrides;
         private final ConcurrentMap<Integer, ConcurrentMap<BakedQuad, BakedQuad>> textureLeakedQuadsByBucket = new ConcurrentHashMap<>();
         private final ConcurrentMap<Integer, ConcurrentMap<BakedQuad, BakedQuad>> modelGeometryQuadsByBucket = new ConcurrentHashMap<>();
 
         private CorruptedItemBakedModel(@Nullable BakedModel delegate, ResourceLocation modelId, boolean tracked) {
+            this(delegate, modelId.toString(), isBlockModelSurface(modelId), tracked);
+        }
+
+        private CorruptedItemBakedModel(@Nullable BakedModel delegate, String modelId, boolean blockModel, boolean tracked) {
             this.delegate = delegate;
-            this.modelId = modelId.toString();
-            this.blockModel = isBlockModelSurface(modelId);
-            this.effectHash = stableHash(modelId.toString(), ITEM_TEXTURE_SEED ^ 0x445241575f495445L);
+            this.modelId = modelId;
+            this.blockModel = blockModel;
+            this.effectHash = stableHash(modelId, ITEM_TEXTURE_SEED ^ 0x445241575f495445L);
+            this.overrides = delegate == null ? ItemOverrides.EMPTY : new CorruptedItemOverrides(this, delegate.getOverrides());
             if (tracked) {
                 MODEL_WRAPPERS.add(this);
             }
@@ -422,7 +439,7 @@ public final class ItemTextureCorruptionManager {
 
         @Override
         public ItemOverrides getOverrides() {
-            return delegate.getOverrides();
+            return overrides;
         }
 
         @Override
@@ -810,6 +827,193 @@ public final class ItemTextureCorruptionManager {
             modelGeometryQuadsByBucket.clear();
         }
 
+        private BakedModel wrapResolvedOverride(@Nullable BakedModel model, ItemStack stack, int overrideIndex) {
+            if (model == null || model == delegate) {
+                return this;
+            }
+            if (model instanceof CorruptedItemBakedModel) {
+                return model;
+            }
+            String itemId = itemTargetId(stack);
+            String id = modelId + ":override:" + itemId + ":" + Math.max(0, overrideIndex);
+            return RUNTIME_ITEM_MODEL_WRAPPERS.computeIfAbsent(model, key -> new CorruptedItemBakedModel(key, id, false, false));
+        }
+
+    }
+
+    private static final class CorruptedItemOverrides extends ItemOverrides {
+        private final CorruptedItemBakedModel owner;
+        private final ItemOverrides delegate;
+        private final List<BakedModel> overrideModels;
+
+        private CorruptedItemOverrides(CorruptedItemBakedModel owner, ItemOverrides delegate) {
+            this.owner = owner;
+            this.delegate = delegate == null ? ItemOverrides.EMPTY : delegate;
+            this.overrideModels = readOverrideModels(this.delegate);
+        }
+
+        @Override
+        public @Nullable BakedModel resolve(@NotNull BakedModel model, @NotNull ItemStack stack, @Nullable ClientLevel level, @Nullable LivingEntity entity, int seed) {
+            BakedModel base = owner.delegate == null ? model : owner.delegate;
+            BakedModel resolved = delegate.resolve(base, stack, level, entity, seed);
+            int resolvedIndex = indexOfModel(resolved);
+            BakedModel selected = corruptOverrideChoice(resolved, resolvedIndex, stack, level, entity, seed);
+            int selectedIndex = indexOfModel(selected);
+            return owner.wrapResolvedOverride(selected, stack, selectedIndex);
+        }
+
+        private BakedModel corruptOverrideChoice(@Nullable BakedModel resolved, int resolvedIndex, ItemStack itemStack, @Nullable ClientLevel level, @Nullable LivingEntity entity, int renderSeed) {
+            if (overrideModels.size() < 2 || itemStack == null || itemStack.isEmpty()) {
+                return resolved;
+            }
+
+            CorruptionEffectStack stack = ClientCorruptionEffects.current();
+            String targetId = "item_override_state:" + itemTargetId(itemStack);
+            if (!stack.activeOrExtreme(CorruptionSurface.INTERACTION_ROUTING, targetId)
+                    && !stack.activeOrExtreme(CorruptionSurface.INTERACTION_ROUTING)) {
+                return resolved;
+            }
+
+            float intensity = stack.extreme(CorruptionSurface.INTERACTION_ROUTING)
+                    ? 1.0F
+                    : Mth.clamp(Math.max(
+                            stack.targetIntensity(CorruptionSurface.INTERACTION_ROUTING, targetId),
+                            stack.intensity(CorruptionSurface.INTERACTION_ROUTING) * 0.78F
+                    ) + stack.instability() * 0.08F, 0.0F, 1.0F);
+            if (intensity <= 0.025F) {
+                return resolved;
+            }
+
+            long clock = overrideClock(level, entity, intensity);
+            int salt = itemOverrideSalt(itemStack, renderSeed) ^ (int) clock;
+            long hash = stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, targetId, salt);
+            float chance = stack.extreme(CorruptionSurface.INTERACTION_ROUTING)
+                    ? 0.98F
+                    : Mth.clamp(0.06F + intensity * 0.74F + stack.instability() * 0.08F, 0.0F, 0.92F);
+            if (!stack.extreme(CorruptionSurface.INTERACTION_ROUTING)
+                    && stack.unit(CorruptionSurface.INTERACTION_ROUTING, targetId + ":override_gate", salt) > chance) {
+                return resolved;
+            }
+
+            int count = overrideModels.size();
+            int mode = Math.floorMod((int) (hash >>> 29), 7);
+            int selectedIndex = switch (mode) {
+                case 0 -> resolvedIndex >= 0 ? count - 1 - resolvedIndex : count - 1;
+                case 1 -> 0;
+                case 2 -> count - 1;
+                case 3 -> Math.floorMod(resolvedIndex + 1, count);
+                default -> CorruptionValueMutator.selectIndex(stack, CorruptionSurface.INTERACTION_ROUTING, targetId + ":override_pick", salt ^ 0x4F5652, count);
+            };
+            if (selectedIndex == resolvedIndex && count > 1) {
+                selectedIndex = Math.floorMod(selectedIndex + 1 + (int) (hash & 3L), count);
+            }
+            BakedModel selected = overrideModels.get(selectedIndex);
+            return selected == null ? resolved : selected;
+        }
+
+        private int indexOfModel(@Nullable BakedModel model) {
+            if (model == null) {
+                return -1;
+            }
+            for (int i = 0; i < overrideModels.size(); i++) {
+                if (overrideModels.get(i) == model) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+    }
+
+    private static List<BakedModel> readOverrideModels(ItemOverrides overrides) {
+        if (overrides == null || ITEM_OVERRIDES_FIELD == null) {
+            return Collections.emptyList();
+        }
+        try {
+            Object value = ITEM_OVERRIDES_FIELD.get(overrides);
+            if (value == null) {
+                return Collections.emptyList();
+            }
+            List<BakedModel> models = new ArrayList<>();
+            if (value instanceof Iterable<?> iterable) {
+                for (Object override : iterable) {
+                    addOverrideModel(models, override);
+                }
+            } else if (value.getClass().isArray()) {
+                int length = Array.getLength(value);
+                for (int i = 0; i < length; i++) {
+                    addOverrideModel(models, Array.get(value, i));
+                }
+            }
+            return models.size() < 2 ? Collections.emptyList() : List.copyOf(models);
+        } catch (IllegalAccessException ignored) {
+            return Collections.emptyList();
+        }
+    }
+
+    private static void addOverrideModel(List<BakedModel> models, Object override) {
+        BakedModel model = overrideModel(override);
+        if (model != null && !(model instanceof CorruptedItemBakedModel)) {
+            models.add(model);
+        }
+    }
+
+    @Nullable
+    private static BakedModel overrideModel(Object override) {
+        if (override == null) {
+            return null;
+        }
+        Field field = BAKED_OVERRIDE_MODEL_FIELDS.computeIfAbsent(override.getClass(), type -> field(type, "model", "f_173481_"));
+        if (field == null) {
+            return null;
+        }
+        try {
+            Object value = field.get(override);
+            return value instanceof BakedModel model ? model : null;
+        } catch (IllegalAccessException ignored) {
+            return null;
+        }
+    }
+
+    @Nullable
+    private static Field field(Class<?> type, String... names) {
+        for (String name : names) {
+            try {
+                Field field = type.getDeclaredField(name);
+                field.setAccessible(true);
+                return field;
+            } catch (NoSuchFieldException ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static long overrideClock(@Nullable ClientLevel level, @Nullable LivingEntity entity, float intensity) {
+        long gameTime = 0L;
+        if (level != null) {
+            gameTime = level.getGameTime();
+        } else if (entity != null && entity.level() != null) {
+            gameTime = entity.level().getGameTime();
+        }
+        long cadence = Math.max(1L, Math.round(Mth.lerp(intensity, 18.0F, 2.0F)));
+        return Math.floorDiv(gameTime, cadence);
+    }
+
+    private static int itemOverrideSalt(ItemStack stack, int renderSeed) {
+        int salt = renderSeed ^ 0x49544F56;
+        if (stack == null || stack.isEmpty()) {
+            return salt;
+        }
+        salt = salt * 31 + stack.getItem().hashCode();
+        salt = salt * 31 + stack.getDamageValue();
+        if (stack.hasTag()) {
+            salt = salt * 31 + stack.getTag().hashCode();
+        }
+        return salt;
+    }
+
+    private static String itemTargetId(ItemStack stack) {
+        ResourceLocation itemId = stack == null || stack.isEmpty() ? null : ForgeRegistries.ITEMS.getKey(stack.getItem());
+        return itemId == null ? "unknown" : itemId.toString();
     }
 
     private static boolean sameSprite(TextureAtlasSprite first, TextureAtlasSprite second) {

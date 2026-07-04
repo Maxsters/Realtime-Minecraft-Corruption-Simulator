@@ -28,6 +28,7 @@ import com.mojang.blaze3d.vertex.VertexSorting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.events.ContainerEventHandler;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -1047,12 +1048,44 @@ public final class CorruptionOverlayManager {
         }
 
         GuiEventListener focused = screen.getFocused();
-        if (focused instanceof EditBox) {
+        if (focused instanceof EditBox || isFocusedTextInput(focused)) {
             return true;
+        }
+        for (GuiEventListener child : screen.children()) {
+            if (isFocusedTextInput(child)) {
+                return true;
+            }
         }
 
         String screenName = screen.getClass().getName();
         return screenName.endsWith("ControlsScreen") || screenName.endsWith("KeyBindsScreen");
+    }
+
+    private static boolean isFocusedTextInput(GuiEventListener listener) {
+        if (listener == null) {
+            return false;
+        }
+        if (listener instanceof EditBox editBox && editBox.isFocused()) {
+            return true;
+        }
+        if (listener.isFocused()) {
+            String className = listener.getClass().getName();
+            if (className.endsWith("EditBox") || className.contains("TextField") || className.contains("SearchBox")) {
+                return true;
+            }
+        }
+        if (listener instanceof ContainerEventHandler container) {
+            GuiEventListener focused = container.getFocused();
+            if (focused != listener && isFocusedTextInput(focused)) {
+                return true;
+            }
+            for (GuiEventListener child : container.children()) {
+                if (child != listener && isFocusedTextInput(child)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static void resetQuickToggleScreenKeyIfReleased(Minecraft minecraft) {
