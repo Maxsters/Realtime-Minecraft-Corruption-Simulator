@@ -51,8 +51,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @Mod.EventBusSubscriber(modid = RealtimeMinecraftCorruptionSimulator.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class AudioCorruptionManager {
     private static final long AUDIO_MUTATION_SEED = 0x5350303450434D21L;
-    private static final float MAX_SAFE_GAIN = 0.70794576F;
-    private static final int MAX_SAFE_SAMPLE = 23197;
+    private static final float MAX_CORRUPTED_SOUND_LUFS = -10.0F;
+    private static final float MAX_SAFE_GAIN = (float) Math.pow(10.0D, MAX_CORRUPTED_SOUND_LUFS / 20.0D);
+    private static final int MAX_SAFE_SAMPLE = Math.max(1, Math.round(32767.0F * MAX_SAFE_GAIN));
     private static Field soundManagerSoundEngineField;
     private static Field soundEngineSoundBuffersField;
     private static Field soundBufferLibraryResourceManagerField;
@@ -99,6 +100,17 @@ public final class AudioCorruptionManager {
         }
 
         event.setSound(wrap(sound));
+    }
+
+    public static float limitCorruptedGain(float gain) {
+        if (!Float.isFinite(gain)) {
+            return 0.0F;
+        }
+        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        if (!stack.activeOrExtreme(CorruptionSurface.SOUND_STREAM)) {
+            return gain;
+        }
+        return Math.min(MAX_SAFE_GAIN, Math.max(0.0F, gain));
     }
 
     private static MutatingSoundBufferLibrary installMutatingSoundBuffers(SoundEngine engine) {
@@ -237,6 +249,7 @@ public final class AudioCorruptionManager {
         }
 
         int channels = Math.max(1, format.getChannels());
+        int sampleLimit = maxSafeSample(channels);
         int frameSize = format.getFrameSize() > 0 ? format.getFrameSize() : channels * 2;
         if (frameSize < channels * 2) {
             return output;
@@ -324,7 +337,7 @@ public final class AudioCorruptionManager {
                     }
                 }
 
-                writeSample(output, targetOffset, clampSample(sample));
+                writeSample(output, targetOffset, sample, sampleLimit);
             }
         }
 
@@ -359,11 +372,11 @@ public final class AudioCorruptionManager {
         return (short) (Byte.toUnsignedInt(data[offset]) | (data[offset + 1] << 8));
     }
 
-    private static void writeSample(ByteBuffer output, int offset, int sample) {
+    private static void writeSample(ByteBuffer output, int offset, int sample, int sampleLimit) {
         if (offset < 0 || offset + 1 >= output.limit()) {
             return;
         }
-        int clamped = clampSample(sample);
+        int clamped = clampSample(sample, sampleLimit);
         output.put(offset, (byte) (clamped & 0xFF));
         output.put(offset + 1, (byte) ((clamped >>> 8) & 0xFF));
     }
@@ -410,8 +423,13 @@ public final class AudioCorruptionManager {
         return Math.round(source + (target - source) * clamped);
     }
 
-    private static int clampSample(int sample) {
-        return Math.max(-MAX_SAFE_SAMPLE, Math.min(MAX_SAFE_SAMPLE, sample));
+    private static int clampSample(int sample, int sampleLimit) {
+        int limit = Math.max(1, sampleLimit);
+        return Math.max(-limit, Math.min(limit, sample));
+    }
+
+    private static int maxSafeSample(int channels) {
+        return Math.max(1, Math.round(MAX_SAFE_SAMPLE / (float) Math.sqrt(Math.max(1, channels))));
     }
 
     private static void reportPcmMutation() {
@@ -574,7 +592,7 @@ public final class AudioCorruptionManager {
             int squarePeriod = Math.max(2, Math.round(sampleRate / Math.max(1.0F, frequency)));
             int ringFrequency = Math.round(12.0F + unit(seed >>> 35) * 620.0F + intensity * 720.0F);
             int ringPeriod = Math.max(2, Math.round(sampleRate / Math.max(1.0F, ringFrequency)));
-            int squareAmplitude = Math.max(700, Math.min(MAX_SAFE_SAMPLE, Math.round(1200.0F + intensity * 17000.0F + unit(seed >>> 39) * 3600.0F)));
+            int squareAmplitude = Math.max(96, Math.min(maxSafeSample(format.getChannels()), Math.round(120.0F + intensity * 6200.0F + unit(seed >>> 39) * 900.0F)));
             float collapse = smoothstep((intensity - 0.45F) / 0.55F);
             int waveform = Math.floorMod((int) (seed >>> 52), 5);
             return new AudioMutationPlan(
@@ -789,7 +807,7 @@ public final class AudioCorruptionManager {
                 return 0.0F;
             }
             float mutated = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.SOUND_STREAM, targetId + ":volume", baseVolume, 0.15F + intensity * 1.10F, 0.0F, 1.75F, 0x31, soundClock());
-            float minimum = Math.min(MAX_SAFE_GAIN, Math.max(0.035F, baseVolume * 0.22F));
+            float minimum = Math.min(MAX_SAFE_GAIN, Math.max(0.012F, baseVolume * 0.06F));
             return Math.min(MAX_SAFE_GAIN, Math.max(minimum, mutated));
         }
 

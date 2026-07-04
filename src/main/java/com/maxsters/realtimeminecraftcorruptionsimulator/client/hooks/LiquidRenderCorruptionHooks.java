@@ -53,7 +53,7 @@ public final class LiquidRenderCorruptionHooks {
 
         LiquidTextureContext texture = LiquidTextureContext.none();
         if (hasTextureCorruption) {
-            String targetId = "liquid_texture:" + fluidName + ":" + pos.getX() + ":" + pos.getY() + ":" + pos.getZ();
+            String targetId = "liquid_texture:" + fluidName;
             float intensity = stack.extreme(CorruptionSurface.TEXTURE_MEMORY)
                     ? 1.0F
                     : Math.max(stack.targetIntensity(CorruptionSurface.TEXTURE_MEMORY, targetId), stack.intensity(CorruptionSurface.TEXTURE_MEMORY) * 0.88F);

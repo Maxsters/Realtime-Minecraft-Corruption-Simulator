@@ -22,8 +22,6 @@ import java.util.List;
 @OnlyIn(Dist.CLIENT)
 @Mod.EventBusSubscriber(modid = RealtimeMinecraftCorruptionSimulator.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class FirstPersonRenderCorruptionManager {
-    private static long lastArmReportMs;
-
     private FirstPersonRenderCorruptionManager() {
     }
 
@@ -69,7 +67,6 @@ public final class FirstPersonRenderCorruptionManager {
 
         rotate(poseStack, seed, 0.065F + intensity, intensity);
         poseStack.scale(scaleX, scaleY, scaleZ);
-        reportArmMutation();
     }
 
     @SubscribeEvent
@@ -115,9 +112,6 @@ public final class FirstPersonRenderCorruptionManager {
             );
         }
 
-        if (extreme || intensity > 0.02F) {
-            reportArmMutation();
-        }
     }
 
     private static void rotate(PoseStack poseStack, long seed, float strength, float intensity) {
@@ -149,10 +143,4 @@ public final class FirstPersonRenderCorruptionManager {
         return unit(seed ^ 0x494E56455254L) < 0.36F + intensity * 0.16F ? -scale : scale;
     }
 
-    private static void reportArmMutation() {
-        long now = System.currentTimeMillis();
-        if (now - lastArmReportMs > 1500L) {
-            lastArmReportMs = now;
-        }
-    }
 }

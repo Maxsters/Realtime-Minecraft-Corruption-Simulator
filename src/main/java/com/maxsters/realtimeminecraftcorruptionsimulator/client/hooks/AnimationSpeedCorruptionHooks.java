@@ -6,7 +6,6 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffec
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
-import net.minecraft.client.particle.Particle;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -54,37 +53,6 @@ public final class AnimationSpeedCorruptionHooks {
 
     public static float mutateScreenPartial(float partialTick, String screenId) {
         return mutateRenderPartial(partialTick, "gui_animation:" + screenId, 0x475549);
-    }
-
-    public static int mutateParticleAge(Particle particle, int age, int lifetime) {
-        if (particle == null || lifetime <= 1 || age < 0) {
-            return age;
-        }
-        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
-        String targetId = "particle_animation:" + particle.getClass().getName();
-        float intensity = animationIntensity(stack, targetId);
-        if (intensity <= 0.01F) {
-            return age;
-        }
-
-        long clock = animationClock(stack, targetId, System.identityHashCode(particle) ^ age);
-        if (!stack.extreme(CorruptionSurface.ANIMATION_TIMING)
-                && stack.unit(CorruptionSurface.ANIMATION_TIMING, targetId + ":age_gate", age ^ lifetime) > 0.10F + intensity * 0.64F) {
-            return age;
-        }
-
-        int mode = Math.floorMod((int) (clock >>> 27), 7);
-        int extra = switch (mode) {
-            case 0 -> 0;
-            case 1 -> Math.round(1.0F + intensity * 7.0F + unit(clock ^ 0x46415354L) * intensity * 9.0F);
-            case 2 -> -Math.round(unit(clock ^ 0x524556L) * intensity * 5.0F);
-            case 3 -> unit(clock ^ 0x53544F50L) < 0.30F + intensity * 0.38F ? -1 : Math.round(intensity * 4.0F);
-            case 4 -> Math.round(signed(clock ^ 0x4A495454L, intensity * 12.0F));
-            case 5 -> Math.round((float) Math.sin((gameTime() + age) * (0.18F + intensity * 0.90F)) * intensity * 10.0F);
-            default -> (int) Math.round(Math.rint(signed(clock ^ 0x5155414EL, intensity * 6.0F)));
-        };
-        int mutatedAge = Mth.clamp(age + extra, 0, Math.max(0, lifetime - 1));
-        return Math.max(age, mutatedAge);
     }
 
     public static GuiTickMutation mutateGuiTimers(int tickCount, int overlayMessageTime, int titleTime) {
