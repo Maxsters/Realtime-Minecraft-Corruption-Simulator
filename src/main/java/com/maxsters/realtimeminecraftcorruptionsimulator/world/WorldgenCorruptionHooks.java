@@ -271,8 +271,8 @@ public final class WorldgenCorruptionHooks {
         long hash = mix(worldgenState.fixedSeed()
                 ^ pos.x * 0xD6E8FEB86659FD93L
                 ^ pos.z * 0x94D049BB133111EBL
-                ^ System.identityHashCode(state) * 0x632BE59BD9B4E019L
-                ^ System.identityHashCode(structureManager)
+                ^ stableTypeHash(state) * 0x632BE59BD9B4E019L
+                ^ stableTypeHash(structureManager)
                 ^ 0x5354525543545552L);
         return unit(hash) < chance;
     }
@@ -696,7 +696,7 @@ public final class WorldgenCorruptionHooks {
         }
 
         long seed = mix(state.fixedSeed()
-                ^ System.identityHashCode(carver) * 0x9E3779B97F4A7C15L
+                ^ stableTypeHash(carver) * 0x9E3779B97F4A7C15L
                 ^ random.nextLong()
                 ^ 0x4341525645524741L);
         float extreme = extremePressure(intensity);
@@ -718,7 +718,7 @@ public final class WorldgenCorruptionHooks {
         long seed = mix(state.fixedSeed()
                 ^ chunk.getPos().toLong()
                 ^ carvingOrigin.toLong() * 0xD6E8FEB86659FD93L
-                ^ System.identityHashCode(carver)
+                ^ stableTypeHash(carver)
                 ^ 0x434152564552504FL);
         float extreme = extremePressure(intensity);
         if (unit(seed ^ 0x52544E53L) < 0.025F + intensity * 0.08F + extreme * 0.18F * state.profile().carverScale()) {
@@ -835,6 +835,10 @@ public final class WorldgenCorruptionHooks {
         ResourceLocation featureId = ForgeRegistries.FEATURES.getKey(feature);
         String target = featureId == null ? feature.getClass().getName() : featureId.toString();
         return new FeatureInfo(target.toLowerCase(Locale.ROOT), stableString(target));
+    }
+
+    private static long stableTypeHash(Object value) {
+        return value == null ? 0L : stableString(value.getClass().getName());
     }
 
     private static long corruptClimateComponent(long original, long seed, float intensity) {

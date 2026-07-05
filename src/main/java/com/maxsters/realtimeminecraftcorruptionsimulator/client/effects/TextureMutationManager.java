@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +43,7 @@ public final class TextureMutationManager {
     private static final int MAX_TEXTURE_PIXELS_TO_MUTATE = 4_194_304;
     private static final Set<ResourceLocation> MUTATED_GUI_TEXTURES = new HashSet<>();
     private static final Set<ResourceLocation> MUTATED_GLOBAL_TEXTURES = new HashSet<>();
+    private static final Map<ResourceLocation, StoredTexturePixels> ORIGINAL_TEXTURE_PIXELS = new HashMap<>();
     private static PendingGuiTextureScan pendingGuiTextureScan;
     private static PendingGlobalTextureScan pendingGlobalTextureScan;
     private static boolean startupTextureScanRequested;
@@ -50,8 +52,6 @@ public final class TextureMutationManager {
     private static GuiTextureInventory cachedGuiTextureInventory = GuiTextureInventory.empty();
     private static String appliedGuiTextureSignature = "";
     private static String appliedGlobalTextureSignature = "";
-    private static long lastTextureScanAttemptMs;
-    private static long lastGlobalTextureScanAttemptMs;
 
     private TextureMutationManager() {
     }
@@ -139,11 +139,6 @@ public final class TextureMutationManager {
             startupTextureScanRequested = true;
         }
 
-        long now = System.currentTimeMillis();
-        if (now - lastTextureScanAttemptMs < 250L) {
-            return;
-        }
-        lastTextureScanAttemptMs = now;
         applyGuiTextureMutations(minecraft, stack, signature);
     }
 
@@ -174,11 +169,6 @@ public final class TextureMutationManager {
             startupGlobalTextureScanRequested = true;
         }
 
-        long now = System.currentTimeMillis();
-        if (now - lastGlobalTextureScanAttemptMs < 250L) {
-            return;
-        }
-        lastGlobalTextureScanAttemptMs = now;
         applyGlobalTextureMutations(minecraft, stack, signature);
     }
 
@@ -229,6 +219,7 @@ public final class TextureMutationManager {
         appliedGuiTextureSignature = "";
         pendingGlobalTextureScan = null;
         appliedGlobalTextureSignature = "";
+        ORIGINAL_TEXTURE_PIXELS.clear();
         if (resourceManager != null) {
             startupTextureScanRequested = true;
             startupGlobalTextureScanRequested = true;
@@ -367,9 +358,9 @@ public final class TextureMutationManager {
     private static void restoreGuiTextures(Minecraft minecraft, Set<ResourceLocation> textureIdsToRestore) {
         ResourceManager resourceManager = minecraft.getResourceManager();
         List<ResourceLocation> textureIds = new ArrayList<>(textureIdsToRestore);
+        textureIds.sort(Comparator.comparing(ResourceLocation::toString));
         for (ResourceLocation textureId : textureIds) {
-            Optional<Resource> resource = resourceManager.getResource(textureId);
-            resource.ifPresent(value -> replaceTexture(minecraft, textureId, value, CorruptionEffectStack.local(0), CorruptionSurface.GUI_SURFACE, "gui_texture:", 0.0F, 0, false, List.of(), "GUI"));
+            restoreTexture(minecraft, resourceManager, textureId, CorruptionSurface.GUI_SURFACE, "gui_texture:", "GUI");
             MUTATED_GUI_TEXTURES.remove(textureId);
         }
     }
@@ -381,9 +372,9 @@ public final class TextureMutationManager {
     private static void restoreGlobalTextures(Minecraft minecraft, Set<ResourceLocation> textureIdsToRestore) {
         ResourceManager resourceManager = minecraft.getResourceManager();
         List<ResourceLocation> textureIds = new ArrayList<>(textureIdsToRestore);
+        textureIds.sort(Comparator.comparing(ResourceLocation::toString));
         for (ResourceLocation textureId : textureIds) {
-            Optional<Resource> resource = resourceManager.getResource(textureId);
-            resource.ifPresent(value -> replaceTexture(minecraft, textureId, value, CorruptionEffectStack.local(0), CorruptionSurface.TEXTURE_MEMORY, "texture_resource:", 0.0F, 0, false, List.of(), "global"));
+            restoreTexture(minecraft, resourceManager, textureId, CorruptionSurface.TEXTURE_MEMORY, "texture_resource:", "global");
             MUTATED_GLOBAL_TEXTURES.remove(textureId);
         }
     }
@@ -396,6 +387,7 @@ public final class TextureMutationManager {
                 return false;
             }
             if (mutate) {
+                rememberOriginalTexture(textureId, image);
                 mutateTexturePixels(textureId, image, minecraft.getResourceManager(), donorTextureIds, null, stack, surface, targetPrefix, intensity, ordinal, 0);
             }
             minecraft.getTextureManager().register(textureId, new DynamicTexture(image));
@@ -408,6 +400,53 @@ public final class TextureMutationManager {
             if (image != null) {
                 image.close();
             }
+        }
+    }
+
+    private static void restoreTexture(Minecraft minecraft, ResourceManager resourceManager, ResourceLocation textureId, CorruptionSurface surface, String targetPrefix, String label) {
+        if (restoreTextureFromCache(minecraft, textureId, label)) {
+            return;
+        }
+        Optional<Resource> resource = resourceManager.getResource(textureId);
+        resource.ifPresent(value -> replaceTexture(minecraft, textureId, value, CorruptionEffectStack.local(0), surface, targetPrefix, 0.0F, 0, false, List.of(), label));
+    }
+
+    private static boolean restoreTextureFromCache(Minecraft minecraft, ResourceLocation textureId, String label) {
+        StoredTexturePixels cached = ORIGINAL_TEXTURE_PIXELS.get(textureId);
+        if (cached == null) {
+            return false;
+        }
+
+        NativeImage image = null;
+        try {
+            image = new NativeImage(NativeImage.Format.RGBA, cached.width(), cached.height(), false);
+            int[] pixels = cached.pixels();
+            for (int y = 0; y < cached.height(); y++) {
+                int rowOffset = y * cached.width();
+                for (int x = 0; x < cached.width(); x++) {
+                    image.setPixelRGBA(x, y, pixels[rowOffset + x]);
+                }
+            }
+            minecraft.getTextureManager().register(textureId, new DynamicTexture(image));
+            image = null;
+            return true;
+        } catch (RuntimeException exception) {
+            RealtimeMinecraftCorruptionSimulator.LOGGER.debug("Unable to restore cached {} texture {}", label, textureId, exception);
+            return false;
+        } finally {
+            if (image != null) {
+                image.close();
+            }
+        }
+    }
+
+    private static void rememberOriginalTexture(ResourceLocation textureId, NativeImage image) {
+        if (ORIGINAL_TEXTURE_PIXELS.containsKey(textureId) || !isMutablePixelImage(image)) {
+            return;
+        }
+        try {
+            ORIGINAL_TEXTURE_PIXELS.put(textureId, new StoredTexturePixels(image.getWidth(), image.getHeight(), image.getPixelsRGBA()));
+        } catch (RuntimeException ignored) {
         }
     }
 
@@ -651,6 +690,14 @@ public final class TextureMutationManager {
         private PixelBank {
             if (pixels == null || width <= 0 || height <= 0 || (long) width * (long) height > MAX_TEXTURE_PIXELS_TO_MUTATE || pixels.length < width * height) {
                 throw new IllegalArgumentException("invalid pixel bank");
+            }
+        }
+    }
+
+    private record StoredTexturePixels(int width, int height, int[] pixels) {
+        private StoredTexturePixels {
+            if (pixels == null || width <= 0 || height <= 0 || (long) width * (long) height > MAX_TEXTURE_PIXELS_TO_MUTATE || pixels.length < width * height) {
+                throw new IllegalArgumentException("invalid texture cache");
             }
         }
     }

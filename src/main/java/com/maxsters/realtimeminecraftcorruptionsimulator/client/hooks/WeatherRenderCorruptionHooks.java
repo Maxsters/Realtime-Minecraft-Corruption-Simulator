@@ -32,13 +32,15 @@ public final class WeatherRenderCorruptionHooks {
             return;
         }
 
-        long clock = weatherClock(stack, targetId, level, partialTick);
+        long profileSeed = weatherProfileSeed(stack, targetId, level);
+        long clock = weatherClock(stack, targetId, level, partialTick, profileSeed);
         WEATHER_CONTEXT.set(new WeatherContext(
                 stack,
                 targetId,
                 intensity,
+                profileSeed,
                 clock,
-                Math.floorMod((int) (clock >>> 28), 8),
+                weatherMode(profileSeed ^ 0x4355525441494E53L, 9),
                 gameTime(level),
                 partialTick,
                 cameraX,
@@ -62,11 +64,26 @@ public final class WeatherRenderCorruptionHooks {
         if (intensity <= 0.01F) {
             return false;
         }
-        long clock = weatherClock(stack, targetId, level, partialTick);
-        if (unit(clock ^ 0x464C4943L) < 0.10F + intensity * 0.46F) {
-            return ((clock >>> 3) & 1L) == 0L;
+        long profileSeed = weatherProfileSeed(stack, targetId, level);
+        long clock = weatherClock(stack, targetId, level, partialTick, profileSeed);
+        int mode = weatherMode(profileSeed ^ 0x534B49504F564552L, 7);
+        float chance = stack.extreme(CorruptionSurface.WORLD_RENDER)
+                ? 0.94F
+                : Mth.clamp(0.04F + intensity * (0.16F + unit(profileSeed ^ 0x42494153L) * 0.54F) + stack.instability() * 0.10F, 0.0F, 0.88F);
+        if (unit(profileSeed ^ 0x47415445L) > chance) {
+            return false;
         }
-        return unit(clock ^ 0x44524F50L) < intensity * 0.08F;
+
+        long time = gameTime(level);
+        return switch (mode) {
+            case 0 -> false;
+            case 1 -> seededPulse(profileSeed ^ 0x464C49434B4552L, time, partialTick, intensity);
+            case 2 -> !seededPulse(profileSeed ^ 0x5745414B44555459L, time, partialTick, intensity * 0.65F);
+            case 3 -> unit(clock ^ 0x44524F504F5554L) < intensity * (0.06F + unit(profileSeed ^ 0x44555459L) * 0.24F);
+            case 4 -> unit(profileSeed ^ (time / seededCadence(profileSeed ^ 0x434144454E4345L, intensity)) ^ 0x4255434B4554L) < 0.18F + intensity * 0.54F;
+            case 5 -> stack.extreme(CorruptionSurface.WORLD_RENDER) && unit(profileSeed ^ 0x535455434B4F4646L) < 0.36F;
+            default -> unit(clock ^ 0x44524F50L) < intensity * (0.03F + unit(profileSeed ^ 0x56415249L) * 0.18F);
+        };
     }
 
     public static float mutateRainLevel(ClientLevel level, float original, float partialTick) {
@@ -80,22 +97,26 @@ public final class WeatherRenderCorruptionHooks {
         if (intensity <= 0.01F) {
             return original;
         }
-        long clock = weatherClock(stack, targetId, level, partialTick);
+        long profileSeed = weatherProfileSeed(stack, targetId, level);
+        long clock = weatherClock(stack, targetId, level, partialTick, profileSeed);
         float chance = Mth.clamp(0.06F + intensity * 0.74F + stack.instability() * 0.10F, 0.0F, 0.94F);
         if (!stack.extreme(CorruptionSurface.WORLD_RENDER) && unit(clock ^ 0x454E4142L) > chance) {
             return original;
         }
 
-        int mode = Math.floorMod((int) (clock >>> 26), 7);
+        int mode = weatherMode(profileSeed ^ 0x5241494E4C455645L, 8);
         float time = gameTime(level) + partialTick;
+        float phase = unit(profileSeed ^ 0x5048415345L) * Mth.TWO_PI;
+        float cadence = (float) seededCadence(profileSeed ^ 0x52434144454E4345L, intensity);
         return switch (mode) {
             case 0 -> 1.0F;
-            case 1 -> (((clock >>> 2) & 1L) == 0L) ? 0.0F : 1.0F;
+            case 1 -> seededPulse(profileSeed ^ 0x52414E44504C53L, gameTime(level), partialTick, intensity) ? 1.0F : 0.0F;
             case 2 -> Mth.clamp(original + signed(clock ^ 0x5241494EL, intensity * 2.25F), 0.0F, 1.0F);
-            case 3 -> Mth.clamp((float) Math.abs(Math.sin(time * (0.35F + intensity * 2.4F))), 0.0F, 1.0F);
-            case 4 -> Mth.clamp(unit(clock ^ ((long) (time / Math.max(1.0F, 5.0F - intensity * 4.0F)) << 12)) * (0.35F + intensity * 2.45F), 0.0F, 1.0F);
-            case 5 -> Mth.clamp(((time * (0.05F + intensity * 0.60F)) % 1.0F) * (0.65F + intensity * 1.35F), 0.0F, 1.0F);
-            default -> Mth.clamp(unit(clock ^ 0x4E4F4953L) * (0.25F + intensity * 2.20F), 0.0F, 1.0F);
+            case 3 -> Mth.clamp((float) Math.abs(Math.sin(time * (0.10F + unit(profileSeed ^ 0x5350454544L) * (0.55F + intensity * 2.75F)) + phase)), 0.0F, 1.0F);
+            case 4 -> Mth.clamp(unit(profileSeed ^ ((long) Math.floor((time + phase) / Math.max(1.0F, cadence)) << 12) ^ 0x4E4F495345L) * (0.35F + intensity * 2.45F), 0.0F, 1.0F);
+            case 5 -> Mth.clamp(cycle(time + phase, cadence) * (0.65F + intensity * 1.35F), 0.0F, 1.0F);
+            case 6 -> Mth.clamp(original * (0.04F + unit(profileSeed ^ 0x5343414C45L) * (0.50F + intensity * 6.50F)), 0.0F, 1.0F);
+            default -> Mth.clamp(unit(clock ^ profileSeed ^ 0x4E4F4953L) * (0.25F + intensity * 2.20F), 0.0F, 1.0F);
         };
     }
 
@@ -111,16 +132,18 @@ public final class WeatherRenderCorruptionHooks {
             return original;
         }
 
-        long clock = weatherClock(stack, targetId, level, partialTick);
+        long profileSeed = weatherProfileSeed(stack, targetId, level);
+        long clock = weatherClock(stack, targetId, level, partialTick, profileSeed);
         if (!stack.extreme(CorruptionSurface.WORLD_RENDER) && unit(clock ^ 0x50415254L) > 0.08F + intensity * 0.56F) {
             return original;
         }
-        int mode = Math.floorMod((int) (clock >>> 31), 5);
+        int mode = weatherMode(profileSeed ^ 0x5041525444434C4FL, 6);
         return switch (mode) {
             case 0 -> 1.0F;
             case 1 -> 0.0F;
             case 2 -> Mth.clamp(original + signed(clock ^ 0x44454E53L, intensity * 1.65F), 0.0F, 1.0F);
-            case 3 -> Mth.clamp(unit(clock ^ 0x4E4F4953L) * (0.45F + intensity * 2.0F), 0.0F, 1.0F);
+            case 3 -> Mth.clamp(unit(profileSeed ^ (gameTime(level) / seededCadence(profileSeed ^ 0x50434144454E4345L, intensity)) ^ 0x4E4F4953L) * (0.45F + intensity * 2.0F), 0.0F, 1.0F);
+            case 4 -> seededPulse(profileSeed ^ 0x5044555459L, gameTime(level), partialTick, intensity) ? Mth.clamp(0.55F + intensity * 1.45F, 0.0F, 1.0F) : 0.0F;
             default -> Mth.clamp(original * (0.04F + unit(clock ^ 0x5343414CL) * (4.0F + intensity * 6.0F)), 0.0F, 1.0F);
         };
     }
@@ -288,25 +311,28 @@ public final class WeatherRenderCorruptionHooks {
         if (intensity <= 0.01F) {
             return original;
         }
-        long clock = weatherClock(stack, targetId, level, partialTick);
+        long profileSeed = weatherProfileSeed(stack, targetId, level);
+        long clock = weatherClock(stack, targetId, level, partialTick, profileSeed);
         float chance = Mth.clamp(0.12F + intensity * 0.68F + stack.instability() * 0.10F, 0.0F, 0.94F);
         if (!stack.extreme(CorruptionSurface.WORLD_RENDER) && unit(clock ^ (0x464F4C4CL + axis)) > chance) {
             return original;
         }
 
         double time = gameTime(level) + partialTick;
-        int mode = Math.floorMod((int) (clock >>> 32), 6);
+        int mode = weatherMode(profileSeed ^ (axis * 0x41584953L) ^ 0x464F4C4C4F57L, 7);
         double span = axis == 1 ? 0.35D + intensity * 7.5D : 4.0D + intensity * 52.0D;
         double offset = signed(clock ^ (axis * 0x9E3779B97F4A7C15L), span);
         if (mode == 1) {
-            double cadence = Math.max(2.0D, 14.0D - intensity * 11.0D);
-            offset = signed(clock ^ ((long) Math.floor(time / cadence) << 17) ^ axis, span);
+            double cadence = seededCadence(profileSeed ^ 0x43414D434144L ^ axis, intensity);
+            offset = signed(profileSeed ^ ((long) Math.floor((time + unit(profileSeed ^ axis) * cadence) / cadence) << 17) ^ axis, span);
         } else if (mode == 2) {
-            offset += Math.sin(time * (0.035D + intensity * 0.24D) + axis * 2.1D) * span * 0.65D;
+            offset += Math.sin(time * (0.015D + unit(profileSeed ^ 0x5350454544L ^ axis) * (0.08D + intensity * 0.34D)) + axis * 2.1D + unit(profileSeed ^ 0x5048415345L) * Mth.TWO_PI) * span * 0.65D;
         } else if (mode == 3) {
-            offset = quantize(offset, 1.0D + intensity * 7.0D);
+            offset = quantize(offset, 0.5D + unit(profileSeed ^ 0x534E4150L ^ axis) * (1.0D + intensity * 9.0D));
         } else if (mode == 4 && axis != 1) {
-            offset += Math.sin(time * (0.45D + intensity * 2.2D)) * (2.0D + intensity * 14.0D);
+            offset += Math.sin(time * (0.16D + unit(profileSeed ^ 0x4A495454L) * (0.55D + intensity * 2.6D))) * (2.0D + intensity * 14.0D);
+        } else if (mode == 5) {
+            offset *= seededPulse(profileSeed ^ 0x43414D50554C53L ^ axis, gameTime(level), partialTick, intensity) ? 1.0D : 0.0D;
         }
         return original + offset;
     }
@@ -322,9 +348,17 @@ public final class WeatherRenderCorruptionHooks {
         return level == null ? "no_level" : level.dimension().location().toString();
     }
 
-    private static long weatherClock(CorruptionEffectStack stack, String targetId, ClientLevel level, float partialTick) {
+    private static long weatherProfileSeed(CorruptionEffectStack stack, String targetId, ClientLevel level) {
+        return stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId + ":profile", dimension(level).hashCode() ^ 0x57454154);
+    }
+
+    private static long weatherClock(CorruptionEffectStack stack, String targetId, ClientLevel level, float partialTick, long profileSeed) {
         long time = gameTime(level);
-        return stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId, 0x57454154) ^ (time << 18) ^ Float.floatToIntBits(partialTick);
+        int shift = 14 + Math.floorMod((int) (profileSeed >>> 9), 9);
+        return profileSeed
+                ^ stack.stableLong(CorruptionSurface.WORLD_RENDER, targetId, 0x57454154)
+                ^ (time << shift)
+                ^ ((long) Float.floatToIntBits(partialTick) << 1);
     }
 
     private static long gameTime(ClientLevel level) {
@@ -341,6 +375,30 @@ public final class WeatherRenderCorruptionHooks {
 
     private static double quantize(double value, double step) {
         return step <= 0.0D ? value : Math.rint(value / step) * step;
+    }
+
+    private static int weatherMode(long seed, int modes) {
+        return Math.floorMod((int) (mix(seed) ^ (mix(seed) >>> 32)), Math.max(1, modes));
+    }
+
+    private static long seededCadence(long seed, float intensity) {
+        double max = Math.max(2.0D, 34.0D - intensity * 24.0D);
+        return Math.max(2L, Math.round(2.0D + unit(seed) * max));
+    }
+
+    private static boolean seededPulse(long seed, long time, float partialTick, float intensity) {
+        double cadence = seededCadence(seed, intensity);
+        double position = cycle(time + partialTick + unit(seed ^ 0x5048415345L) * cadence, cadence);
+        double duty = Mth.clamp(0.08D + unit(seed ^ 0x44555459L) * (0.78D - intensity * 0.18D), 0.04D, 0.92D);
+        return position < duty;
+    }
+
+    private static float cycle(double value, double period) {
+        if (period <= 0.0D) {
+            return 0.0F;
+        }
+        double divided = value / period;
+        return (float) (divided - Math.floor(divided));
     }
 
     private static int mutateLightComponent(int original, long seed, WeatherContext context) {
@@ -373,6 +431,7 @@ public final class WeatherRenderCorruptionHooks {
             CorruptionEffectStack stack,
             String targetId,
             float intensity,
+            long profileSeed,
             long clock,
             int mode,
             long gameTime,

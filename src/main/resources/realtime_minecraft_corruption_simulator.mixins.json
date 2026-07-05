@@ -33,6 +33,8 @@
   ],
   "client": [
     "client.AbstractSliderButtonMixin",
+    "client.AbstractContainerScreenMixin",
+    "client.AbstractWidgetMixin",
     "client.AmbientOcclusionFaceMixin",
     "client.BannerRendererAnimationMixin",
     "client.BeaconRendererAnimationMixin",
@@ -48,6 +50,7 @@
     "client.EnderChestBlockEntityAnimationMixin",
     "client.EnchantmentTableBlockEntityAnimationMixin",
     "client.EntityRenderDispatcherMixin",
+    "client.CreativeModeInventoryScreenMixin",
     "client.FontStringRenderOutputMixin",
     "client.GameRendererMixin",
     "client.GuiGraphicsMixin",

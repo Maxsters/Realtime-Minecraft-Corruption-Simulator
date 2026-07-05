@@ -2,6 +2,7 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.effects;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.GuiSliderCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.overlay.CorruptionOverlayManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
@@ -31,6 +32,7 @@ import java.util.WeakHashMap;
 @Mod.EventBusSubscriber(modid = RealtimeMinecraftCorruptionSimulator.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class GuiTextureCorruptionManager {
     private static final WeakHashMap<AbstractWidget, WidgetSnapshot> ORIGINAL_WIDGETS = new WeakHashMap<>();
+    private static final WeakHashMap<Screen, Long> WIDGET_MUTATION_SIGNATURES = new WeakHashMap<>();
     private static Field packedFgColorField;
     private static boolean packedFgColorFieldChecked;
     private static long lastWidgetStateReportMs;
@@ -46,6 +48,7 @@ public final class GuiTextureCorruptionManager {
                 && !currentStack.activeOrExtreme(CorruptionSurface.GUI_SURFACE)) {
             restoreCurrentScreenWidgets();
         }
+        WIDGET_MUTATION_SIGNATURES.clear();
     }
 
     @SubscribeEvent
@@ -56,6 +59,7 @@ public final class GuiTextureCorruptionManager {
         if (ClientCorruptionProtection.isModScreen(event.getScreen()) || ClientCorruptionProtection.isSaveCriticalScreen(event.getScreen())) {
             return;
         }
+        WIDGET_MUTATION_SIGNATURES.remove(event.getScreen());
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
         if (!stack.activeOrExtreme(CorruptionSurface.GUI_SURFACE)) {
             return;
@@ -81,7 +85,7 @@ public final class GuiTextureCorruptionManager {
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
         if (stack.activeOrExtreme(CorruptionSurface.GUI_SURFACE)) {
             mutateWidgetState(screen, screen.children(), stack);
-        } else {
+        } else if (WIDGET_MUTATION_SIGNATURES.remove(screen) != null) {
             restoreWidgetState(screen, screen.children());
         }
         if (ClientCorruptionProtection.isDeathScreen(screen)) {
@@ -94,7 +98,7 @@ public final class GuiTextureCorruptionManager {
         if (CorruptionOverlayManager.isOverlayHit(event.getMouseX(), event.getMouseY())) {
             return;
         }
-        if (breakInput(event.getScreen(), "mouse_press", event.getButton() ^ (int) event.getMouseX() ^ ((int) event.getMouseY() << 8))) {
+        if (breakInput(event.getScreen(), "mouse_press", mouseInputSalt(event.getScreen(), event.getButton(), event.getMouseX(), event.getMouseY()))) {
             event.setCanceled(true);
         }
     }
@@ -104,7 +108,7 @@ public final class GuiTextureCorruptionManager {
         if (CorruptionOverlayManager.isOverlayHit(event.getMouseX(), event.getMouseY())) {
             return;
         }
-        if (breakInput(event.getScreen(), "mouse_release", event.getButton() ^ (int) event.getMouseX() ^ ((int) event.getMouseY() << 8))) {
+        if (breakInput(event.getScreen(), "mouse_release", mouseInputSalt(event.getScreen(), event.getButton() ^ 0x52454C, event.getMouseX(), event.getMouseY()))) {
             event.setCanceled(true);
         }
     }
@@ -120,13 +124,24 @@ public final class GuiTextureCorruptionManager {
     }
 
     @SubscribeEvent
+    public static void onMouseDraggedPost(ScreenEvent.MouseDragged.Post event) {
+        GuiSliderCorruptionHooks.corruptNestedSliders(event.getScreen(), "mouse_drag");
+    }
+
+    @SubscribeEvent
     public static void onMouseScrolled(ScreenEvent.MouseScrolled.Pre event) {
         if (CorruptionOverlayManager.isOverlayHit(event.getMouseX(), event.getMouseY())) {
             return;
         }
-        if (breakInput(event.getScreen(), "mouse_scroll", (int) Math.round(event.getScrollDelta() * 100.0D) ^ (int) event.getMouseX() ^ ((int) event.getMouseY() << 6))) {
+        int scrollSalt = (int) Math.round(event.getScrollDelta() * 100.0D) ^ 0x5343524C;
+        if (breakInput(event.getScreen(), "mouse_scroll", mouseInputSalt(event.getScreen(), scrollSalt, event.getMouseX(), event.getMouseY()))) {
             event.setCanceled(true);
         }
+    }
+
+    @SubscribeEvent
+    public static void onMouseScrolledPost(ScreenEvent.MouseScrolled.Post event) {
+        GuiSliderCorruptionHooks.corruptNestedSliders(event.getScreen(), "mouse_scroll");
     }
 
     @SubscribeEvent
@@ -156,6 +171,13 @@ public final class GuiTextureCorruptionManager {
         if (ClientCorruptionProtection.isModScreen(screen)) {
             return;
         }
+        long signature = widgetMutationSignature(screen, stack);
+        Long previousSignature = WIDGET_MUTATION_SIGNATURES.get(screen);
+        if (previousSignature != null && previousSignature == signature) {
+            return;
+        }
+        WIDGET_MUTATION_SIGNATURES.put(screen, signature);
+
         Set<AbstractWidget> widgets = collectWidgets(screen, listeners);
         if (widgets.isEmpty()) {
             return;
@@ -256,6 +278,7 @@ public final class GuiTextureCorruptionManager {
     }
 
     private static void restoreWidgetState(Screen screen, Iterable<? extends GuiEventListener> listeners) {
+        WIDGET_MUTATION_SIGNATURES.remove(screen);
         boolean clearLifecycleColors = ClientCorruptionProtection.isLifecycleAccessScreen(screen);
         for (AbstractWidget widget : collectWidgets(screen, listeners)) {
             WidgetSnapshot original = ORIGINAL_WIDGETS.get(widget);
@@ -290,6 +313,60 @@ public final class GuiTextureCorruptionManager {
             }
         }
         return broken;
+    }
+
+    private static long widgetMutationSignature(Screen screen, CorruptionEffectStack stack) {
+        long value = stack.fixedSeed();
+        value ^= (long) stack.level() << 48;
+        value ^= (long) stack.enabledTargetsMask() << 24;
+        value ^= (long) stack.layerCount() << 8;
+        value ^= screen.getClass().getName().hashCode() * 0x9E3779B97F4A7C15L;
+        value ^= (long) screen.width * 0xBF58476D1CE4E5B9L;
+        value ^= (long) screen.height * 0x94D049BB133111EBL;
+        value ^= (long) screen.renderables.size() * 0x632BE59BD9B4E019L;
+        value ^= (long) screen.children().size() * 0xD6E8FEB86659FD93L;
+        return stableHash(value);
+    }
+
+    private static int mouseInputSalt(Screen screen, int baseSalt, double mouseX, double mouseY) {
+        AbstractWidget widget = widgetAt(screen, mouseX, mouseY);
+        if (widget != null) {
+            return baseSalt ^ 0x57494447 ^ widgetInputSalt(widget);
+        }
+        int cellX = (int) Math.floor(mouseX / 32.0D);
+        int cellY = (int) Math.floor(mouseY / 32.0D);
+        return baseSalt ^ 0x4241434B ^ cellX * 0x1F1F1F1F ^ cellY * 0x13579BDF;
+    }
+
+    private static AbstractWidget widgetAt(Screen screen, double mouseX, double mouseY) {
+        if (screen == null) {
+            return null;
+        }
+        for (AbstractWidget widget : collectWidgets(screen, screen.children())) {
+            if (widget.visible
+                    && mouseX >= widget.getX()
+                    && mouseY >= widget.getY()
+                    && mouseX < widget.getX() + widget.getWidth()
+                    && mouseY < widget.getY() + widget.getHeight()) {
+                return widget;
+            }
+        }
+        return null;
+    }
+
+    private static int widgetInputSalt(AbstractWidget widget) {
+        WidgetSnapshot original = ORIGINAL_WIDGETS.get(widget);
+        int x = original == null ? widget.getX() : original.x();
+        int y = original == null ? widget.getY() : original.y();
+        int width = original == null ? widget.getWidth() : original.width();
+        Component message = original == null ? widget.getMessage() : original.message();
+        int hash = widget.getClass().getName().hashCode();
+        hash = 31 * hash + x;
+        hash = 31 * hash + y;
+        hash = 31 * hash + width;
+        hash = 31 * hash + widget.getHeight();
+        hash = 31 * hash + message.getString().hashCode();
+        return hash;
     }
 
     private static String widgetTarget(Screen screen, AbstractWidget widget, int index, WidgetSnapshot original) {

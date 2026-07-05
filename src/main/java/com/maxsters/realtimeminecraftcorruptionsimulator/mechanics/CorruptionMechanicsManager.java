@@ -1201,8 +1201,7 @@ public final class CorruptionMechanicsManager {
         }
 
         float intensity = guiFunctionalityIntensity(stack, targetId);
-        long clock = blockEntityClock(blockEntity);
-        long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, 0x4655454C) ^ clock;
+        long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, 0x4655454C) ^ blockEntitySalt(blockEntity);
         float chance = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
                 ? 0.98F
                 : Mth.clamp(0.08F + intensity * 0.72F + stack.instability() * 0.08F, 0.0F, 0.92F);
@@ -1242,7 +1241,7 @@ public final class CorruptionMechanicsManager {
         }
 
         float intensity = guiFunctionalityIntensity(stack, targetId);
-        long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, 0x434F4F4B) ^ blockEntityClock(blockEntity);
+        long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, 0x434F4F4B) ^ blockEntitySalt(blockEntity);
         float chance = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
                 ? 0.96F
                 : Mth.clamp(0.05F + intensity * 0.66F + stack.instability() * 0.08F, 0.0F, 0.88F);
@@ -1261,7 +1260,7 @@ public final class CorruptionMechanicsManager {
         }
 
         float intensity = guiFunctionalityIntensity(stack, targetId);
-        long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, 0x42524557) ^ blockEntityClock(blockEntity);
+        long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, 0x42524557) ^ blockEntitySalt(blockEntity);
         float chance = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
                 ? 0.96F
                 : Mth.clamp(0.05F + intensity * 0.68F + stack.instability() * 0.08F, 0.0F, 0.88F);
@@ -1668,11 +1667,11 @@ public final class CorruptionMechanicsManager {
         return owner + ":" + costA + "+" + costB + "->" + result;
     }
 
-    private static long blockEntityClock(BlockEntity blockEntity) {
-        Level level = blockEntity == null ? null : blockEntity.getLevel();
-        long gameTime = level == null ? 0L : level.getGameTime();
+    private static long blockEntitySalt(BlockEntity blockEntity) {
         long pos = blockEntity == null || blockEntity.getBlockPos() == null ? 0L : blockEntity.getBlockPos().asLong();
-        return mixLong(pos ^ Math.floorDiv(gameTime, 4L) * 0x9E3779B97F4A7C15L);
+        ResourceLocation typeId = blockEntity == null ? null : ForgeRegistries.BLOCK_ENTITY_TYPES.getKey(blockEntity.getType());
+        long typeHash = typeId == null ? 0L : typeId.toString().hashCode();
+        return mixLong(pos ^ typeHash * 0x9E3779B97F4A7C15L);
     }
 
     private static String blockEntityTargetId(BlockEntity blockEntity) {
