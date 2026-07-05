@@ -663,6 +663,14 @@ public final class CorruptionOverlayPanel {
         }
     }
 
+    public static int topRightPinnedToastOffset() {
+        List<CorruptionAchievementManager.Achievement> achievements = CorruptionAchievementManager.pinnedAchievements();
+        if (achievements.isEmpty() || CorruptionAchievementManager.pinnedCorner() != CorruptionAchievementManager.HudCorner.TOP_RIGHT) {
+            return 0;
+        }
+        return 8 + achievements.size() * PINNED_ROW_HEIGHT + Math.max(0, achievements.size() - 1) * PINNED_ROW_GAP + PINNED_ROW_GAP;
+    }
+
     private static void renderPinnedAchievement(GuiGraphics graphics, Font font, CorruptionAchievementManager.Achievement achievement, int x, int y) {
         boolean unlocked = CorruptionAchievementManager.isUnlocked(achievement);
         boolean disqualified = CorruptionAchievementManager.isDisqualified(achievement);

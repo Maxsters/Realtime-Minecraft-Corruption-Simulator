@@ -49,6 +49,7 @@ public final class CorruptionStateSyncPacket {
         buffer.writeBoolean(allowNonOpSettingsUpdates);
         buffer.writeBoolean(canUpdateSettings);
         buffer.writeBoolean(settingsOperator);
+        achievementWorldState.encodeDisqualificationReason(buffer);
     }
 
     public static CorruptionStateSyncPacket decode(FriendlyByteBuf buffer) {
@@ -59,6 +60,9 @@ public final class CorruptionStateSyncPacket {
         boolean allowNonOpSettingsUpdates = buffer.isReadable() && buffer.readBoolean();
         boolean canUpdateSettings = !buffer.isReadable() || buffer.readBoolean();
         boolean settingsOperator = !buffer.isReadable() || buffer.readBoolean();
+        if (buffer.isReadable()) {
+            achievementWorldState = achievementWorldState.withDisqualificationReason(AchievementWorldStateSnapshot.decodeDisqualificationReason(buffer));
+        }
         return new CorruptionStateSyncPacket(snapshot, serverCheatsExposed, serverSettingsInitialized, achievementWorldState, allowNonOpSettingsUpdates, canUpdateSettings, settingsOperator);
     }
 

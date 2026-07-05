@@ -172,6 +172,32 @@ public final class CorruptionAchievementManager {
                 || indexOf(achievement) == WARRANTY_VOIDED && activeWorldState.warrantyDisqualified;
     }
 
+    public static String disqualificationReason(Achievement achievement) {
+        ensureLoaded();
+        int index = indexOf(achievement);
+        if (index < 0) {
+            return "";
+        }
+        String worldKey = currentWorldKey(Minecraft.getInstance());
+        if (worldKey.isBlank()) {
+            return "";
+        }
+        ensureWorldContext(worldKey);
+        if (!achievementWorldSynced) {
+            return "";
+        }
+        if (activeWorldState.disqualified) {
+            return humanDisqualificationReason(activeWorldState.disqualificationReason);
+        }
+        if (index == WARRANTY_VOIDED && activeWorldState.warrantyDisqualified) {
+            return "world did not keep 10% corruption with all required targets";
+        }
+        if (index == WARRANTY_VOIDED && currentDragonFightSpoiled(Minecraft.getInstance())) {
+            return "current Ender Dragon fight was disqualified before the kill";
+        }
+        return "";
+    }
+
     public static String statusText(Achievement achievement) {
         ensureLoaded();
         int index = indexOf(achievement);
@@ -189,14 +215,9 @@ public final class CorruptionAchievementManager {
         if (!achievementWorldSynced) {
             return "Waiting for server qualification";
         }
-        if (activeWorldState.disqualified) {
-            return "Disqualified in this world";
-        }
-        if (index == WARRANTY_VOIDED && activeWorldState.warrantyDisqualified) {
-            return "World did not keep 10% + required targets";
-        }
-        if (index == WARRANTY_VOIDED && currentDragonFightSpoiled(Minecraft.getInstance())) {
-            return "Current dragon fight disqualified";
+        String reason = disqualificationReason(achievement);
+        if (!reason.isEmpty()) {
+            return "Disqualified: " + reason;
         }
         if (index == STABLE_RELEASE) {
             String pausedReason = stableReleasePausedReason(Minecraft.getInstance(), ClientCorruptionState.snapshot());
@@ -691,6 +712,20 @@ public final class CorruptionAchievementManager {
         return seconds + "s";
     }
 
+    private static String humanDisqualificationReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "unknown reason";
+        }
+        return switch (reason) {
+            case "singleplayer_allow_commands" -> "singleplayer cheats were enabled";
+            case "permissioned_player" -> "an operator was present";
+            case "non_survival_player" -> "a player used Creative or Spectator";
+            case "permissioned_command" -> "an operator command was used";
+            case "unknown" -> "unknown reason";
+            default -> reason.replace('_', ' ');
+        };
+    }
+
     private static void ensureLoaded() {
         if (loaded) {
             return;
@@ -778,6 +813,7 @@ public final class CorruptionAchievementManager {
     private static final class WorldAchievementState {
         // Server-owned per-world mirror. This class must never save qualification state locally.
         private boolean disqualified;
+        private String disqualificationReason = "";
         private boolean warrantyDisqualified;
         private final Set<String> spoiledDragonIds = new LinkedHashSet<>();
 
@@ -787,6 +823,7 @@ public final class CorruptionAchievementManager {
                 return state;
             }
             state.disqualified = snapshot.disqualified();
+            state.disqualificationReason = snapshot.disqualificationReason();
             state.warrantyDisqualified = snapshot.warrantyDisqualified();
             state.spoiledDragonIds.addAll(snapshot.spoiledDragonIds());
             return state;

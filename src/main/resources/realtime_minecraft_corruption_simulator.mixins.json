@@ -35,6 +35,7 @@
     "client.AbstractSliderButtonMixin",
     "client.AbstractContainerScreenMixin",
     "client.AbstractWidgetMixin",
+    "client.AdvancementTabMixin",
     "client.AmbientOcclusionFaceMixin",
     "client.BannerRendererAnimationMixin",
     "client.BeaconRendererAnimationMixin",
@@ -71,9 +72,12 @@
     "client.SingleQuadParticleTextureMixin",
     "client.SimpleBakedModelMixin",
     "client.SkullBlockEntityAnimationMixin",
+    "client.SubtitleOverlayMixin",
     "client.TheEndGatewayBlockEntityAnimationMixin",
     "client.TheEndGatewayRendererAnimationMixin",
-    "client.TerrainParticleMixin"
+    "client.TerrainParticleMixin",
+    "client.ToastInstanceMixin",
+    "client.ToastPopupMixin"
   ],
   "injectors": {
     "defaultRequire": 0

@@ -113,6 +113,7 @@ public final class CorruptionMechanicsManager {
     private static final int SERVER_LEVEL_LOAD_MUTATION_WARMUP_TICKS = 80;
     private static final int SERVER_SAVE_MUTATION_COOLDOWN_TICKS = 80;
     private static final int MAX_WORLD_PROCESS_MUTATIONS_PER_TICK = 12;
+    private static final int MAX_FLUID_SOURCE_ALLOWS_PER_TICK = 2;
     private static final int MIN_PERSISTENT_TERRAIN_CORRUPTION_LEVEL = 1;
     private static final int MAX_PERSISTENT_TERRAIN_CORRUPTION_LEVEL = 100;
     private static final float MIN_PERSISTENT_TERRAIN_INTENSITY = 0.006F;
@@ -132,6 +133,8 @@ public final class CorruptionMechanicsManager {
     private static volatile long serverMutationResumeTick;
     private static long worldProcessBudgetTick = Long.MIN_VALUE;
     private static int worldProcessBudgetUsed;
+    private static long fluidSourceAllowBudgetTick = Long.MIN_VALUE;
+    private static int fluidSourceAllowsUsed;
     private static int cachedServerIdentity;
     private static long cachedServerStackTick = Long.MIN_VALUE;
     private static CorruptionEffectStack cachedServerStack = CorruptionEffectStack.local(0);
@@ -1423,20 +1426,33 @@ public final class CorruptionMechanicsManager {
 
     @SubscribeEvent
     public static void onCreateFluidSource(BlockEvent.CreateFluidSourceEvent event) {
-        CorruptionEffectStack stack = serverStack(event.getLevel());
+        if (!(event.getLevel() instanceof ServerLevel level)) {
+            return;
+        }
+
+        CorruptionEffectStack stack = serverStack(level);
         if (usesSaveStableVisualWorldgen(stack)) {
             return;
         }
         String targetId = "fluid_source:" + blockTargetId(event.getState());
-        if (!targetActive(stack, CorruptionSurface.WORLDGEN_SURFACE, targetId, MIN_WORLD_PROCESS_INTENSITY)) {
+        float intensity = stack.targetIntensity(CorruptionSurface.WORLDGEN_SURFACE, targetId);
+        if (intensity <= MIN_WORLD_PROCESS_INTENSITY) {
             return;
         }
 
-        float intensity = stack.targetIntensity(CorruptionSurface.WORLDGEN_SURFACE, targetId);
-        boolean allow = CorruptionValueMutator.decision(stack, CorruptionSurface.WORLDGEN_SURFACE, targetId + ":allow", event.getPos().hashCode(), 0.58F + intensity * 0.18F);
-        boolean deny = CorruptionValueMutator.decision(stack, CorruptionSurface.WORLDGEN_SURFACE, targetId + ":deny", event.getPos().hashCode() ^ 0x55, 0.42F + intensity * 0.16F);
-        if (allow != deny) {
-            event.setResult(allow ? Event.Result.ALLOW : Event.Result.DENY);
+        int salt = event.getPos().hashCode();
+        boolean deny = CorruptionValueMutator.decision(stack, CorruptionSurface.WORLDGEN_SURFACE, targetId + ":deny", salt ^ 0x55, 0.46F + intensity * 0.26F);
+        if (deny) {
+            event.setResult(Event.Result.DENY);
+            return;
+        }
+
+        float allowChance = stack.extreme(CorruptionSurface.WORLDGEN_SURFACE)
+                ? 0.22F
+                : Mth.clamp(0.015F + intensity * 0.12F + stack.instability() * 0.035F, 0.0F, 0.18F);
+        boolean allow = CorruptionValueMutator.decision(stack, CorruptionSurface.WORLDGEN_SURFACE, targetId + ":allow", salt, allowChance);
+        if (allow && claimWorldProcessMutation(level) && claimFluidSourceAllow(level)) {
+            event.setResult(Event.Result.ALLOW);
         }
     }
 
@@ -2604,13 +2620,6 @@ public final class CorruptionMechanicsManager {
         return entity.isControlledByLocalInstance();
     }
 
-    private static CorruptionEffectStack serverStack(Level level) {
-        if (level instanceof ServerLevel serverLevel) {
-            return serverStack(serverLevel);
-        }
-        return CorruptionEffectStack.local(0);
-    }
-
     private static CorruptionEffectStack serverStack(ServerLevel level) {
         MinecraftServer server = level.getServer();
         if (server == null) {
@@ -3227,9 +3236,24 @@ public final class CorruptionMechanicsManager {
         return true;
     }
 
+    private static synchronized boolean claimFluidSourceAllow(ServerLevel level) {
+        long tick = level.getServer() == null ? level.getGameTime() : level.getServer().getTickCount();
+        if (fluidSourceAllowBudgetTick != tick) {
+            fluidSourceAllowBudgetTick = tick;
+            fluidSourceAllowsUsed = 0;
+        }
+        if (fluidSourceAllowsUsed >= MAX_FLUID_SOURCE_ALLOWS_PER_TICK) {
+            return false;
+        }
+        fluidSourceAllowsUsed++;
+        return true;
+    }
+
     private static synchronized void resetWorldProcessBudget() {
         worldProcessBudgetTick = Long.MIN_VALUE;
         worldProcessBudgetUsed = 0;
+        fluidSourceAllowBudgetTick = Long.MIN_VALUE;
+        fluidSourceAllowsUsed = 0;
     }
 
     private static void clearPendingTerrainMutations() {

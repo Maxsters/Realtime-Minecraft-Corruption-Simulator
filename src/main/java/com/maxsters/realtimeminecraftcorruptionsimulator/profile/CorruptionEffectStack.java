@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 // Immutable view of the current corruption state used by mechanics and render hooks.
 // All intensity comes from the current level, seed, target mask, and surface tuning.
@@ -23,6 +25,7 @@ public final class CorruptionEffectStack {
     private final int layerCount;
     private final float instability;
     private final float[] intensityCache;
+    private final Map<TargetIntensityKey, Float> targetIntensityCache;
 
     private CorruptionEffectStack(int corruptionLevel, long fixedSeed, int enabledTargetsMask) {
         this(corruptionLevel, fixedSeed, enabledTargetsMask, false);
@@ -38,6 +41,7 @@ public final class CorruptionEffectStack {
         this.layerCount = computeLayerCount(this.effectiveLevel);
         this.instability = computeInstability(this.effectiveLevel);
         this.intensityCache = new float[CorruptionSurface.values().length];
+        this.targetIntensityCache = new ConcurrentHashMap<>();
         Arrays.fill(this.intensityCache, Float.NaN);
     }
 
@@ -177,7 +181,10 @@ public final class CorruptionEffectStack {
         if (targetId == null || targetId.isBlank()) {
             return global;
         }
+        return targetIntensityCache.computeIfAbsent(new TargetIntensityKey(surface, targetId), key -> computeTargetIntensity(key.surface(), key.targetId(), global));
+    }
 
+    private float computeTargetIntensity(CorruptionSurface surface, String targetId, float global) {
         long hash = mix(surfaceSeed(surface, targetId, 0));
         float gate = clamp01(0.08F + global * (0.46F + surface.targetBias()) + instability * 0.24F + Math.min(0.18F, layerCount * 0.006F));
         if (unit(hash) > gate) {
@@ -397,5 +404,8 @@ public final class CorruptionEffectStack {
 
     private static float clamp01(float value) {
         return Math.max(0.0F, Math.min(1.0F, value));
+    }
+
+    private record TargetIntensityKey(CorruptionSurface surface, String targetId) {
     }
 }

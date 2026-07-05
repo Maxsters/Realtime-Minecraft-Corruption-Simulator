@@ -326,6 +326,10 @@ public class CorruptionSavedData extends SavedData {
         return serverAchievementDisqualified && !serverAchievementDisqualificationReason.isBlank();
     }
 
+    public String serverAchievementDisqualificationReason() {
+        return serverAchievementDisqualificationReason;
+    }
+
     public boolean markServerAchievementDisqualified(String reason) {
         String sanitizedReason = sanitizeDisqualificationReason(reason);
         if (serverAchievementDisqualified && !serverAchievementDisqualificationReason.isBlank()) {

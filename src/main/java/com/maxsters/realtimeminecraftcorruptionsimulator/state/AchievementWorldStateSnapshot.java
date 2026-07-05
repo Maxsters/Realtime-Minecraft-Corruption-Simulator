@@ -9,19 +9,22 @@ public record AchievementWorldStateSnapshot(
         boolean disqualified,
         boolean warrantyStarted,
         boolean warrantyDisqualified,
+        String disqualificationReason,
         Set<String> armedDragonIds,
         Set<String> spoiledDragonIds
 ) {
     private static final int MAX_DRAGON_IDS = 64;
     private static final int MAX_ID_LENGTH = 64;
+    public static final int MAX_REASON_LENGTH = 96;
 
     public AchievementWorldStateSnapshot {
+        disqualificationReason = sanitizeReason(disqualificationReason);
         armedDragonIds = copyLimited(armedDragonIds);
         spoiledDragonIds = copyLimited(spoiledDragonIds);
     }
 
     public static AchievementWorldStateSnapshot empty() {
-        return new AchievementWorldStateSnapshot(false, false, false, Set.of(), Set.of());
+        return new AchievementWorldStateSnapshot(false, false, false, "", Set.of(), Set.of());
     }
 
     public static AchievementWorldStateSnapshot from(CorruptionSavedData data) {
@@ -32,9 +35,14 @@ public record AchievementWorldStateSnapshot(
                 data.isAchievementWorldDisqualified(),
                 data.isWarrantyStarted(),
                 data.isWarrantyDisqualified(),
+                data.serverAchievementDisqualificationReason(),
                 data.armedDragonIds(),
                 data.spoiledDragonIds()
         );
+    }
+
+    public AchievementWorldStateSnapshot withDisqualificationReason(String reason) {
+        return new AchievementWorldStateSnapshot(disqualified, warrantyStarted, warrantyDisqualified, reason, armedDragonIds, spoiledDragonIds);
     }
 
     public void encode(FriendlyByteBuf buffer) {
@@ -43,6 +51,10 @@ public record AchievementWorldStateSnapshot(
         buffer.writeBoolean(warrantyDisqualified);
         writeSet(buffer, armedDragonIds);
         writeSet(buffer, spoiledDragonIds);
+    }
+
+    public void encodeDisqualificationReason(FriendlyByteBuf buffer) {
+        buffer.writeUtf(disqualificationReason, MAX_REASON_LENGTH);
     }
 
     public static AchievementWorldStateSnapshot decode(FriendlyByteBuf buffer) {
@@ -54,7 +66,14 @@ public record AchievementWorldStateSnapshot(
         boolean warrantyDisqualified = buffer.readBoolean();
         Set<String> armedDragonIds = readSet(buffer);
         Set<String> spoiledDragonIds = readSet(buffer);
-        return new AchievementWorldStateSnapshot(disqualified, warrantyStarted, warrantyDisqualified, armedDragonIds, spoiledDragonIds);
+        return new AchievementWorldStateSnapshot(disqualified, warrantyStarted, warrantyDisqualified, "", armedDragonIds, spoiledDragonIds);
+    }
+
+    public static String decodeDisqualificationReason(FriendlyByteBuf buffer) {
+        if (!buffer.isReadable()) {
+            return "";
+        }
+        return sanitizeReason(buffer.readUtf(MAX_REASON_LENGTH));
     }
 
     private static void writeSet(FriendlyByteBuf buffer, Set<String> values) {
@@ -100,5 +119,13 @@ public record AchievementWorldStateSnapshot(
         }
         String trimmed = value.trim();
         return trimmed.length() > MAX_ID_LENGTH ? trimmed.substring(0, MAX_ID_LENGTH) : trimmed;
+    }
+
+    private static String sanitizeReason(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.length() > MAX_REASON_LENGTH ? trimmed.substring(0, MAX_REASON_LENGTH) : trimmed;
     }
 }
