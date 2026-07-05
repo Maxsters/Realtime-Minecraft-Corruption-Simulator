@@ -34,8 +34,8 @@ public final class CorruptionOverlayButton {
         if (snapshot == null) {
             return 0xFF5CA7B2;
         }
-        if (snapshot.getCorruptionLevel() >= 70) {
-            return 0xFF4D8FD6;
+        if (CorruptionOverlayPanel.shouldShowHighLevelWarning(snapshot.getCorruptionLevel())) {
+            return 0xFFE08A3A;
         }
         return 0xFF5CA7B2;
     }

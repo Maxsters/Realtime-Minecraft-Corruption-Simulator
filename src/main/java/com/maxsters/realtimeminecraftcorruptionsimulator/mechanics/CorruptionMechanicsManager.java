@@ -416,18 +416,19 @@ public final class CorruptionMechanicsManager {
 
         CorruptionSurface surface = liquidSurface(stack, targetId);
         float intensity = liquidMechanicsIntensity(stack, targetId);
-        FluidFeatureFault fault = fluidFeatureFault(stack, surface, targetId, intensity);
-        int bucket = fluidPositionBucket(entity, fault);
+        long faultSeed = fluidFeatureSeed(stack, surface, targetId);
+        int bucket = fluidPositionBucket(entity, faultSeed, intensity);
+        float detectorScale = fluidDetectorScale(faultSeed, intensity);
         float chance = stack.extreme(surface)
-                ? Mth.clamp(0.54F + fault.detectorScale * 0.36F, 0.0F, 0.96F)
-                : Mth.clamp((0.08F + intensity * 0.74F + stack.instability() * 0.08F) * fault.detectorScale, 0.0F, 0.90F);
+                ? Mth.clamp(0.54F + detectorScale * 0.36F, 0.0F, 0.96F)
+                : Mth.clamp((0.08F + intensity * 0.74F + stack.instability() * 0.08F) * detectorScale, 0.0F, 0.90F);
         if (stack.unit(surface, targetId + ":detector_path", bucket) >= chance) {
             return original;
         }
 
         TagKey<Fluid> fluidTag = fluidTagForCheck(check);
         boolean eyeOnly = check.startsWith("eye:") || check.contains("underwater");
-        return sampleCorruptedFluid(entity, fluidTag, eyeOnly, fault);
+        return sampleCorruptedFluid(entity, fluidTag, eyeOnly, faultSeed, intensity);
     }
 
     public static boolean corruptFluidPush(Entity entity, boolean original) {
@@ -443,11 +444,12 @@ public final class CorruptionMechanicsManager {
 
         CorruptionSurface surface = liquidSurface(stack, targetId);
         float intensity = liquidMechanicsIntensity(stack, targetId);
-        FluidFeatureFault fault = fluidFeatureFault(stack, surface, targetId, intensity);
-        int bucket = fluidPositionBucket(entity, fault);
+        long faultSeed = fluidFeatureSeed(stack, surface, targetId);
+        int bucket = fluidPositionBucket(entity, faultSeed, intensity);
+        float flowScale = fluidFlowScale(faultSeed, intensity);
         float chance = stack.extreme(surface)
-                ? Mth.clamp(0.46F + fault.flowScale * 0.34F, 0.0F, 0.92F)
-                : Mth.clamp((0.08F + intensity * 0.58F + stack.instability() * 0.08F) * fault.flowScale, 0.0F, 0.82F);
+                ? Mth.clamp(0.46F + flowScale * 0.34F, 0.0F, 0.92F)
+                : Mth.clamp((0.08F + intensity * 0.58F + stack.instability() * 0.08F) * flowScale, 0.0F, 0.82F);
         if (stack.unit(surface, targetId + ":push_feature", bucket) >= chance) {
             return original;
         }
@@ -467,16 +469,17 @@ public final class CorruptionMechanicsManager {
 
         CorruptionSurface surface = liquidSurface(stack, targetId);
         float intensity = liquidMechanicsIntensity(stack, targetId);
-        FluidFeatureFault fault = fluidFeatureFault(stack, surface, targetId, intensity);
-        int bucket = fluidPositionBucket(entity, fault);
+        long faultSeed = fluidFeatureSeed(stack, surface, targetId);
+        int bucket = fluidPositionBucket(entity, faultSeed, intensity);
+        float detectorScale = fluidDetectorScale(faultSeed, intensity);
         float chance = stack.extreme(surface)
-                ? Mth.clamp(0.60F + fault.detectorScale * 0.28F, 0.0F, 0.94F)
-                : Mth.clamp((0.05F + intensity * 0.58F + stack.instability() * 0.08F) * fault.detectorScale, 0.0F, 0.78F);
+                ? Mth.clamp(0.60F + detectorScale * 0.28F, 0.0F, 0.94F)
+                : Mth.clamp((0.05F + intensity * 0.58F + stack.instability() * 0.08F) * detectorScale, 0.0F, 0.78F);
         if (stack.unit(surface, targetId + ":swim_gate", bucket) >= chance) {
             return;
         }
 
-        boolean corruptedWater = sampleCorruptedFluid(entity, FluidTags.WATER, false, fault);
+        boolean corruptedWater = sampleCorruptedFluid(entity, FluidTags.WATER, false, faultSeed, intensity);
         boolean brokenState = corruptedWater && stack.unit(surface, targetId + ":force_swim", bucket ^ 0x5357494D) < 0.62F;
         entity.setSwimming(brokenState);
     }
@@ -1869,20 +1872,20 @@ public final class CorruptionMechanicsManager {
         }
 
         CorruptionSurface surface = liquidSurface(stack, targetId);
-        FluidFeatureFault fault = fluidFeatureFault(stack, surface, "liquid_mechanics:" + player.getUUID(), liquidMechanicsIntensity(stack, targetId));
         lava = actualLava || detectedLava;
         fluid = lava ? "lava" : "water";
         targetId = "liquid_mechanics:" + fluid + ":" + playerTargetId(player);
         float intensity = liquidMechanicsIntensity(stack, targetId);
-        fault = fluidFeatureFault(stack, surface, targetId, intensity);
-        int bucket = fluidPositionBucket(player, fault);
+        long faultSeed = fluidFeatureSeed(stack, surface, targetId);
+        int bucket = fluidPositionBucket(player, faultSeed, intensity);
+        float flowScale = fluidFlowScale(faultSeed, intensity);
         boolean nearLiquid = actualWater || actualLava || detectedWater || detectedLava || isNearFluid(player, FluidTags.WATER) || isNearFluid(player, FluidTags.LAVA);
         if (!nearLiquid && !(player.getVehicle() instanceof Boat)) {
             return;
         }
 
-        if (stack.unit(surface, targetId + ":current_feature", bucket) < Mth.clamp((0.10F + intensity * 0.62F) * fault.flowScale, 0.0F, 0.92F)) {
-            mutateLiquidCollision(player, stack, targetId, surface, fault, intensity);
+        if (stack.unit(surface, targetId + ":current_feature", bucket) < Mth.clamp((0.10F + intensity * 0.62F) * flowScale, 0.0F, 0.92F)) {
+            mutateLiquidCollision(player, stack, targetId, surface, faultSeed, intensity);
         }
 
         if (player.getVehicle() instanceof Boat boat) {
@@ -1890,16 +1893,17 @@ public final class CorruptionMechanicsManager {
         }
     }
 
-    private static void mutateLiquidCollision(Entity entity, CorruptionEffectStack stack, String targetId, CorruptionSurface surface, FluidFeatureFault fault, float intensity) {
-        int bucket = fluidPositionBucket(entity, fault);
+    private static void mutateLiquidCollision(Entity entity, CorruptionEffectStack stack, String targetId, CorruptionSurface surface, long faultSeed, float intensity) {
+        int bucket = fluidPositionBucket(entity, faultSeed, intensity);
         long clock = stack.stableLong(surface, targetId + ":flow_clock", bucket);
         Vec3 motion = entity.getDeltaMovement();
-        Vec3 mutated = CorruptionValueMutator.mutateVector(stack, surface, targetId + ":flow", motion, (0.008D + intensity * 0.14D) * fault.flowScale, 2.2D, entity.getId(), clock);
+        float flowScale = fluidFlowScale(faultSeed, intensity);
+        Vec3 mutated = CorruptionValueMutator.mutateVector(stack, surface, targetId + ":flow", motion, (0.008D + intensity * 0.14D) * flowScale, 2.2D, entity.getId(), clock);
         long seed = stack.stableLong(surface, targetId, entity.getId() ^ 0x4C495155);
         int period = Math.max(3, 18 - Math.round(intensity * 12.0F));
         float phase = ((entity.tickCount + (seed & 0x3FL)) % period) / (float) period;
         float pulse = collisionPulse(seed ^ 0x464C4F57L, phase);
-        int mode = Math.floorMod((int) (seed >>> 28) + fault.flowMode, 7);
+        int mode = Math.floorMod((int) (seed >>> 28) + fluidFlowMode(faultSeed), 7);
         switch (mode) {
             case 0 -> mutated = mutated.multiply(0.05D + intensity * 0.55D, 0.70D + intensity * 0.60D, 0.05D + intensity * 0.55D);
             case 1 -> mutated = mutated.add(signedUnit(seed ^ bucket) * intensity * 0.24D, -0.08D - intensity * (0.34D + Math.abs(pulse) * 0.40D), signedUnit(seed ^ 0x5A4C4951L ^ bucket) * intensity * 0.24D);
@@ -1931,13 +1935,13 @@ public final class CorruptionMechanicsManager {
 
         CorruptionSurface surface = liquidSurface(stack, targetId);
         float intensity = liquidMechanicsIntensity(stack, targetId);
-        FluidFeatureFault fault = fluidFeatureFault(stack, surface, "boat_liquid_mechanics:" + player.getUUID(), intensity);
-        int bucket = fluidPositionBucket(boat, fault);
+        long faultSeed = fluidFeatureSeed(stack, surface, "boat_liquid_mechanics:" + player.getUUID());
+        int bucket = fluidPositionBucket(boat, faultSeed, intensity);
         long clock = stack.stableLong(surface, targetId + ":boat_clock", bucket);
         long seed = stack.stableLong(surface, targetId, boat.getId() ^ 0x424F4154);
         Vec3 motion = boat.getDeltaMovement();
-        Vec3 mutated = CorruptionValueMutator.mutateVector(stack, surface, targetId + ":velocity", motion, (0.010D + intensity * 0.20D) * fault.boatScale, 3.0D, boat.getId(), clock);
-        int mode = Math.floorMod((int) (seed >>> 31) + fault.flowMode, 6);
+        Vec3 mutated = CorruptionValueMutator.mutateVector(stack, surface, targetId + ":velocity", motion, (0.010D + intensity * 0.20D) * fluidBoatScale(faultSeed, intensity), 3.0D, boat.getId(), clock);
+        int mode = Math.floorMod((int) (seed >>> 31) + fluidFlowMode(faultSeed), 6);
         switch (mode) {
             case 0 -> mutated = mutated.add(signedUnit(seed ^ bucket) * intensity * 0.32D, signedUnit(seed ^ 0x5957494EL ^ bucket) * intensity * 0.18D, signedUnit(seed ^ 0x5A57494EL ^ bucket) * intensity * 0.32D);
             case 1 -> mutated = mutated.multiply(0.05D + intensity * 0.60D, 0.12D + intensity * 0.80D, 0.05D + intensity * 0.60D);
@@ -2956,30 +2960,44 @@ public final class CorruptionMechanicsManager {
         return CorruptionSurface.PLAYER_PHYSICS;
     }
 
-    private static FluidFeatureFault fluidFeatureFault(CorruptionEffectStack stack, CorruptionSurface surface, String targetId, float intensity) {
-        long seed = stack.stableLong(surface, "fluid_feature:" + targetId, 0x4C514D45);
-        double offsetSpan = Math.pow(Math.max(0.0F, intensity), 1.45D) * 20.0D;
-        Vec3 sampleOffset = new Vec3(
-                signedUnit(seed ^ 0x58574154L) * offsetSpan,
-                signedUnit(seed ^ 0x59574154L) * offsetSpan * 0.72D,
-                signedUnit(seed ^ 0x5A574154L) * offsetSpan
-        );
-        double precision = fluidPrecisionStep(seed ^ 0x50524543L, intensity);
-        double sampleScale = Mth.clamp(0.18D + unitHash(seed ^ 0x5343414CL) * (0.90D + intensity * 3.20D), 0.08D, 4.0D);
-        return new FluidFeatureFault(
-                seed,
-                sampleOffset,
-                precision,
-                sampleScale,
-                featureScale(seed ^ 0x44455445L, intensity, 0.16F, 1.85F),
-                featureScale(seed ^ 0x464C4F57L, intensity, 0.14F, 2.25F),
-                featureScale(seed ^ 0x41495253L, intensity, 0.08F, 1.90F),
-                featureScale(seed ^ 0x434F4C4CL, intensity, 0.06F, 2.10F),
-                featureScale(seed ^ 0x47524156L, intensity, 0.06F, 1.95F),
-                featureScale(seed ^ 0x48454154L, intensity, 0.03F, 1.35F),
-                featureScale(seed ^ 0x424F4154L, intensity, 0.08F, 2.35F),
-                Math.floorMod((int) (seed >>> 28), 7)
-        );
+    private static long fluidFeatureSeed(CorruptionEffectStack stack, CorruptionSurface surface, String targetId) {
+        return stack.stableLong(surface, "fluid_feature:" + targetId, 0x4C514D45);
+    }
+
+    private static double fluidOffsetSpan(float intensity) {
+        return Math.pow(Math.max(0.0F, intensity), 1.45D) * 20.0D;
+    }
+
+    private static double fluidSampleOffsetX(long seed, float intensity) {
+        return signedUnit(seed ^ 0x58574154L) * fluidOffsetSpan(intensity);
+    }
+
+    private static double fluidSampleOffsetY(long seed, float intensity) {
+        return signedUnit(seed ^ 0x59574154L) * fluidOffsetSpan(intensity) * 0.72D;
+    }
+
+    private static double fluidSampleOffsetZ(long seed, float intensity) {
+        return signedUnit(seed ^ 0x5A574154L) * fluidOffsetSpan(intensity);
+    }
+
+    private static double fluidSampleScale(long seed, float intensity) {
+        return Mth.clamp(0.18D + unitHash(seed ^ 0x5343414CL) * (0.90D + intensity * 3.20D), 0.08D, 4.0D);
+    }
+
+    private static float fluidDetectorScale(long seed, float intensity) {
+        return featureScale(seed ^ 0x44455445L, intensity, 0.16F, 1.85F);
+    }
+
+    private static float fluidFlowScale(long seed, float intensity) {
+        return featureScale(seed ^ 0x464C4F57L, intensity, 0.14F, 2.25F);
+    }
+
+    private static float fluidBoatScale(long seed, float intensity) {
+        return featureScale(seed ^ 0x424F4154L, intensity, 0.08F, 2.35F);
+    }
+
+    private static int fluidFlowMode(long seed) {
+        return Math.floorMod((int) (seed >>> 28), 7);
     }
 
     private static float featureScale(long seed, float intensity, float min, float max) {
@@ -2997,11 +3015,12 @@ public final class CorruptionMechanicsManager {
         return Mth.clamp(Math.scalb(1.0D, exponent) * (0.35D + intensity * 1.65D), 0.03125D, 8.0D);
     }
 
-    private static int fluidPositionBucket(Entity entity, FluidFeatureFault fault) {
-        double step = fault.precisionStep <= 0.0D ? 0.5D : Math.max(0.5D, fault.precisionStep);
-        int x = Mth.floor(quantize(entity.getX() + fault.sampleOffset.x, step) / step);
-        int y = Mth.floor(quantize(entity.getY() + fault.sampleOffset.y, step) / step);
-        int z = Mth.floor(quantize(entity.getZ() + fault.sampleOffset.z, step) / step);
+    private static int fluidPositionBucket(Entity entity, long faultSeed, float intensity) {
+        double precisionStep = fluidPrecisionStep(faultSeed ^ 0x50524543L, intensity);
+        double step = precisionStep <= 0.0D ? 0.5D : Math.max(0.5D, precisionStep);
+        int x = Mth.floor(quantize(entity.getX() + fluidSampleOffsetX(faultSeed, intensity), step) / step);
+        int y = Mth.floor(quantize(entity.getY() + fluidSampleOffsetY(faultSeed, intensity), step) / step);
+        int z = Mth.floor(quantize(entity.getZ() + fluidSampleOffsetZ(faultSeed, intensity), step) / step);
         return x * 73428767 ^ y * 912931 ^ z * 42317861;
     }
 
@@ -3042,33 +3061,35 @@ public final class CorruptionMechanicsManager {
         return value.normalize().scale(maxMagnitude);
     }
 
-    private static boolean sampleCorruptedFluid(Entity entity, TagKey<Fluid> fluidTag, boolean eyeOnly, FluidFeatureFault fault) {
+    private static boolean sampleCorruptedFluid(Entity entity, TagKey<Fluid> fluidTag, boolean eyeOnly, long faultSeed, float intensity) {
         AABB base;
         if (eyeOnly) {
-            double radius = 0.04D + fault.sampleScale * 0.10D;
+            double radius = 0.04D + fluidSampleScale(faultSeed, intensity) * 0.10D;
             double eyeY = entity.getEyeY() - 0.11111111D;
             base = new AABB(entity.getX() - radius, eyeY - radius, entity.getZ() - radius, entity.getX() + radius, eyeY + radius, entity.getZ() + radius);
         } else {
             base = entity.getBoundingBox().deflate(0.001D);
         }
 
-        AABB sampled = transformFluidSampleBox(base, fault);
+        AABB sampled = transformFluidSampleBox(base, faultSeed, intensity);
         return isFluidInBox(entity.level(), sampled, fluidTag);
     }
 
-    private static AABB transformFluidSampleBox(AABB base, FluidFeatureFault fault) {
-        double centerX = (base.minX + base.maxX) * 0.5D + fault.sampleOffset.x;
-        double centerY = (base.minY + base.maxY) * 0.5D + fault.sampleOffset.y;
-        double centerZ = (base.minZ + base.maxZ) * 0.5D + fault.sampleOffset.z;
-        if (fault.precisionStep > 0.0D) {
-            centerX = quantize(centerX, fault.precisionStep);
-            centerY = quantize(centerY, fault.precisionStep);
-            centerZ = quantize(centerZ, fault.precisionStep);
+    private static AABB transformFluidSampleBox(AABB base, long faultSeed, float intensity) {
+        double centerX = (base.minX + base.maxX) * 0.5D + fluidSampleOffsetX(faultSeed, intensity);
+        double centerY = (base.minY + base.maxY) * 0.5D + fluidSampleOffsetY(faultSeed, intensity);
+        double centerZ = (base.minZ + base.maxZ) * 0.5D + fluidSampleOffsetZ(faultSeed, intensity);
+        double precisionStep = fluidPrecisionStep(faultSeed ^ 0x50524543L, intensity);
+        if (precisionStep > 0.0D) {
+            centerX = quantize(centerX, precisionStep);
+            centerY = quantize(centerY, precisionStep);
+            centerZ = quantize(centerZ, precisionStep);
         }
 
-        double halfX = Mth.clamp((base.maxX - base.minX) * 0.5D * fault.sampleScale, 0.03125D, 2.5D);
-        double halfY = Mth.clamp((base.maxY - base.minY) * 0.5D * fault.sampleScale, 0.03125D, 2.5D);
-        double halfZ = Mth.clamp((base.maxZ - base.minZ) * 0.5D * fault.sampleScale, 0.03125D, 2.5D);
+        double sampleScale = fluidSampleScale(faultSeed, intensity);
+        double halfX = Mth.clamp((base.maxX - base.minX) * 0.5D * sampleScale, 0.03125D, 2.5D);
+        double halfY = Mth.clamp((base.maxY - base.minY) * 0.5D * sampleScale, 0.03125D, 2.5D);
+        double halfZ = Mth.clamp((base.maxZ - base.minZ) * 0.5D * sampleScale, 0.03125D, 2.5D);
         return new AABB(centerX - halfX, centerY - halfY, centerZ - halfZ, centerX + halfX, centerY + halfY, centerZ + halfZ);
     }
 
@@ -3130,22 +3151,6 @@ public final class CorruptionMechanicsManager {
             return null;
         }
         return level.getChunk(chunkX, chunkZ).getBlockState(pos);
-    }
-
-    private record FluidFeatureFault(
-            long seed,
-            Vec3 sampleOffset,
-            double precisionStep,
-            double sampleScale,
-            float detectorScale,
-            float flowScale,
-            float airScale,
-            float collisionScale,
-            float gravityScale,
-            float heatScale,
-            float boatScale,
-            int flowMode
-    ) {
     }
 
     private static boolean shouldSuspendServerMutations(MinecraftServer server) {

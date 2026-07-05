@@ -72,7 +72,12 @@ public abstract class AbstractContainerScreenMixin {
     @Dynamic("Targets both mapped dev names and SRG runtime aliases for AbstractContainerScreen#slotClicked.")
     private void rmc$corruptSlotClick(Slot slot, int slotId, int button, ClickType clickType, CallbackInfo callback) {
         AbstractContainerScreen<?> screen = (AbstractContainerScreen<?>) (Object) this;
-        GuiInteractionCorruptionHooks.SlotClickMutation mutation = GuiInteractionCorruptionHooks.corruptSlotClick(screen, slot, slotId, button, clickType);
+        GuiInteractionCorruptionHooks.SlotClickMutation mutation;
+        try {
+            mutation = GuiInteractionCorruptionHooks.corruptSlotClick(screen, slot, slotId, button, clickType);
+        } catch (LinkageError ignored) {
+            return;
+        }
         if (mutation.cancel()) {
             callback.cancel();
             return;
@@ -104,7 +109,7 @@ public abstract class AbstractContainerScreenMixin {
     )
     @Dynamic("Targets AbstractContainerScreen#renderFloatingItem carried item X coordinate.")
     private int rmc$corruptFloatingItemX(int x) {
-        return GuiInteractionCorruptionHooks.corruptFloatingItemCoordinate((AbstractContainerScreen<?>) (Object) this, x, 0);
+        return rmc$corruptFloatingItemCoordinateSafely(x, 0);
     }
 
     @ModifyArg(
@@ -123,7 +128,7 @@ public abstract class AbstractContainerScreenMixin {
     )
     @Dynamic("Targets AbstractContainerScreen#renderFloatingItem carried item Y coordinate.")
     private int rmc$corruptFloatingItemY(int y) {
-        return GuiInteractionCorruptionHooks.corruptFloatingItemCoordinate((AbstractContainerScreen<?>) (Object) this, y, 1);
+        return rmc$corruptFloatingItemCoordinateSafely(y, 1);
     }
 
     @ModifyArg(
@@ -142,7 +147,7 @@ public abstract class AbstractContainerScreenMixin {
     )
     @Dynamic("Targets AbstractContainerScreen#m_280211_ carried item X coordinate.")
     private int rmc$corruptFloatingItemXSrg(int x) {
-        return GuiInteractionCorruptionHooks.corruptFloatingItemCoordinate((AbstractContainerScreen<?>) (Object) this, x, 0);
+        return rmc$corruptFloatingItemCoordinateSafely(x, 0);
     }
 
     @ModifyArg(
@@ -161,7 +166,14 @@ public abstract class AbstractContainerScreenMixin {
     )
     @Dynamic("Targets AbstractContainerScreen#m_280211_ carried item Y coordinate.")
     private int rmc$corruptFloatingItemYSrg(int y) {
-        return GuiInteractionCorruptionHooks.corruptFloatingItemCoordinate((AbstractContainerScreen<?>) (Object) this, y, 1);
+        return rmc$corruptFloatingItemCoordinateSafely(y, 1);
     }
 
+    private int rmc$corruptFloatingItemCoordinateSafely(int coordinate, int axis) {
+        try {
+            return GuiInteractionCorruptionHooks.corruptFloatingItemCoordinate((AbstractContainerScreen<?>) (Object) this, coordinate, axis);
+        } catch (LinkageError ignored) {
+            return coordinate;
+        }
+    }
 }

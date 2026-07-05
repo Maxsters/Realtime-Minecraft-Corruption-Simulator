@@ -35,7 +35,7 @@ public final class CorruptionOverlayPanel {
     private static final int TARGET_BULK_BUTTON_WIDTH = 58;
     private static final int TOGGLE_ROW_HEIGHT = 28;
     private static final int WARNING_HEIGHT = 28;
-    private static final int HIGH_LEVEL_WARNING_THRESHOLD = 50;
+    private static final int HIGH_LEVEL_WARNING_THRESHOLD = 75;
     private static final int RESIZE_HANDLE_SIZE = 6;
     private static final int ACHIEVEMENT_ROW_HEIGHT = 34;
     private static final int ACHIEVEMENT_ROW_GAP = 3;
@@ -413,7 +413,7 @@ public final class CorruptionOverlayPanel {
         if (shouldShowHighLevelWarning(pendingLevel)) {
             int warningY = slider.y() + 38;
             graphics.fill(slider.x(), warningY, slider.x() + slider.width(), warningY + WARNING_HEIGHT, 0xCC2B2417);
-            drawClipped(graphics, font, "Higher corruption levels can cause lag spikes.", slider.x() + 5, warningY + 5, slider.width() - 10, 0xFFFFD58A);
+            drawClipped(graphics, font, "High corruption levels can cause severe lag and instability.", slider.x() + 5, warningY + 5, slider.width() - 10, 0xFFFFD58A);
             drawClipped(graphics, font, "Texture, model, sound, and chunk work scales up.", slider.x() + 5, warningY + 16, slider.width() - 10, 0xFFE7D5B0);
         }
     }
@@ -702,7 +702,7 @@ public final class CorruptionOverlayPanel {
         graphics.fill(textX, y + 25, textX + barFill, y + 27, unlocked ? 0xFF8FD6A2 : disqualified ? 0xFF8A3338 : 0xFF5CA7B2);
     }
 
-    private static boolean shouldShowHighLevelWarning(int pendingLevel) {
+    static boolean shouldShowHighLevelWarning(int pendingLevel) {
         return pendingLevel >= HIGH_LEVEL_WARNING_THRESHOLD;
     }
 

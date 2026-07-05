@@ -1,6 +1,8 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.GuiInteractionCorruptionHooks;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractWidget;
 import org.spongepowered.asm.mixin.Dynamic;
 import org.spongepowered.asm.mixin.Mixin;
@@ -32,7 +34,17 @@ public abstract class AbstractWidgetMixin {
             return;
         }
 
-        Boolean result = GuiInteractionCorruptionHooks.corruptWidgetClick(widget, mouseX, mouseY, button);
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || ClientCorruptionProtection.isLifecycleAccessScreen(minecraft.screen)) {
+            return;
+        }
+
+        Boolean result;
+        try {
+            result = GuiInteractionCorruptionHooks.corruptWidgetClick(widget, mouseX, mouseY, button);
+        } catch (LinkageError ignored) {
+            return;
+        }
         if (result != null) {
             callback.setReturnValue(result);
         }

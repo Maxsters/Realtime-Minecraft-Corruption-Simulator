@@ -204,6 +204,7 @@ public final class GuiInteractionCorruptionHooks {
 
     private static boolean protectedScreen(Screen screen) {
         return ClientCorruptionProtection.isModScreen(screen)
+                || ClientCorruptionProtection.isLifecycleAccessScreen(screen)
                 || ClientCorruptionProtection.isSaveCriticalScreen(screen)
                 || ClientCorruptionProtection.isDeathScreen(screen);
     }

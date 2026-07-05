@@ -48,22 +48,23 @@ public final class AnimationSpeedCorruptionHooks {
         }
         ItemStack stack = entity.getItem();
         ResourceLocation itemId = stack.isEmpty() ? null : ForgeRegistries.ITEMS.getKey(stack.getItem());
-        return mutateRenderPartial(partialTick, "dropped_item_spin:" + (itemId == null ? "empty" : itemId), entity.getId() ^ entity.getAge());
+        return mutateRenderPartial(CorruptionSurface.ANIMATION_TIMING, partialTick, "dropped_item_spin:" + (itemId == null ? "empty" : itemId), entity.getId() ^ entity.getAge());
     }
 
     public static float mutateScreenPartial(float partialTick, String screenId) {
-        return mutateRenderPartial(partialTick, "gui_animation:" + screenId, 0x475549);
+        return mutateRenderPartial(CorruptionSurface.GUI_SURFACE, partialTick, "gui_animation:" + screenId, 0x475549);
     }
 
     public static GuiTickMutation mutateGuiTimers(int tickCount, int overlayMessageTime, int titleTime) {
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
         String targetId = "gui_tick_animation";
-        float intensity = animationIntensity(stack, targetId);
+        CorruptionSurface surface = CorruptionSurface.GUI_SURFACE;
+        float intensity = surfaceIntensity(stack, surface, targetId);
         if (intensity <= 0.01F) {
             return new GuiTickMutation(tickCount, overlayMessageTime, titleTime);
         }
 
-        long clock = animationClock(stack, targetId, tickCount);
+        long clock = surfaceClock(stack, surface, targetId, tickCount);
         int mode = Math.floorMod((int) (clock >>> 30), 8);
         int tickDelta = switch (mode) {
             case 0 -> 0;
@@ -148,18 +149,18 @@ public final class AnimationSpeedCorruptionHooks {
         }
     }
 
-    private static float mutateRenderPartial(float partialTick, String targetId, int salt) {
+    private static float mutateRenderPartial(CorruptionSurface surface, float partialTick, String targetId, int salt) {
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
-        float intensity = animationIntensity(stack, targetId);
+        float intensity = surfaceIntensity(stack, surface, targetId);
         if (intensity <= 0.01F) {
             return partialTick;
         }
 
-        long clock = animationClock(stack, targetId, salt ^ Float.floatToIntBits(partialTick));
-        float chance = stack.extreme(CorruptionSurface.ANIMATION_TIMING)
+        long clock = surfaceClock(stack, surface, targetId, salt ^ Float.floatToIntBits(partialTick));
+        float chance = stack.extreme(surface)
                 ? 0.96F
                 : Mth.clamp(0.08F + intensity * 0.72F + stack.instability() * 0.08F, 0.0F, 0.90F);
-        if (stack.unit(CorruptionSurface.ANIMATION_TIMING, targetId + ":partial_gate", salt) > chance) {
+        if (stack.unit(surface, targetId + ":partial_gate", salt) > chance) {
             return partialTick;
         }
 
@@ -178,18 +179,18 @@ public final class AnimationSpeedCorruptionHooks {
         return (float) Mth.clamp(mutated, -96.0D, 192.0D);
     }
 
-    private static float animationIntensity(CorruptionEffectStack stack, String targetId) {
-        if (!stack.activeOrExtreme(CorruptionSurface.ANIMATION_TIMING)) {
+    private static float surfaceIntensity(CorruptionEffectStack stack, CorruptionSurface surface, String targetId) {
+        if (!stack.activeOrExtreme(surface)) {
             return 0.0F;
         }
         return Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.ANIMATION_TIMING) ? 1.0F : stack.intensity(CorruptionSurface.ANIMATION_TIMING),
-                stack.targetIntensity(CorruptionSurface.ANIMATION_TIMING, targetId)
+                stack.extreme(surface) ? 1.0F : stack.intensity(surface),
+                stack.targetIntensity(surface, targetId)
         ), 0.0F, 1.0F);
     }
 
-    private static long animationClock(CorruptionEffectStack stack, String targetId, int salt) {
-        return stack.stableLong(CorruptionSurface.ANIMATION_TIMING, targetId, salt ^ 0x414E494D)
+    private static long surfaceClock(CorruptionEffectStack stack, CorruptionSurface surface, String targetId, int salt) {
+        return stack.stableLong(surface, targetId, salt ^ 0x414E494D)
                 ^ (gameTime() << 18);
     }
 
