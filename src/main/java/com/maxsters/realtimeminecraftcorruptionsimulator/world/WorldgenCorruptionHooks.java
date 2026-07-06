@@ -10,8 +10,6 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.biome.Climate;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
@@ -29,7 +27,6 @@ public final class WorldgenCorruptionHooks {
     private static final float FEATURE_REROUTE_MIN_INTENSITY = 0.18F;
     private static final float CLIMATE_SAMPLE_MIN_INTENSITY = 0.12F;
     private static final float DENSITY_SAMPLE_MIN_STRENGTH = 0.12F;
-    private static final float DENSITY_COORDINATE_MIN_STRENGTH = 0.24F;
     private static final int DENSITY_ROLE_GENERIC = 0;
     private static final int DENSITY_ROLE_CONTINENTS = 1;
     private static final int DENSITY_ROLE_EROSION = 2;
@@ -39,24 +36,6 @@ public final class WorldgenCorruptionHooks {
     private static final int DENSITY_ROLE_FINAL = 6;
     private static final int DENSITY_ROLE_TEMPERATURE = 7;
     private static final int DENSITY_ROLE_VEGETATION = 8;
-    private static final Block[] DIRT_SURFACES = {
-            Blocks.GRASS_BLOCK, Blocks.DIRT, Blocks.COARSE_DIRT, Blocks.ROOTED_DIRT, Blocks.PODZOL, Blocks.MYCELIUM, Blocks.MUD
-    };
-    private static final Block[] SAND_SURFACES = {
-            Blocks.SAND, Blocks.RED_SAND, Blocks.GRAVEL, Blocks.CLAY, Blocks.MUD
-    };
-    private static final Block[] STONE_SURFACES = {
-            Blocks.STONE, Blocks.DEEPSLATE, Blocks.TUFF, Blocks.CALCITE, Blocks.ANDESITE, Blocks.DIORITE, Blocks.GRANITE, Blocks.DRIPSTONE_BLOCK
-    };
-    private static final Block[] ICE_SURFACES = {
-            Blocks.SNOW_BLOCK, Blocks.POWDER_SNOW, Blocks.ICE, Blocks.PACKED_ICE, Blocks.BLUE_ICE
-    };
-    private static final Block[] NETHER_SURFACES = {
-            Blocks.NETHERRACK, Blocks.BASALT, Blocks.SMOOTH_BASALT, Blocks.BLACKSTONE, Blocks.SOUL_SAND, Blocks.SOUL_SOIL, Blocks.CRIMSON_NYLIUM, Blocks.WARPED_NYLIUM
-    };
-    private static final Block[] END_SURFACES = {
-            Blocks.END_STONE, Blocks.OBSIDIAN
-    };
     private static final DensityChannelPlan CONTINENTS_DENSITY = new DensityChannelPlan(stableString("continents"), 1.36F, 1.74D, false, true, DENSITY_ROLE_CONTINENTS);
     private static final DensityChannelPlan EROSION_DENSITY = new DensityChannelPlan(stableString("erosion"), 1.24F, 1.44D, false, true, DENSITY_ROLE_EROSION);
     private static final DensityChannelPlan RIDGES_DENSITY = new DensityChannelPlan(stableString("ridges"), 1.28F, 1.54D, false, true, DENSITY_ROLE_RIDGES);
@@ -66,56 +45,15 @@ public final class WorldgenCorruptionHooks {
     private static final DensityChannelPlan TEMPERATURE_DENSITY = new DensityChannelPlan(stableString("temperature"), 0.72F, 0.52D, false, false, DENSITY_ROLE_TEMPERATURE);
     private static final DensityChannelPlan VEGETATION_DENSITY = new DensityChannelPlan(stableString("vegetation"), 0.72F, 0.52D, false, false, DENSITY_ROLE_VEGETATION);
     private static final ConcurrentMap<Feature<?>, FeatureInfo> FEATURE_INFO_CACHE = new ConcurrentHashMap<>();
+    private static final Object DENSITY_RUNTIME_CACHE_LOCK = new Object();
+    private static final ConcurrentMap<String, DensityRuntime> DENSITY_RUNTIME_CACHE = new ConcurrentHashMap<>();
     private static volatile WorldgenState cachedWorldgenState;
+    private static volatile long cachedDensityRuntimeVersion = Long.MIN_VALUE;
 
     private WorldgenCorruptionHooks() {
     }
 
-    public static final class DensityCoordinates implements DensityFunction.FunctionContext {
-        private int x;
-        private int y;
-        private int z;
-
-        public DensityCoordinates set(int x, int y, int z) {
-            this.x = x;
-            this.y = y;
-            this.z = z;
-            return this;
-        }
-
-        public int x() {
-            return x;
-        }
-
-        public int y() {
-            return y;
-        }
-
-        public int z() {
-            return z;
-        }
-
-        public boolean matches(int otherX, int otherY, int otherZ) {
-            return x == otherX && y == otherY && z == otherZ;
-        }
-
-        @Override
-        public int blockX() {
-            return x;
-        }
-
-        @Override
-        public int blockY() {
-            return y;
-        }
-
-        @Override
-        public int blockZ() {
-            return z;
-        }
-    }
-
-    private record WorldgenState(long version, float intensity, long fixedSeed, float instability, long densityDomainSeed, WorldgenProfile profile) {
+    private record WorldgenState(long version, float intensity, long fixedSeed, float instability, WorldgenProfile profile) {
         private static WorldgenState from(GlobalCorruptionSettings.CorruptionRuntimeSnapshot snapshot) {
             CorruptionEffectStack stack = CorruptionEffectStack.local(snapshot.activeLevel(), snapshot.seed(), snapshot.enabledTargetsMask());
             long fixedSeed = stack.fixedSeed();
@@ -124,7 +62,6 @@ public final class WorldgenCorruptionHooks {
                     worldgenIntensity(stack),
                     fixedSeed,
                     stack.instability(),
-                    mix(fixedSeed ^ 0x574F524C444F4D4CL),
                     WorldgenProfile.fromSeed(fixedSeed)
             );
         }
@@ -134,16 +71,23 @@ public final class WorldgenCorruptionHooks {
             float continentalDensityScale,
             float shapeDensityScale,
             float climateDensityScale,
-            float coordinateScale,
             float climateScale,
             float surfaceScale,
-            float materialScale,
             float featureScale,
             float carverScale,
             float structureScale,
             float decorationScale,
             float verticalScale,
-            float macroScale
+            float macroScale,
+            int densityStyle,
+            int gateStyle,
+            float continentalActivation,
+            float shapeActivation,
+            float climateActivation,
+            float extremeActivation,
+            int featureStyle,
+            float featureActivation,
+            float featureVerticalActivation
     ) {
         private static WorldgenProfile fromSeed(long fixedSeed) {
             long seed = mix(fixedSeed ^ 0x57474E50524F464CL);
@@ -156,10 +100,8 @@ public final class WorldgenCorruptionHooks {
             float continentalDensity = profileScale(seed ^ 0x434F4E54494E4CL, primary == 0, secondary == 0);
             float shapeDensity = profileScale(seed ^ 0x5348415045444CL, primary == 1, secondary == 1);
             float climateDensity = profileScale(seed ^ 0x434C494D44454EL, primary == 2, secondary == 2);
-            float coordinate = profileScale(seed ^ 0x434F4F52445052L, primary == 0 || primary == 1, secondary == 0 || secondary == 1);
             float climate = profileScale(seed ^ 0x434C494D415445L, primary == 2, secondary == 2);
             float surface = profileScale(seed ^ 0x53555246414345L, primary == 3, secondary == 3);
-            float material = profileScale(seed ^ 0x4D4154455249414CL, primary == 3, secondary == 3);
             float feature = profileScale(seed ^ 0x46454154555245L, primary == 4, secondary == 4);
             float carver = profileScale(seed ^ 0x434152564552L, primary == 5, secondary == 5);
             float structure = profileScale(seed ^ 0x535452554354L, primary == 4, secondary == 4);
@@ -168,22 +110,75 @@ public final class WorldgenCorruptionHooks {
             float macro = clampFloat(0.55F + unit(seed ^ 0x4D4143524F5343L) * 1.55F
                     + (primary == 2 || primary == 3 ? 0.24F : 0.0F)
                     - (primary == 0 ? 0.18F : 0.0F), 0.42F, 2.35F);
+            int densityStyle = Math.floorMod((int) (seed >>> 35), 7);
+            int gateStyle = gateStyleFromSeed(seed);
+            float continentalActivation = densityGroupActivation(densityStyle, 0, seed ^ 0x434F4E54414354L);
+            float shapeActivation = densityGroupActivation(densityStyle, 1, seed ^ 0x53484150414354L);
+            float climateActivation = densityGroupActivation(densityStyle, 2, seed ^ 0x434C494D414354L);
+            float extremeActivation = clampFloat(0.38F + unit(seed ^ 0x455854414354L) * 1.18F
+                    + (densityStyle == 1 || densityStyle == 4 ? 0.22F : 0.0F)
+                    - (densityStyle == 3 ? 0.18F : 0.0F), 0.22F, 1.55F);
+            int featureStyle = Math.floorMod((int) (seed >>> 22), 6);
+            float featureActivation = clampFloat(0.28F + unit(seed ^ 0x46454143544CL) * 0.92F
+                    + (primary == 4 ? 0.42F : 0.0F)
+                    + (featureStyle == 1 || featureStyle == 4 ? 0.28F : 0.0F), 0.12F, 1.55F);
+            float featureVerticalActivation = clampFloat(switch (featureStyle) {
+                case 0 -> 0.16F;
+                case 1 -> 1.22F;
+                case 2 -> 0.38F;
+                case 3 -> 0.06F;
+                case 4 -> 0.72F;
+                default -> 0.26F;
+            } + unit(seed ^ 0x465456455254L) * 0.18F, 0.04F, 1.34F);
 
             return new WorldgenProfile(
                     continentalDensity,
                     shapeDensity,
                     climateDensity,
-                    coordinate,
                     climate,
                     surface,
-                    material,
                     feature,
                     carver,
                     structure,
                     decoration,
                     vertical,
-                    macro
+                    macro,
+                    densityStyle,
+                    gateStyle,
+                    continentalActivation,
+                    shapeActivation,
+                    climateActivation,
+                    extremeActivation,
+                    featureStyle,
+                    featureActivation,
+                    featureVerticalActivation
             );
+        }
+
+        private static int gateStyleFromSeed(long seed) {
+            int roll = Math.floorMod((int) (seed >>> 28), 12);
+            return switch (roll) {
+                case 0, 1, 2 -> 0;
+                case 3, 4 -> 2;
+                case 5, 6 -> 3;
+                case 7, 8 -> 4;
+                case 9, 10 -> 5;
+                default -> 1;
+            };
+        }
+
+        private static float densityGroupActivation(int style, int group, long seed) {
+            float jitter = unit(seed) * 0.34F;
+            float base = switch (style) {
+                case 0 -> group == 0 ? 1.45F : group == 1 ? 0.62F : 0.78F;
+                case 1 -> group == 1 ? 1.58F : group == 0 ? 0.58F : 0.34F;
+                case 2 -> group == 0 ? 0.82F : group == 1 ? 0.92F : 1.28F;
+                case 3 -> group == 2 ? 1.55F : group == 0 ? 0.36F : 0.58F;
+                case 4 -> group == 1 ? 1.12F : group == 0 ? 1.18F : 0.44F;
+                case 5 -> group == 0 ? 0.55F : group == 1 ? 0.78F : 0.95F;
+                default -> group == 0 ? 1.05F : group == 1 ? 1.05F : 0.72F;
+            };
+            return clampFloat(base + jitter, 0.18F, 1.72F);
         }
     }
 
@@ -199,7 +194,6 @@ public final class WorldgenCorruptionHooks {
             float instability,
             float strength,
             boolean sampleActive,
-            boolean coordinateActive,
             boolean terrainShape,
             boolean continentalBand,
             int role,
@@ -207,28 +201,20 @@ public final class WorldgenCorruptionHooks {
             double amplitude,
             double boundsAmplitude,
             float extremePressure,
-            int coordinateMode,
-            int coordinatePeriod,
-            int coordinatePrecision,
-            int coordinateLane,
-            int coordinateThickness,
-            int coordinateFarX,
-            int coordinateFarZ,
-            float coordinateBlend,
             int gateCell,
             int gateCellY,
             float activeChance,
+            float baselineStrength,
+            int baselineMode,
+            double baselineBias,
+            double baselineScale,
+            double baselineStep,
             int family,
-            long coarseSeed,
-            double coarseScale,
-            long foldedSeed,
-            int foldedPeriod,
-            double foldedScale,
-            long laneSeed,
+            int densityStyle,
+            int gateStyle,
             long macroSeed,
             int macroCell,
-            int macroCellY,
-            long domainSeed
+            int macroCellY
     ) {
     }
 
@@ -332,10 +318,13 @@ public final class WorldgenCorruptionHooks {
         }
 
         float extreme = extremePressure(intensity);
-        float featureScale = state.profile().featureScale();
-        float verticalScale = state.profile().verticalScale();
+        WorldgenProfile profile = state.profile();
+        float featureScale = profile.featureScale() * featureRerouteActivation(featureInfo, profile);
+        float verticalScale = profile.verticalScale() * featureVerticalActivation(featureInfo, profile);
         int horizontalSpan = Math.max(1, Math.round(1.0F + intensity * (2.0F + unit(seed >>> 7) * 10.0F) + extreme * featureScale * (5.0F + unit(seed >>> 9) * 22.0F)));
-        int verticalSpan = Math.max(1, Math.round(1.0F + intensity * (5.0F + unit(seed >>> 17) * 34.0F) + extreme * verticalScale * (18.0F + unit(seed >>> 21) * 88.0F)));
+        int verticalSpan = Math.max(1, Math.round(1.0F
+                + intensity * verticalScale * (2.0F + unit(seed >>> 17) * 11.0F)
+                + extreme * verticalScale * (6.0F + unit(seed >>> 21) * 44.0F)));
         int mode = Math.floorMod((int) (seed >>> 41), 7);
         int x = origin.getX();
         int y = origin.getY();
@@ -404,74 +393,6 @@ public final class WorldgenCorruptionHooks {
         return densityRuntime(channel).sampleActive();
     }
 
-    public static boolean shouldUseFastDensityFill(String channel) {
-        return !densityRuntime(channel).coordinateActive();
-    }
-
-    public static DensityCoordinates corruptDensityCoordinates(String channel, int x, int y, int z) {
-        DensityRuntime runtime = densityRuntime(channel);
-        DensityCoordinates coordinates = new DensityCoordinates();
-        return corruptDensityCoordinates(runtime, x, y, z, coordinates) ? coordinates : null;
-    }
-
-    public static boolean corruptDensityCoordinates(DensityRuntime runtime, int x, int y, int z, DensityCoordinates output) {
-        if (runtime == null || output == null || !runtime.coordinateActive()) {
-            return false;
-        }
-
-        float strength = runtime.strength();
-        int mode = runtime.coordinateMode();
-        int period = runtime.coordinatePeriod();
-        int precision = runtime.coordinatePrecision();
-        int lane = runtime.coordinateLane();
-        int thickness = runtime.coordinateThickness();
-        int farX = runtime.coordinateFarX();
-        int farZ = runtime.coordinateFarZ();
-        long domainSeed = runtime.domainSeed();
-
-        int sx = safeCoordinate((long) x + Math.round(farX * strength));
-        int sz = safeCoordinate((long) z + Math.round(farZ * strength));
-        int sy = y;
-        if (mode == 0) {
-            sx = precisionCoordinate(sx, precision);
-            sz = foldCoordinate(sz, period, farZ);
-            if (laneHit(x, lane, thickness, domainSeed ^ 0x4C414E45L)) {
-                sx = repeatCoordinate(sx, Math.max(16, period / 2), farX);
-            }
-        } else if (mode == 1) {
-            sx = repeatCoordinate(precisionCoordinate(sx, precision), period, farX);
-            sz = repeatCoordinate(precisionCoordinate(sz, precision), period, farZ);
-        } else if (mode == 2) {
-            int shear = signedRange(domainSeed >>> 12, Math.max(1, Math.round(1.0F + strength * 5.0F)));
-            sx = foldCoordinate(safeCoordinate((long) sx + (long) floorToCell(z, lane) * shear), period, farX);
-            sz = precisionCoordinate(sz, precision);
-        } else if (mode == 3) {
-            sx = aliasCoordinate(sx, period, precision, domainSeed ^ 0x58414C49L);
-            sz = aliasCoordinate(sz, Math.max(16, period * 2), precision, domainSeed ^ 0x5A414C49L);
-        } else if (mode == 4) {
-            sx = laneHit(x, lane, thickness, domainSeed ^ 0x58434F52L)
-                    ? foldCoordinate(sx, period, farX)
-                    : precisionCoordinate(sx, precision);
-            sz = laneHit(z, lane, thickness, domainSeed ^ 0x5A434F52L)
-                    ? foldCoordinate(sz, period, farZ)
-                    : precisionCoordinate(sz, precision);
-        } else {
-            int localX = Math.floorMod(sx + Math.floorMod((int) domainSeed, lane), lane);
-            int localZ = Math.floorMod(sz + Math.floorMod((int) (domainSeed >>> 16), lane), lane);
-            sx = floorToCell(sx, lane) + Math.floorMod(localX, Math.max(1, precision));
-            sz = foldCoordinate(floorToCell(sz, lane) + Math.floorMod(localZ, Math.max(1, precision)), period, farZ);
-        }
-
-        float blend = runtime.coordinateBlend();
-        int resultX = safeCoordinate(Math.round(lerp(x, sx, blend)));
-        int resultZ = safeCoordinate(Math.round(lerp(z, sz, blend)));
-        if (resultX == x && sy == y && resultZ == z) {
-            return false;
-        }
-        output.set(resultX, sy, resultZ);
-        return true;
-    }
-
     public static double corruptDensitySample(String channel, double value, int x, int y, int z, double minValue, double maxValue) {
         return corruptDensitySample(densityRuntime(channel), value, x, y, z, minValue, maxValue);
     }
@@ -483,55 +404,180 @@ public final class WorldgenCorruptionHooks {
 
         float strength = runtime.strength();
         long channelSeed = runtime.channelSeed();
-        int gateCell = runtime.gateCell();
-        int gateCellY = runtime.gateCellY();
-        long gateSeed = mix(channelSeed
-                ^ floorToCell(x, gateCell) * 0x9E3779B97F4A7C15L
-                ^ floorToCell(y, gateCellY) * 0x94D049BB133111EBL
-                ^ floorToCell(z, gateCell) * 0xBF58476D1CE4E5B9L
-                ^ 0x44454E5347415445L);
+        long gateSeed = densityGateSeed(runtime, x, y, z);
         boolean terrainShape = runtime.terrainShape();
         int role = runtime.role();
-        if (unit(gateSeed ^ 0x414354495645L) >= runtime.activeChance()) {
-            return value;
-        }
-
-        int family = runtime.family();
         double amplitude = runtime.amplitude();
-        double coarse = smoothNoise2D(x, z, runtime.coarseSeed(), runtime.coarseScale());
-        double folded = smoothNoise2D(foldCoordinate(x, runtime.foldedPeriod(), (int) channelSeed), foldCoordinate(z, runtime.foldedPeriod(), (int) (channelSeed >>> 32)), runtime.foldedSeed(), runtime.foldedScale());
-        double lane = densityScanlinePulse(runtime.laneSeed(), x, y, z, strength);
-        double result = value;
-
-        if (family == 0) {
-            result = value + (coarse * 0.42D + folded * 0.18D) * amplitude;
-        } else if (family == 1) {
-            double step = 0.03125D + unit(channelSeed >>> 21) * (0.10D + strength * 0.45D);
-            result = quantize(value + coarse * amplitude * 0.22D, step);
-        } else if (family == 2) {
-            double scale = 0.70D + unit(channelSeed >>> 27) * 0.46D;
-            result = lerp(value, value * scale + folded * amplitude * 0.30D, 0.08D + strength * 0.22D);
-        } else if (family == 3) {
-            result = value + lane * amplitude * (0.16D + strength * 0.28D);
-        } else if (family == 4) {
-            double foldedValue = fold(value + coarse * amplitude * 0.35D, 0.35D + unit(channelSeed >>> 33) * (0.8D + strength * 1.6D));
-            result = lerp(value, foldedValue, 0.04D + strength * 0.18D);
-        } else {
-            double shelves = Math.sin((x + z + floorToCell(y, Math.max(2, gateCellY))) * (0.010D + strength * 0.025D));
-            result = value + (coarse * 0.30D + folded * 0.22D + shelves * 0.12D) * amplitude;
+        double result = corruptDensityBaseline(runtime, role, value, x, y, z, amplitude);
+        if (unit(gateSeed ^ 0x414354495645L) < runtime.activeChance()) {
+            result = corruptDensityValue(runtime, role, result, gateSeed, amplitude, strength);
+            result = applyExtremeDensityFaults(runtime, role, result, value, x, y, z, strength, amplitude, channelSeed);
         }
-
-        if (runtime.continentalBand()) {
-            result += coarse * folded * amplitude * (0.18D + strength * 0.22D);
-        }
-
-        result = applyExtremeDensityFaults(runtime, role, result, value, x, y, z, strength, amplitude, channelSeed);
-        result = applyDensityAddressFaults(terrainShape, runtime.instability(), result, value, x, y, z, strength, amplitude, channelSeed);
         if (terrainShape && y > 124 && result > value) {
             result = lerp(result, value, clamp01((y - 124) / 96.0F));
         }
         double limit = Math.max(3.0D, Math.max(Math.abs(minValue), Math.abs(maxValue)) + 1.0D + strength * 3.5D + runtime.extremePressure() * 4.5D);
         return clamp(result, -limit, limit);
+    }
+
+    private static long densityGateSeed(DensityRuntime runtime, int x, int y, int z) {
+        int cell = runtime.gateCell();
+        int cellY = runtime.gateCellY();
+        long seed = runtime.channelSeed() ^ 0x44454E5347415445L;
+        return switch (runtime.gateStyle()) {
+            case 0 -> mix(seed
+                    ^ floorToCell(x, cell) * 0x9E3779B97F4A7C15L
+                    ^ floorToCell(z, cell) * 0xBF58476D1CE4E5B9L);
+            case 1 -> mix(seed
+                    ^ floorToCell(y, cellY) * 0x94D049BB133111EBL);
+            case 2 -> mix(seed
+                    ^ floorToCell(x + z, cell) * 0x632BE59BD9B4E019L
+                    ^ floorToCell(y, Math.max(cellY, cell)) * 0x94D049BB133111EBL);
+            case 3 -> mix(seed
+                    ^ floorToCell(x - z, cell) * 0x85157AF5L);
+            case 4 -> mix(seed);
+            default -> mix(seed
+                    ^ floorToCell(x, cell) * 0x9E3779B97F4A7C15L
+                    ^ floorToCell(y, Math.max(cellY, cell * 2)) * 0x94D049BB133111EBL
+                    ^ floorToCell(z, cell) * 0xBF58476D1CE4E5B9L);
+        };
+    }
+
+    private static double corruptDensityBaseline(DensityRuntime runtime, int role, double value, int x, int y, int z, double amplitude) {
+        float amount = runtime.baselineStrength();
+        if (amount <= 0.0F) {
+            return value;
+        }
+
+        long hash = mix(runtime.channelSeed()
+                ^ floorToCell(x + z, Math.max(16, runtime.gateCell() * 2)) * 0x9E3779B97F4A7C15L
+                ^ 0x4241534544454E53L);
+        double spatialSign = signedUnit(hash) >= 0.0D ? 1.0D : -1.0D;
+        double bias = runtime.baselineBias();
+        double scale = runtime.baselineScale();
+        double step = runtime.baselineStep();
+        double out;
+        switch (runtime.baselineMode()) {
+            case 0 -> out = value + bias;
+            case 1 -> out = -value + bias * 0.45D;
+            case 2 -> out = value * scale + bias * 0.30D;
+            case 3 -> out = quantize(value + bias * 0.18D, step);
+            case 4 -> {
+                double period = Math.max(0.18D, step * (2.0D + runtime.baselineScale()));
+                out = fold(value + bias * 0.28D, period) - period * 0.50D;
+            }
+            case 5 -> {
+                double stuck = spatialSign * amplitude * (0.42D + runtime.baselineScale() * 0.36D);
+                out = lerp(value, stuck + bias * 0.20D, 0.42D + amount * 0.40D);
+            }
+            case 6 -> {
+                double threshold = bias * 0.14D;
+                out = value >= threshold ? value + Math.abs(bias) : value - Math.abs(bias);
+            }
+            default -> {
+                double vertical = ((double) y - 64.0D) / 128.0D;
+                double roleSign = role == DENSITY_ROLE_DEPTH ? -1.0D : 1.0D;
+                out = value + vertical * amplitude * roleSign * runtime.baselineScale() + bias * 0.25D;
+            }
+        }
+        return Double.isFinite(out) ? lerp(value, out, amount) : value;
+    }
+
+    private static double corruptDensityValue(DensityRuntime runtime, int role, double value, long cellHash, double amplitude, float strength) {
+        int mode = densityValueMode(runtime, role, cellHash);
+        double sign = signedUnit(cellHash >>> 5);
+        double offset = sign * amplitude * densityRolePressure(role, runtime.continentalBand(), runtime.terrainShape());
+        double mix = 0.18D + strength * (runtime.terrainShape() ? 0.34D : 0.48D);
+        double out;
+        if (mode == 0) {
+            out = value + offset;
+        } else if (mode == 1) {
+            double scale = 0.22D + unit(cellHash >>> 11) * (1.95D + strength * 1.65D);
+            out = value * scale + offset * 0.30D;
+        } else if (mode == 2) {
+            out = -value + offset * 0.45D;
+        } else if (mode == 3) {
+            double step = 0.03125D + unit(cellHash >>> 17) * (0.10D + strength * 0.62D);
+            out = quantize(value + offset * 0.22D, step);
+        } else if (mode == 4) {
+            double period = 0.28D + unit(cellHash >>> 23) * (0.72D + strength * 2.10D);
+            out = fold(value + offset * 0.42D, period) - period * 0.50D;
+        } else if (mode == 5) {
+            double stuck = sign * amplitude * (0.24D + unit(cellHash >>> 29) * (0.90D + strength));
+            out = lerp(value, stuck, 0.30D + strength * 0.44D);
+        } else if (mode == 6) {
+            double threshold = sign * (0.05D + unit(cellHash >>> 31) * amplitude);
+            out = value >= threshold ? value + Math.abs(offset) : value - Math.abs(offset);
+        } else {
+            double clamped = clamp(value, -Math.abs(offset), Math.abs(offset));
+            out = lerp(value, clamped, mix);
+        }
+        return Double.isFinite(out) ? out : value;
+    }
+
+    private static int densityValueMode(DensityRuntime runtime, int role, long cellHash) {
+        int variant = Math.floorMod((int) (cellHash >>> 43), 3);
+        return switch (runtime.densityStyle()) {
+            case 0 -> role == DENSITY_ROLE_CONTINENTS || role == DENSITY_ROLE_EROSION || role == DENSITY_ROLE_RIDGES
+                    ? switch (variant) {
+                        case 0 -> 0;
+                        case 1 -> 1;
+                        default -> 6;
+                    }
+                    : switch (variant) {
+                        case 0 -> 5;
+                        case 1 -> 7;
+                        default -> 0;
+                    };
+            case 1 -> role == DENSITY_ROLE_DEPTH || role == DENSITY_ROLE_INITIAL || role == DENSITY_ROLE_FINAL
+                    ? switch (variant) {
+                        case 0 -> 2;
+                        case 1 -> 4;
+                        default -> 5;
+                    }
+                    : switch (variant) {
+                        case 0 -> 0;
+                        case 1 -> 1;
+                        default -> 7;
+                    };
+            case 2 -> switch (variant) {
+                case 0 -> 3;
+                case 1 -> 5;
+                default -> 7;
+            };
+            case 3 -> role == DENSITY_ROLE_TEMPERATURE || role == DENSITY_ROLE_VEGETATION
+                    ? switch (variant) {
+                        case 0 -> 2;
+                        case 1 -> 3;
+                        default -> 5;
+                    }
+                    : switch (variant) {
+                        case 0 -> 7;
+                        case 1 -> 0;
+                        default -> 1;
+                    };
+            case 4 -> switch (variant) {
+                case 0 -> 4;
+                case 1 -> 6;
+                default -> 2;
+            };
+            case 5 -> switch (variant) {
+                case 0 -> 1;
+                case 1 -> 0;
+                default -> 6;
+            };
+            default -> Math.floorMod(runtime.family() + variant * 3, 8);
+        };
+    }
+
+    private static double densityRolePressure(int role, boolean continentalBand, boolean terrainShape) {
+        double pressure = terrainShape ? 0.58D : 0.82D;
+        if (role == DENSITY_ROLE_CONTINENTS || role == DENSITY_ROLE_EROSION || role == DENSITY_ROLE_RIDGES) {
+            pressure += 0.26D;
+        } else if (role == DENSITY_ROLE_TEMPERATURE || role == DENSITY_ROLE_VEGETATION) {
+            pressure += 0.18D;
+        }
+        return continentalBand ? pressure + 0.18D : pressure;
     }
 
     public static double densityMinValue(String channel, double value) {
@@ -682,10 +728,14 @@ public final class WorldgenCorruptionHooks {
         if (unit(seed ^ 0x53555246L) >= chance) {
             return original;
         }
-        if (unit(seed ^ 0x4E554C4CL) < Math.max(0.0F, intensity - 0.82F) * 0.035F + extreme * 0.020F) {
+        if (original.hasBlockEntity() || !original.getFluidState().isEmpty()) {
+            return original;
+        }
+        float dropoutChance = clamp01(0.035F + intensity * 0.10F + surfacePressure * 0.30F);
+        if (unit(seed ^ 0x4E554C4CL) < dropoutChance) {
             return null;
         }
-        return surfaceRuleReplacement(original, seed, clamp01(extreme * (0.35F + profile.materialScale() * 0.65F)));
+        return original;
     }
 
     public static boolean corruptCarverStart(Object carver, boolean original, RandomSource random) {
@@ -725,106 +775,6 @@ public final class WorldgenCorruptionHooks {
             return !original;
         }
         return original;
-    }
-
-    private static BlockState surfaceRuleReplacement(BlockState original, long seed, float extreme) {
-        if (original.hasBlockEntity() || !original.getFluidState().isEmpty()) {
-            return original;
-        }
-        Block[] extremeFamily = extremeSurfaceFamily(original, seed, extreme);
-        if (extremeFamily != null) {
-            return pickSurface(seed ^ 0x45585453555246L, original, extremeFamily);
-        }
-        if (isOneOf(original, DIRT_SURFACES)) {
-            return pickSurface(seed, original, DIRT_SURFACES);
-        }
-        if (isOneOf(original, SAND_SURFACES)) {
-            return pickSurface(seed, original, SAND_SURFACES);
-        }
-        if (isOneOf(original, STONE_SURFACES)) {
-            return pickSurface(seed, original, STONE_SURFACES);
-        }
-        if (isOneOf(original, ICE_SURFACES)) {
-            return pickSurface(seed, original, ICE_SURFACES);
-        }
-        if (isOneOf(original, NETHER_SURFACES)) {
-            return pickSurface(seed, original, NETHER_SURFACES);
-        }
-        if (isOneOf(original, END_SURFACES)) {
-            return pickSurface(seed, original, END_SURFACES);
-        }
-        return original;
-    }
-
-    private static Block[] extremeSurfaceFamily(BlockState original, long seed, float extreme) {
-        if (extreme <= 0.0F || unit(seed ^ 0x58465346414DL) > 0.24F + extreme * 0.58F) {
-            return null;
-        }
-        int theme = Math.floorMod((int) (seed >>> 37), extreme > 0.82F ? 7 : 5);
-        if (isOneOf(original, DIRT_SURFACES)) {
-            return switch (theme) {
-                case 1 -> SAND_SURFACES;
-                case 2 -> STONE_SURFACES;
-                case 3 -> ICE_SURFACES;
-                case 4 -> extreme > 0.52F ? NETHER_SURFACES : DIRT_SURFACES;
-                case 5 -> extreme > 0.74F ? END_SURFACES : STONE_SURFACES;
-                default -> DIRT_SURFACES;
-            };
-        }
-        if (isOneOf(original, SAND_SURFACES)) {
-            return switch (theme) {
-                case 1 -> DIRT_SURFACES;
-                case 2 -> STONE_SURFACES;
-                case 3 -> ICE_SURFACES;
-                case 4 -> extreme > 0.52F ? NETHER_SURFACES : SAND_SURFACES;
-                case 5 -> extreme > 0.74F ? END_SURFACES : STONE_SURFACES;
-                default -> SAND_SURFACES;
-            };
-        }
-        if (isOneOf(original, STONE_SURFACES)) {
-            return switch (theme) {
-                case 1 -> DIRT_SURFACES;
-                case 2 -> SAND_SURFACES;
-                case 3 -> ICE_SURFACES;
-                case 4 -> extreme > 0.48F ? NETHER_SURFACES : STONE_SURFACES;
-                case 5 -> extreme > 0.72F ? END_SURFACES : STONE_SURFACES;
-                default -> STONE_SURFACES;
-            };
-        }
-        if (isOneOf(original, ICE_SURFACES)) {
-            return switch (theme) {
-                case 1 -> DIRT_SURFACES;
-                case 2 -> SAND_SURFACES;
-                case 3 -> STONE_SURFACES;
-                case 4 -> extreme > 0.58F ? NETHER_SURFACES : ICE_SURFACES;
-                case 5 -> extreme > 0.76F ? END_SURFACES : STONE_SURFACES;
-                default -> ICE_SURFACES;
-            };
-        }
-        if (isOneOf(original, NETHER_SURFACES)) {
-            return theme == 2 && extreme > 0.65F ? END_SURFACES : theme == 3 ? STONE_SURFACES : NETHER_SURFACES;
-        }
-        if (isOneOf(original, END_SURFACES)) {
-            return theme == 2 && extreme > 0.65F ? NETHER_SURFACES : theme == 3 ? STONE_SURFACES : END_SURFACES;
-        }
-        return null;
-    }
-
-    private static boolean isOneOf(BlockState state, Block... blocks) {
-        for (Block block : blocks) {
-            if (state.is(block)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static BlockState pickSurface(long seed, BlockState original, Block... blocks) {
-        if (blocks.length == 0) {
-            return original;
-        }
-        BlockState replacement = blocks[Math.floorMod((int) (seed >>> 24), blocks.length)].defaultBlockState();
-        return replacement.equals(original) ? original : replacement;
     }
 
     private static FeatureInfo featureInfo(Feature<?> feature) {
@@ -906,7 +856,8 @@ public final class WorldgenCorruptionHooks {
         } else {
             base = 0.014F + intensity * 0.12F;
         }
-        return clamp01(base + instability * 0.035F + extreme * 0.24F * profile.featureScale());
+        return clamp01((base + instability * 0.035F + extreme * 0.24F * profile.featureScale())
+                * featureSkipActivation(featureInfo, profile));
     }
 
     private static float featureRerouteChance(FeatureInfo featureInfo, float intensity, float instability, WorldgenProfile profile) {
@@ -941,51 +892,151 @@ public final class WorldgenCorruptionHooks {
         } else {
             base = 0.012F + intensity * 0.13F;
         }
-        return clamp01(base + instability * 0.045F + extreme * 0.30F * profile.featureScale());
+        return clamp01((base + instability * 0.045F + extreme * 0.30F * profile.featureScale())
+                * featureRerouteActivation(featureInfo, profile));
+    }
+
+    private static float featureSkipActivation(FeatureInfo featureInfo, WorldgenProfile profile) {
+        float activation = profile.featureActivation();
+        if (isVegetationFeature(featureInfo)) {
+            activation *= switch (profile.featureStyle()) {
+                case 1, 4 -> 1.10F;
+                case 3 -> 0.34F;
+                default -> 0.58F;
+            };
+        } else if (isUndergroundFeature(featureInfo)) {
+            activation *= profile.featureStyle() == 5 ? 1.18F : 0.82F;
+        }
+        return clampFloat(activation, 0.08F, 1.65F);
+    }
+
+    private static float featureRerouteActivation(FeatureInfo featureInfo, WorldgenProfile profile) {
+        float activation = profile.featureActivation();
+        if (isVegetationFeature(featureInfo)) {
+            activation *= switch (profile.featureStyle()) {
+                case 1 -> 1.22F;
+                case 4 -> 0.84F;
+                case 3 -> 0.12F;
+                default -> 0.28F;
+            };
+        } else if (isUndergroundFeature(featureInfo)) {
+            activation *= profile.featureStyle() == 5 ? 1.28F : 0.72F;
+        }
+        return clampFloat(activation, 0.04F, 1.72F);
+    }
+
+    private static float featureVerticalActivation(FeatureInfo featureInfo, WorldgenProfile profile) {
+        float activation = profile.featureVerticalActivation();
+        if (isVegetationFeature(featureInfo)) {
+            activation *= switch (profile.featureStyle()) {
+                case 1 -> 1.0F;
+                case 4 -> 0.48F;
+                case 3 -> 0.05F;
+                default -> 0.16F;
+            };
+        } else if (isUndergroundFeature(featureInfo)) {
+            activation *= profile.featureStyle() == 5 ? 0.92F : 0.38F;
+        }
+        return clampFloat(activation, 0.02F, 1.35F);
+    }
+
+    private static boolean isVegetationFeature(FeatureInfo featureInfo) {
+        String normalized = featureInfo.normalizedTarget();
+        return normalized.contains("tree")
+                || normalized.contains("flower")
+                || normalized.contains("vegetation")
+                || normalized.contains("random_patch")
+                || normalized.contains("bamboo")
+                || normalized.contains("vines")
+                || normalized.contains("mushroom")
+                || normalized.contains("root")
+                || normalized.contains("grass");
+    }
+
+    private static boolean isUndergroundFeature(FeatureInfo featureInfo) {
+        String normalized = featureInfo.normalizedTarget();
+        return normalized.contains("ore")
+                || normalized.contains("geode")
+                || normalized.contains("fossil")
+                || normalized.contains("dripstone")
+                || normalized.contains("monster_room");
     }
 
     public static DensityRuntime densityRuntime(String channel) {
         WorldgenState state = worldgenState();
+        long version = state.version();
+        if (cachedDensityRuntimeVersion != version) {
+            synchronized (DENSITY_RUNTIME_CACHE_LOCK) {
+                if (cachedDensityRuntimeVersion != version) {
+                    DENSITY_RUNTIME_CACHE.clear();
+                    cachedDensityRuntimeVersion = version;
+                }
+            }
+        }
+
+        String key = channel == null ? "" : channel;
+        DensityRuntime cached = DENSITY_RUNTIME_CACHE.get(key);
+        if (cached != null && cached.version() == version) {
+            return cached;
+        }
+
+        DensityRuntime runtime = createDensityRuntime(state, key);
+        DENSITY_RUNTIME_CACHE.put(key, runtime);
+        return runtime;
+    }
+
+    private static DensityRuntime createDensityRuntime(WorldgenState state, String channel) {
         DensityChannelPlan plan = densityPlan(channel);
         float intensity = state.intensity();
         WorldgenProfile profile = state.profile();
         float roleScale = densityRoleScale(profile, plan.role());
         float strength = clamp01(densityStrength(plan, intensity) * roleScale);
         boolean sampleActive = intensity > 0.0F && strength >= DENSITY_SAMPLE_MIN_STRENGTH;
-        boolean coordinateActive = intensity > 0.0F && strength >= DENSITY_COORDINATE_MIN_STRENGTH;
         long channelSeed = mix(state.fixedSeed() ^ plan.hash());
-        long domainSeed = state.densityDomainSeed();
-        float extremePressure = clamp01(extremePressure(intensity) * (0.36F + roleScale * 0.72F));
-
-        int coordinateMode = Math.floorMod((int) (domainSeed >>> 48), 6);
-        float coordinateScale = profile.coordinateScale();
-        int coordinatePeriod = Math.max(16, Math.round((24.0F + (1.0F - strength) * 144.0F + unit(domainSeed >>> 6) * 384.0F) / Math.max(0.55F, coordinateScale)));
-        int coordinatePrecision = Math.max(1, Math.round(1.0F + strength * coordinateScale * (3.0F + unit(domainSeed >>> 18) * 17.0F)));
-        int coordinateLane = Math.max(8, Math.round((10.0F + (1.0F - strength) * 48.0F + unit(domainSeed >>> 30) * 96.0F) / Math.max(0.65F, coordinateScale)));
-        int coordinateThickness = Math.max(1, Math.round(1.0F + strength * coordinateScale * (1.0F + unit(domainSeed >>> 42) * 5.0F)));
-        int coordinateFarX = signedFarOffset(domainSeed ^ 0x58464152L, strength);
-        int coordinateFarZ = signedFarOffset(domainSeed ^ 0x5A464152L, strength);
-        float coordinateBlend = clamp01(0.18F + strength * (0.58F + coordinateScale * 0.32F));
-
+        float roleActivation = densityRoleActivation(profile, plan.role());
+        float extremePressure = clamp01(extremePressure(intensity)
+                * (0.20F + roleScale * 0.38F)
+                * (0.22F + roleActivation * 0.58F)
+                * profile.extremeActivation());
         boolean terrainShape = plan.terrainShape();
-        double amplitude = densityAmplitude(plan, strength, state.instability()) * (terrainShape ? 0.34D + extremePressure * 0.86D : 0.78D + extremePressure * 0.62D);
-        double boundsAmplitude = densityAmplitude(plan, strength, 0.0F) * (terrainShape ? 0.65D + extremePressure * 1.15D : 1.0D + extremePressure * 0.85D);
-        int gateCell = Math.max(8, Math.round(18.0F + (1.0F - strength) * 42.0F + unit(channelSeed ^ 0x47415445L) * 26.0F));
-        int gateCellY = Math.max(8, gateCell / 2);
-        float activeChance = clamp01((terrainShape ? 0.025F : 0.045F)
-                + strength * (terrainShape ? 0.16F : 0.28F)
+        double baseAmplitude = densityAmplitude(plan, strength, state.instability());
+        double amplitude = baseAmplitude * (terrainShape
+                ? 0.44D + roleActivation * 0.16D + extremePressure * (1.05D + roleActivation * 0.34D)
+                : 0.78D + extremePressure * 0.62D);
+        double boundsAmplitude = densityAmplitude(plan, strength, 0.0F) * (terrainShape
+                ? 0.84D + roleActivation * 0.18D + extremePressure * 1.34D
+                : 1.0D + extremePressure * 0.85D);
+        int gateStyle = channelGateStyle(profile, channelSeed, plan.terrainShape());
+        float gateScale = switch (gateStyle) {
+            case 1 -> 0.72F;
+            case 4 -> 2.20F;
+            case 5 -> 1.65F;
+            default -> 1.0F + unit(channelSeed ^ 0x474154535343L) * 0.74F;
+        };
+        int gateCell = Math.max(8, Math.round((18.0F + (1.0F - strength) * 42.0F + unit(channelSeed ^ 0x47415445L) * 26.0F) * gateScale));
+        int gateCellY = switch (gateStyle) {
+            case 1 -> Math.max(4, Math.round(gateCell * (0.55F + unit(channelSeed ^ 0x5947415445L) * 0.90F)));
+            case 2, 5 -> Math.max(16, Math.round(gateCell * (1.35F + unit(channelSeed ^ 0x5947415445L) * 1.80F)));
+            default -> Math.max(24, Math.round(gateCell * (2.0F + unit(channelSeed ^ 0x5947415445L) * 3.0F)));
+        };
+        float activeChance = clamp01((terrainShape ? 0.035F : 0.045F)
+                + strength * (terrainShape ? 0.24F : 0.28F)
                 + state.instability() * 0.035F
-                + extremePressure * (terrainShape ? 0.26F : 0.28F));
+                + extremePressure * (terrainShape ? 0.36F : 0.28F));
+        activeChance = clamp01(activeChance * (0.48F + roleActivation * 0.62F));
+        float highPressure = clamp01((intensity - 0.62F) / 0.38F);
+        float baselineStrength = densityBaselineStrength(plan, terrainShape, roleActivation, highPressure, state.instability());
+        int baselineMode = Math.floorMod(profile.densityStyle() + plan.role() + Math.floorMod((int) (channelSeed >>> 39), 5), 8);
+        double baselineBias = signedUnit(channelSeed ^ 0x4241534542494153L)
+                * baseAmplitude
+                * (terrainShape ? 0.44D + roleActivation * 0.28D + highPressure * 1.10D : 0.26D + roleActivation * 0.18D + highPressure * 0.52D);
+        double baselineScale = 0.28D + unit(channelSeed ^ 0x424153455343414CL) * (terrainShape ? 3.45D : 2.10D);
+        double baselineStep = 0.035D + unit(channelSeed ^ 0x4241534553544550L) * (terrainShape ? 0.84D : 0.46D);
         int family = Math.floorMod((int) (channelSeed >>> 17), 6);
-        long coarseSeed = channelSeed ^ 0x434F41525345L;
-        double coarseScale = 0.002D + unit(channelSeed >>> 11) * 0.006D;
-        long foldedSeed = channelSeed ^ 0x464F4C444544L;
-        int foldedPeriod = 64 + gateCell;
-        double foldedScale = 0.010D + strength * 0.030D;
-        long laneSeed = channelSeed ^ 0x4C414E455354L;
+        int densityStyle = Math.floorMod(profile.densityStyle() + Math.floorMod((int) (channelSeed >>> 53), 2), 7);
         long macroSeed = channelSeed ^ 0x4D4143524F44454EL;
         int macroCell = Math.max(8, Math.round((12.0F + (1.0F - strength) * 80.0F + unit(macroSeed ^ 0x5843454CL) * 72.0F - extremePressure * 8.0F) * profile.macroScale()));
-        int macroCellY = Math.max(4, Math.round((6.0F + (1.0F - strength) * 32.0F + unit(macroSeed ^ 0x5943454CL) * 42.0F - extremePressure * 4.0F) * profile.macroScale()));
+        int macroCellY = Math.max(8, Math.round((10.0F + (1.0F - strength) * 40.0F + unit(macroSeed ^ 0x5943454CL) * 54.0F - extremePressure * 4.0F) * profile.macroScale()));
 
         return new DensityRuntime(
                 state.version(),
@@ -993,7 +1044,6 @@ public final class WorldgenCorruptionHooks {
                 state.instability(),
                 strength,
                 sampleActive,
-                coordinateActive,
                 terrainShape,
                 plan.continentalBand(),
                 plan.role(),
@@ -1001,28 +1051,20 @@ public final class WorldgenCorruptionHooks {
                 amplitude,
                 boundsAmplitude,
                 extremePressure,
-                coordinateMode,
-                coordinatePeriod,
-                coordinatePrecision,
-                coordinateLane,
-                coordinateThickness,
-                coordinateFarX,
-                coordinateFarZ,
-                coordinateBlend,
                 gateCell,
                 gateCellY,
                 activeChance,
+                baselineStrength,
+                baselineMode,
+                baselineBias,
+                baselineScale,
+                baselineStep,
                 family,
-                coarseSeed,
-                coarseScale,
-                foldedSeed,
-                foldedPeriod,
-                foldedScale,
-                laneSeed,
+                densityStyle,
+                gateStyle,
                 macroSeed,
                 macroCell,
-                macroCellY,
-                domainSeed
+                macroCellY
         );
     }
 
@@ -1048,44 +1090,6 @@ public final class WorldgenCorruptionHooks {
         return clamp01(Math.max(stack.intensityOrExtreme(CorruptionSurface.WORLDGEN_SURFACE), stack.level() / 100.0F * 0.92F));
     }
 
-    private static int signedFarOffset(long seed, float strength) {
-        int distance = Math.round(250_000.0F + strength * (4_500_000.0F + unit(seed >>> 9) * 9_000_000.0F));
-        return signedUnit(seed) >= 0.0D ? distance : -distance;
-    }
-
-    private static int precisionCoordinate(int value, int precision) {
-        int step = Math.max(1, precision);
-        return floorToCell(value, step);
-    }
-
-    private static int repeatCoordinate(int value, int period, int anchor) {
-        int size = Math.max(1, period);
-        return safeCoordinate((long) anchor + Math.floorMod(value - anchor, size) - size / 2L);
-    }
-
-    private static int foldCoordinate(int value, int period, int anchor) {
-        int size = Math.max(1, period);
-        int wrapped = Math.floorMod(value - anchor, size * 2);
-        int folded = wrapped > size ? size * 2 - wrapped : wrapped;
-        return safeCoordinate((long) anchor + folded - size / 2L);
-    }
-
-    private static int aliasCoordinate(int value, int period, int precision, long seed) {
-        int repeated = repeatCoordinate(value, period, Math.floorMod((int) seed, Math.max(1, period)));
-        int scale = Math.max(1, precision + Math.floorMod((int) (seed >>> 24), Math.max(1, precision + 1)));
-        return precisionCoordinate(safeCoordinate((long) repeated * scale), Math.max(1, precision));
-    }
-
-    private static boolean laneHit(int value, int lane, int thickness, long seed) {
-        int width = Math.max(1, lane);
-        int offset = Math.floorMod((int) seed, width);
-        return Math.floorMod(value + offset, width) < Math.max(1, thickness);
-    }
-
-    private static int safeCoordinate(long value) {
-        return (int) Math.max(-30_000_000L, Math.min(30_000_000L, value));
-    }
-
     private static DensityChannelPlan densityPlan(String channel) {
         if (channel == null) {
             return new DensityChannelPlan(stableString(""), 0.54F, 0.28D, false, false, DENSITY_ROLE_GENERIC);
@@ -1108,12 +1112,52 @@ public final class WorldgenCorruptionHooks {
     }
 
     private static float densityRoleScale(WorldgenProfile profile, int role) {
-        return switch (role) {
+        float base = switch (role) {
             case DENSITY_ROLE_CONTINENTS, DENSITY_ROLE_EROSION, DENSITY_ROLE_RIDGES -> profile.continentalDensityScale();
             case DENSITY_ROLE_DEPTH, DENSITY_ROLE_INITIAL, DENSITY_ROLE_FINAL -> profile.shapeDensityScale();
             case DENSITY_ROLE_TEMPERATURE, DENSITY_ROLE_VEGETATION -> profile.climateDensityScale();
             default -> (profile.continentalDensityScale() + profile.shapeDensityScale() + profile.climateDensityScale()) / 3.0F;
         };
+        return clampFloat(base * densityRoleActivation(profile, role), 0.10F, 1.85F);
+    }
+
+    private static float densityRoleActivation(WorldgenProfile profile, int role) {
+        return switch (role) {
+            case DENSITY_ROLE_CONTINENTS, DENSITY_ROLE_EROSION, DENSITY_ROLE_RIDGES -> profile.continentalActivation();
+            case DENSITY_ROLE_DEPTH, DENSITY_ROLE_INITIAL, DENSITY_ROLE_FINAL -> profile.shapeActivation();
+            case DENSITY_ROLE_TEMPERATURE, DENSITY_ROLE_VEGETATION -> profile.climateActivation();
+            default -> (profile.continentalActivation() + profile.shapeActivation() + profile.climateActivation()) / 3.0F;
+        };
+    }
+
+    private static float densityBaselineStrength(DensityChannelPlan plan, boolean terrainShape, float roleActivation, float highPressure, float instability) {
+        if (terrainShape) {
+            return clamp01(highPressure * (0.62F + roleActivation * 0.34F) + instability * 0.06F);
+        }
+        if (plan.continentalBand()) {
+            return clamp01(highPressure * (0.24F + roleActivation * 0.28F) + instability * 0.035F);
+        }
+        return 0.0F;
+    }
+
+    private static int channelGateStyle(WorldgenProfile profile, long channelSeed, boolean terrainShape) {
+        int style = profile.gateStyle();
+        if (style == 1) {
+            return 1;
+        }
+        float shiftChance = terrainShape ? 0.16F : 0.28F;
+        if (unit(channelSeed ^ 0x434847415445L) >= shiftChance) {
+            return style;
+        }
+        int shifted = switch (style) {
+            case 0 -> unit(channelSeed ^ 0x4348304CL) < 0.5F ? 2 : 5;
+            case 2 -> unit(channelSeed ^ 0x4348324CL) < 0.5F ? 0 : 3;
+            case 3 -> unit(channelSeed ^ 0x4348334CL) < 0.5F ? 0 : 2;
+            case 4 -> unit(channelSeed ^ 0x4348344CL) < 0.5F ? 0 : 5;
+            case 5 -> unit(channelSeed ^ 0x4348354CL) < 0.5F ? 0 : 4;
+            default -> 0;
+        };
+        return shifted == 1 ? style : shifted;
     }
 
     private static float profileScale(long seed, boolean primary, boolean secondary) {
@@ -1143,21 +1187,17 @@ public final class WorldgenCorruptionHooks {
 
         int macroCell = runtime.macroCell();
         int macroCellY = runtime.macroCellY();
-        long macroHash = mix(runtime.macroSeed()
-                ^ floorToCell(x, macroCell) * 0x9E3779B97F4A7C15L
-                ^ floorToCell(y, macroCellY) * 0x94D049BB133111EBL
-                ^ floorToCell(z, macroCell) * 0xBF58476D1CE4E5B9L
-                ^ 0x4558545244454E53L);
+        long macroHash = densityMacroSeed(runtime, x, y, z);
         if (unit(macroHash ^ 0x5847415445L) > 0.22F + extreme * 0.72F) {
             return result;
         }
 
         double faultAmplitude = amplitude * (runtime.terrainShape() ? 0.75D + extreme * 1.55D : 0.62D + extreme * 1.10D);
-        double lane = densityScanlinePulse(macroHash ^ 0x584C414E45L, x, y, z, strength);
         double sign = signedUnit(macroHash >>> 5);
         int mode = Math.floorMod((int) (macroHash >>> 43), 8);
         int shelf = Math.floorDiv(y + signedRange(macroHash >>> 11, macroCellY), macroCellY);
         double shelfSign = Math.floorMod(shelf + (int) (macroHash >>> 19), 4) < 2 ? 1.0D : -1.0D;
+        double phaseSign = Math.floorMod((x / macroCell) + (z / macroCell) + (int) (macroHash >>> 27), 2) == 0 ? sign : -sign;
         double out = result;
 
         if (role == DENSITY_ROLE_CONTINENTS) {
@@ -1168,12 +1208,12 @@ public final class WorldgenCorruptionHooks {
                 out = quantize(out, 0.12D + extreme * 0.44D);
             }
         } else if (role == DENSITY_ROLE_EROSION) {
-            out = fold(out + lane * faultAmplitude * (0.65D + extreme), 0.32D + extreme * 1.35D);
+            out = fold(out + phaseSign * faultAmplitude * (0.65D + extreme), 0.32D + extreme * 1.35D);
             if (mode == 3) {
                 out -= sign * faultAmplitude * 0.52D;
             }
         } else if (role == DENSITY_ROLE_RIDGES) {
-            out += (lane == 0.0D ? sign * 0.45D : lane) * faultAmplitude * (0.70D + extreme * 1.20D);
+            out += phaseSign * faultAmplitude * (0.70D + extreme * 1.20D);
             if (mode == 4) {
                 out = quantize(out, 0.08D + extreme * 0.28D);
             }
@@ -1183,12 +1223,12 @@ public final class WorldgenCorruptionHooks {
                 out = lerp(out, -original + shelfSign * faultAmplitude * 0.40D, 0.28D + extreme * 0.42D);
             }
         } else if (role == DENSITY_ROLE_INITIAL) {
-            out += (shelfSign * 0.70D + lane * 0.55D) * faultAmplitude * (0.55D + extreme * 0.85D);
+            out += (shelfSign * 0.70D + phaseSign * 0.55D) * faultAmplitude * (0.55D + extreme * 0.85D);
             if (mode == 0 || mode == 7) {
                 out = quantize(out, 0.10D + extreme * 0.36D);
             }
         } else if (role == DENSITY_ROLE_FINAL) {
-            double broken = out + (shelfSign * 0.90D + lane * 0.70D) * faultAmplitude;
+            double broken = out + (shelfSign * 0.90D + phaseSign * 0.70D) * faultAmplitude;
             if (mode == 2 || mode == 6) {
                 broken = -broken * (0.32D + extreme * 0.82D);
             } else if (mode == 3) {
@@ -1212,64 +1252,27 @@ public final class WorldgenCorruptionHooks {
         return Double.isFinite(out) ? out : result;
     }
 
-    private static double applyDensityAddressFaults(boolean channelIsShape, float instability, double result, double original, int x, int y, int z, float strength, double amplitude, long channelSeed) {
-        double out = result;
-        long addressSeed = mix(channelSeed ^ 0x41444452455353L);
-        int cell = 2 << Math.floorMod((int) (addressSeed >>> 6), 6);
-        int qx = floorToCell(x + signedRange(addressSeed >>> 12, cell), cell);
-        int qy = floorToCell(y + signedRange(addressSeed >>> 24, Math.max(2, cell / 2)), Math.max(2, cell / 2));
-        int qz = floorToCell(z + signedRange(addressSeed >>> 36, cell), cell);
-        long cellHash = mix(addressSeed
-                ^ qx * 0x9E3779B97F4A7C15L
-                ^ qy * 0x94D049BB133111EBL
-                ^ qz * 0xBF58476D1CE4E5B9L);
-
-        float chance = clamp01(0.012F + strength * 0.16F + instability * 0.035F);
-        if (channelIsShape) {
-            chance = clamp01(chance * 0.55F);
-        }
-        if (unit(cellHash ^ 0x43454C4CL) < chance) {
-            int mode = Math.floorMod((int) (cellHash >>> 43), 9);
-            double faultAmplitude = amplitude * (0.35D + strength * (channelIsShape ? 0.75D : 1.60D));
-            if (mode == 0) {
-                out += signedUnit(cellHash >>> 3) * faultAmplitude;
-            } else if (mode == 1) {
-                out = lerp(out, original + signedUnit(cellHash >>> 5) * faultAmplitude, 0.24D + strength * 0.34D);
-            } else if (mode == 2) {
-                double step = 0.0625D + unit(cellHash >>> 17) * (0.18D + strength * 0.72D);
-                out = quantize(out + signedUnit(cellHash >>> 23) * faultAmplitude * 0.28D, step);
-            } else if (mode == 3) {
-                double stuck = original + densityScanlinePulse(addressSeed, x, y, z, strength) * faultAmplitude;
-                out = lerp(out, stuck, 0.20D + strength * 0.28D);
-            } else if (mode == 4) {
-                out = lerp(out, original, 0.42D + strength * 0.32D) + signedUnit(cellHash >>> 31) * faultAmplitude * 0.22D;
-            } else if (mode == 5) {
-                out *= 0.45D + unit(cellHash >>> 37) * 0.42D;
-            } else if (mode == 6) {
-                out += densityScanlinePulse(addressSeed, x, y, z, strength) * faultAmplitude * 0.65D;
-            } else if (mode == 7) {
-                out = lerp(out, fold(out + signedUnit(cellHash >>> 41) * faultAmplitude, 0.35D + unit(cellHash >>> 49) * (0.9D + strength * 1.8D)), 0.18D + strength * 0.22D);
-            } else {
-                out += smoothNoise2D(x, z, cellHash ^ 0x424F554E44L, 0.018D + strength * 0.038D) * faultAmplitude;
-            }
-        }
-
-        double lane = densityScanlinePulse(addressSeed ^ 0x4C414E45L, x, y, z, strength);
-        if (Math.abs(lane) > 0.0D && unit(cellHash ^ 0x4C414E4550L) < 0.05F + strength * 0.12F) {
-            out += lane * amplitude * (channelIsShape ? 0.28D : 0.70D);
-        }
-
-        if (!channelIsShape && unit(cellHash ^ 0x424954464C4950L) < strength * 0.025F) {
-            long bits = Double.doubleToRawLongBits(out);
-            int bit = 42 + Math.floorMod((int) (cellHash >>> 7), 12);
-            bits ^= 1L << bit;
-            double flipped = Double.longBitsToDouble(bits);
-            if (Double.isFinite(flipped) && Math.abs(flipped) < 1.0E6D) {
-                out = lerp(out, flipped, 0.22D + strength * 0.42D);
-            }
-        }
-
-        return Double.isFinite(out) ? out : result;
+    private static long densityMacroSeed(DensityRuntime runtime, int x, int y, int z) {
+        int cell = runtime.macroCell();
+        int cellY = runtime.macroCellY();
+        long seed = runtime.macroSeed() ^ 0x4558545244454E53L;
+        return switch (runtime.gateStyle()) {
+            case 0 -> mix(seed
+                    ^ floorToCell(x, cell) * 0x9E3779B97F4A7C15L
+                    ^ floorToCell(z, cell) * 0xBF58476D1CE4E5B9L);
+            case 1 -> mix(seed
+                    ^ floorToCell(y, cellY) * 0x94D049BB133111EBL);
+            case 2 -> mix(seed
+                    ^ floorToCell(x + z, cell) * 0x632BE59BD9B4E019L
+                    ^ floorToCell(y, Math.max(cellY, cell)) * 0x94D049BB133111EBL);
+            case 3 -> mix(seed
+                    ^ floorToCell(x - z, cell) * 0x85157AF5L);
+            case 4 -> mix(seed);
+            default -> mix(seed
+                    ^ floorToCell(x, cell) * 0x9E3779B97F4A7C15L
+                    ^ floorToCell(y, Math.max(cellY, cell * 2)) * 0x94D049BB133111EBL
+                    ^ floorToCell(z, cell) * 0xBF58476D1CE4E5B9L);
+        };
     }
 
     private static double densityScanlinePulse(long seed, int x, int y, int z, float strength) {
@@ -1300,36 +1303,9 @@ public final class WorldgenCorruptionHooks {
         return wrapped > period ? period * 2.0D - wrapped : wrapped;
     }
 
-    private static double smoothNoise2D(double x, double z, long seed, double scale) {
-        double sx = x * scale + signedUnit(seed) * 512.0D;
-        double sz = z * scale + signedUnit(seed >>> 11) * 512.0D;
-        int x0 = fastFloor(sx);
-        int z0 = fastFloor(sz);
-        double tx = fade(sx - x0);
-        double tz = fade(sz - z0);
-        double a = lattice2D(x0, z0, seed);
-        double b = lattice2D(x0 + 1, z0, seed);
-        double c = lattice2D(x0, z0 + 1, seed);
-        double d = lattice2D(x0 + 1, z0 + 1, seed);
-        return lerp(lerp(a, b, tx), lerp(c, d, tx), tz);
-    }
-
-    private static double lattice2D(int x, int z, long seed) {
-        return signedUnit(seed ^ x * 0x9E3779B97F4A7C15L ^ z * 0xBF58476D1CE4E5B9L);
-    }
-
-    private static int fastFloor(double value) {
-        int truncated = (int) value;
-        return value < truncated ? truncated - 1 : truncated;
-    }
-
     private static int floorToCell(int value, int cell) {
         int size = Math.max(1, cell);
         return Math.floorDiv(value, size) * size;
-    }
-
-    private static double fade(double value) {
-        return value * value * value * (value * (value * 6.0D - 15.0D) + 10.0D);
     }
 
     private static double lerp(double a, double b, double t) {

@@ -1,6 +1,8 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ClientCorruptionEffects;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.access.ParticleAccessor;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.access.SingleQuadParticleAccessor;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
@@ -13,7 +15,6 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
-import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.lang.reflect.Field;
@@ -21,9 +22,9 @@ import java.lang.reflect.Method;
 
 @OnlyIn(Dist.CLIENT)
 public final class ParticleCorruptionHooks {
-    private static final int MIN_PARTICLE_BUDGET = 4_500;
+    private static final int MIN_PARTICLE_BUDGET = 1_000;
     private static final int MAX_PARTICLE_BUDGET = 8_500;
-    private static final Map<Particle, Integer> NORMAL_LIFETIMES = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<Particle, Integer> NORMAL_LIFETIMES = new WeakHashMap<>();
     private static final int FIELD_X = 0;
     private static final int FIELD_Y = 1;
     private static final int FIELD_Z = 2;
@@ -50,6 +51,13 @@ public final class ParticleCorruptionHooks {
     private static boolean setSizeMethodChecked;
     private static Method setAlphaMethod;
     private static boolean setAlphaMethodChecked;
+    private static final ParticleClassInfo UNKNOWN_PARTICLE = ParticleClassInfo.create("unknown");
+    private static final ClassValue<ParticleClassInfo> PARTICLE_CLASS_INFO = new ClassValue<>() {
+        @Override
+        protected ParticleClassInfo computeValue(Class<?> type) {
+            return ParticleClassInfo.create(type.getName());
+        }
+    };
     private static long budgetTick = Long.MIN_VALUE;
     private static int particlesSeenThisTick;
 
@@ -75,6 +83,9 @@ public final class ParticleCorruptionHooks {
         if (seen <= budget) {
             return false;
         }
+        if (intensity >= 0.995F) {
+            return true;
+        }
 
         float overflow = (seen - budget) / Math.max(1.0F, budget * 0.30F);
         if (overflow >= 1.0F) {
@@ -87,21 +98,38 @@ public final class ParticleCorruptionHooks {
     }
 
     public static void mutateTickedParticle(Particle particle) {
-        if (particle == null || !shouldProcessParticle(particle)) {
+        if (particle == null) {
             return;
         }
+
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
+        if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
+            return;
+        }
+
+        String targetId = targetId(particle, "state");
+        float intensity = intensity(stack, targetId);
+        if (intensity <= 0.01F || !shouldProcessParticle(particle, stack, targetId, intensity)) {
+            return;
+        }
+
         ParticleState state = particleState(particle);
         if (state == null) {
             return;
         }
-        ParticleState mutated = mutateParticle(particle, state);
-        if (mutated == state || mutated.equals(state)) {
+
+        ParticleState mutated = mutateParticle(particle, state, stack, targetId, intensity);
+        if (mutated == state) {
             return;
         }
         applyParticleState(particle, state, mutated);
     }
 
     public static boolean shouldProcessParticle(Particle particle) {
+        if (particle == null) {
+            return false;
+        }
+
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         String targetId = targetId(particle, "state");
         if (!stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)) {
@@ -112,6 +140,11 @@ public final class ParticleCorruptionHooks {
         if (intensity <= 0.01F) {
             return false;
         }
+
+        return shouldProcessParticle(particle, stack, targetId, intensity);
+    }
+
+    private static boolean shouldProcessParticle(Particle particle, CorruptionEffectStack stack, String targetId, float intensity) {
 
         Minecraft minecraft = Minecraft.getInstance();
         long time = minecraft.level == null ? 0L : minecraft.level.getGameTime();
@@ -141,6 +174,11 @@ public final class ParticleCorruptionHooks {
             return original;
         }
 
+        return mutateParticle(particle, original, stack, targetId, intensity);
+    }
+
+    private static ParticleState mutateParticle(Particle particle, ParticleState original, CorruptionEffectStack stack, String targetId, float intensity) {
+        ParticleClassInfo info = particleClassInfo(particle);
         float boosted = particleBoost(intensity);
         float strength = 1.0F + boosted * 3.0F;
         long clock = clock(stack, targetId, particle);
@@ -165,7 +203,7 @@ public final class ParticleCorruptionHooks {
         float velocityChance = Mth.clamp(0.24F + boosted * 0.68F + stack.instability() * 0.10F, 0.0F, extreme ? 1.0F : 0.96F);
         if (unit(clock ^ 0x56454C4FL) < velocityChance) {
             double maxVelocity = extreme ? 24.0D : 8.0D + boosted * 14.0D;
-            velocity = CorruptionValueMutator.mutateVector(stack, CorruptionSurface.WORLD_RENDER, targetId + ":velocity", velocity, (0.05D + intensity * 0.75D) * strength, maxVelocity, 0x50415254, clock);
+            velocity = CorruptionValueMutator.mutateVectorComponents(stack, CorruptionSurface.WORLD_RENDER, info.velocityXTarget(), info.velocityYTarget(), info.velocityZTarget(), velocity, (0.05D + intensity * 0.75D) * strength, maxVelocity, 0x50415254, clock);
             int mode = Math.floorMod((int) (clock >>> 28), 8);
             velocity = switch (mode) {
                 case 0 -> new Vec3(velocity.z, velocity.y, -velocity.x);
@@ -184,7 +222,7 @@ public final class ParticleCorruptionHooks {
         float gravityChance = Mth.clamp(0.20F + boosted * 0.62F + stack.instability() * 0.10F, 0.0F, extreme ? 1.0F : 0.92F);
         if (unit(clock ^ 0x47524156L) < gravityChance) {
             float span = (extreme ? 6.0F : 1.2F + intensity * 3.6F) * strength;
-            gravity = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, targetId + ":gravity", gravity, span, -32.0F, 32.0F, 0x4752, clock);
+            gravity = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, info.stateGravityTarget(), gravity, span, -32.0F, 32.0F, 0x4752, clock);
             if (unit(clock ^ 0x474D4F44L) < 0.16F + boosted * 0.50F) {
                 gravity = signedUnit(clock ^ 0x47444952L) * (0.35F + unit(clock ^ 0x4753504EL) * (extreme ? 24.0F : 7.0F + boosted * 17.0F));
             }
@@ -198,19 +236,19 @@ public final class ParticleCorruptionHooks {
         }
 
         if (unit(clock ^ 0x53495A45L) < 0.10F + boosted * 0.42F) {
-            width = mutateParticleSize(stack, targetId + ":width", width, clock ^ 0x57494454L, boosted, extreme);
-            height = mutateParticleSize(stack, targetId + ":height", height, clock ^ 0x48454947L, boosted, extreme);
+            width = mutateParticleSize(stack, info.widthTarget(), width, clock ^ 0x57494454L, boosted, extreme);
+            height = mutateParticleSize(stack, info.heightTarget(), height, clock ^ 0x48454947L, boosted, extreme);
             if (!Float.isNaN(quadSize)) {
-                quadSize = mutateParticleSize(stack, targetId + ":quad", quadSize, clock ^ 0x51554144L, boosted, extreme);
+                quadSize = mutateParticleSize(stack, info.quadTarget(), quadSize, clock ^ 0x51554144L, boosted, extreme);
             }
             changed = true;
         }
 
         if (unit(clock ^ 0x434F4C52L) < 0.08F + boosted * 0.38F) {
-            red = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, targetId + ":red", red, 2.0F + boosted * 8.0F, -6.0F, 8.0F, 0x52, clock);
-            green = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, targetId + ":green", green, 2.0F + boosted * 8.0F, -6.0F, 8.0F, 0x47, clock);
-            blue = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, targetId + ":blue", blue, 2.0F + boosted * 8.0F, -6.0F, 8.0F, 0x42, clock);
-            alpha = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, targetId + ":alpha", alpha, 1.6F + boosted * 6.4F, -3.0F, 5.0F, 0x41, clock);
+            red = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, info.redTarget(), red, 2.0F + boosted * 8.0F, -6.0F, 8.0F, 0x52, clock);
+            green = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, info.greenTarget(), green, 2.0F + boosted * 8.0F, -6.0F, 8.0F, 0x47, clock);
+            blue = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, info.blueTarget(), blue, 2.0F + boosted * 8.0F, -6.0F, 8.0F, 0x42, clock);
+            alpha = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, info.alphaTarget(), alpha, 1.6F + boosted * 6.4F, -3.0F, 5.0F, 0x41, clock);
             changed = true;
         }
 
@@ -219,17 +257,17 @@ public final class ParticleCorruptionHooks {
             int maxLifetime = Math.max(1, normalLifetime * 2);
             int minLifetime = Math.max(1, Math.round(maxLifetime * (extreme ? 0.05F : 0.15F)));
             float span = Math.max(6.0F + boosted * 38.0F, normalLifetime * (0.18F + boosted * 1.35F));
-            lifetime = Mth.clamp(Math.round(CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, targetId + ":lifetime", lifetime, span, minLifetime, maxLifetime, 0x4C54, clock)), minLifetime, maxLifetime);
+            lifetime = Mth.clamp(Math.round(CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, info.lifetimeTarget(), lifetime, span, minLifetime, maxLifetime, 0x4C54, clock)), minLifetime, maxLifetime);
             changed = true;
         }
 
         if (unit(clock ^ 0x524F4C4CL) < 0.08F + boosted * 0.36F) {
-            roll = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, targetId + ":roll", roll, (float) Math.PI * (1.0F + boosted * 12.0F), (float) -Math.PI * 24.0F, (float) Math.PI * 24.0F, 0x524F, clock);
+            roll = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, info.rollTarget(), roll, (float) Math.PI * (1.0F + boosted * 12.0F), (float) -Math.PI * 24.0F, (float) Math.PI * 24.0F, 0x524F, clock);
             changed = true;
         }
 
         if (unit(clock ^ 0x46524943L) < 0.06F + boosted * 0.32F) {
-            friction = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, targetId + ":friction", friction, 0.25F + boosted * 1.85F, 0.005F, 3.25F, 0x4652, clock);
+            friction = CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.WORLD_RENDER, info.frictionTarget(), friction, 0.25F + boosted * 1.85F, 0.005F, 3.25F, 0x4652, clock);
             changed = true;
         }
 
@@ -303,7 +341,14 @@ public final class ParticleCorruptionHooks {
     }
 
     private static String targetId(Particle particle, String feature) {
-        return "particle:" + feature + ":" + (particle == null ? "unknown" : particle.getClass().getName());
+        ParticleClassInfo info = particleClassInfo(particle);
+        return switch (feature) {
+            case "budget" -> info.budgetTarget();
+            case "state" -> info.stateTarget();
+            case "gravity" -> info.gravityTarget();
+            case "vertical_velocity" -> info.verticalVelocityTarget();
+            default -> "particle:" + feature + ":" + info.className();
+        };
     }
 
     private static long clock(CorruptionEffectStack stack, String targetId, Particle particle) {
@@ -323,7 +368,7 @@ public final class ParticleCorruptionHooks {
         int qx = Mth.floor(x * 8.0D);
         int qy = Mth.floor(y * 8.0D);
         int qz = Mth.floor(z * 8.0D);
-        int hash = particle.getClass().getName().hashCode();
+        int hash = particleClassInfo(particle).classNameHash();
         hash = 31 * hash + qx;
         hash = 31 * hash + qy;
         hash = 31 * hash + qz;
@@ -331,22 +376,45 @@ public final class ParticleCorruptionHooks {
         return hash;
     }
 
+    private static ParticleClassInfo particleClassInfo(Particle particle) {
+        return particle == null ? UNKNOWN_PARTICLE : PARTICLE_CLASS_INFO.get(particle.getClass());
+    }
+
     private static int normalLifetime(Particle particle, int currentLifetime) {
         int safeLifetime = Math.max(1, currentLifetime);
         if (particle == null) {
             return safeLifetime;
         }
-        synchronized (NORMAL_LIFETIMES) {
-            Integer existing = NORMAL_LIFETIMES.get(particle);
-            if (existing != null && existing > 0) {
-                return existing;
-            }
-            NORMAL_LIFETIMES.put(particle, safeLifetime);
-            return safeLifetime;
+        Integer existing = NORMAL_LIFETIMES.get(particle);
+        if (existing != null && existing > 0) {
+            return existing;
         }
+        NORMAL_LIFETIMES.put(particle, safeLifetime);
+        return safeLifetime;
     }
 
     private static ParticleState particleState(Particle particle) {
+        if (ParticleFieldAccess.particleAvailable() && particle instanceof ParticleAccessor accessor) {
+            float quadSize = ParticleFieldAccess.singleQuadAvailable() && particle instanceof SingleQuadParticleAccessor quadAccessor ? quadAccessor.rmc$getQuadSize() : Float.NaN;
+            return new ParticleState(
+                    new Vec3(accessor.rmc$getX(), accessor.rmc$getY(), accessor.rmc$getZ()),
+                    new Vec3(accessor.rmc$getXd(), accessor.rmc$getYd(), accessor.rmc$getZd()),
+                    accessor.rmc$getGravity(),
+                    accessor.rmc$getBbWidth(),
+                    accessor.rmc$getBbHeight(),
+                    quadSize,
+                    accessor.rmc$getRed(),
+                    accessor.rmc$getGreen(),
+                    accessor.rmc$getBlue(),
+                    accessor.rmc$getAlpha(),
+                    accessor.rmc$getRoll(),
+                    accessor.rmc$getFriction(),
+                    accessor.rmc$getLifetime(),
+                    accessor.rmc$getHasPhysics(),
+                    accessor.rmc$getSpeedUpWhenBlocked()
+            );
+        }
+
         Double x = doubleField(particle, FIELD_X, "x", "f_107212_");
         Double y = doubleField(particle, FIELD_Y, "y", "f_107213_");
         Double z = doubleField(particle, FIELD_Z, "z", "f_107214_");
@@ -391,6 +459,11 @@ public final class ParticleCorruptionHooks {
     }
 
     private static void applyParticleState(Particle particle, ParticleState original, ParticleState state) {
+        if (ParticleFieldAccess.particleAvailable() && particle instanceof ParticleAccessor accessor) {
+            applyParticleStateFast(particle, accessor, original, state);
+            return;
+        }
+
         Vec3 velocity = state.velocity();
         if (finite(velocity) && !sameVector(velocity, original.velocity())) {
             particle.setParticleSpeed(velocity.x, velocity.y, velocity.z);
@@ -426,6 +499,51 @@ public final class ParticleCorruptionHooks {
         }
         if (state.speedUpWhenBlocked() != original.speedUpWhenBlocked()) {
             setBooleanField(particle, FIELD_SPEED_UP_WHEN_BLOCKED, "speedUpWhenYMotionIsBlocked", "f_172259_", state.speedUpWhenBlocked());
+        }
+        Vec3 position = state.position();
+        if (finite(position) && !sameVector(position, original.position())) {
+            particle.setPos(position.x, position.y, position.z);
+        }
+    }
+
+    private static void applyParticleStateFast(Particle particle, ParticleAccessor accessor, ParticleState original, ParticleState state) {
+        Vec3 velocity = state.velocity();
+        if (finite(velocity) && !sameVector(velocity, original.velocity())) {
+            particle.setParticleSpeed(velocity.x, velocity.y, velocity.z);
+        }
+        if (changed(state.gravity(), original.gravity())) {
+            accessor.rmc$setGravity(state.gravity());
+        }
+        if (Float.isFinite(state.width()) && Float.isFinite(state.height())
+                && (changed(state.width(), original.width()) || changed(state.height(), original.height()))) {
+            accessor.rmc$invokeSetSize(state.width(), state.height());
+        }
+        if (ParticleFieldAccess.singleQuadAvailable()
+                && particle instanceof SingleQuadParticleAccessor quadAccessor
+                && Float.isFinite(state.quadSize()) && changed(state.quadSize(), original.quadSize())) {
+            quadAccessor.rmc$setQuadSize(state.quadSize());
+        }
+        if (Float.isFinite(state.red()) && Float.isFinite(state.green()) && Float.isFinite(state.blue())
+                && (changed(state.red(), original.red()) || changed(state.green(), original.green()) || changed(state.blue(), original.blue()))) {
+            particle.setColor(state.red(), state.green(), state.blue());
+        }
+        if (Float.isFinite(state.alpha()) && changed(state.alpha(), original.alpha())) {
+            accessor.rmc$invokeSetAlpha(state.alpha());
+        }
+        if (changed(state.roll(), original.roll())) {
+            accessor.rmc$setRoll(state.roll());
+        }
+        if (changed(state.friction(), original.friction())) {
+            accessor.rmc$setFriction(state.friction());
+        }
+        if (state.lifetime() > 0 && state.lifetime() != original.lifetime()) {
+            particle.setLifetime(state.lifetime());
+        }
+        if (state.hasPhysics() != original.hasPhysics()) {
+            accessor.rmc$setHasPhysics(state.hasPhysics());
+        }
+        if (state.speedUpWhenBlocked() != original.speedUpWhenBlocked()) {
+            accessor.rmc$setSpeedUpWhenBlocked(state.speedUpWhenBlocked());
         }
         Vec3 position = state.position();
         if (finite(position) && !sameVector(position, original.position())) {
@@ -515,6 +633,10 @@ public final class ParticleCorruptionHooks {
     }
 
     private static float quadSize(Particle particle) {
+        if (ParticleFieldAccess.singleQuadAvailable() && particle instanceof SingleQuadParticleAccessor accessor) {
+            return accessor.rmc$getQuadSize();
+        }
+
         Field field = quadSizeField();
         if (field == null) {
             return Float.NaN;
@@ -527,6 +649,11 @@ public final class ParticleCorruptionHooks {
     }
 
     private static void setQuadSize(Particle particle, float value) {
+        if (ParticleFieldAccess.singleQuadAvailable() && particle instanceof SingleQuadParticleAccessor accessor) {
+            accessor.rmc$setQuadSize(value);
+            return;
+        }
+
         Field field = quadSizeField();
         if (field == null) {
             return;
@@ -691,5 +818,55 @@ public final class ParticleCorruptionHooks {
             boolean hasPhysics,
             boolean speedUpWhenBlocked
     ) {
+    }
+
+    private record ParticleClassInfo(
+            String className,
+            int classNameHash,
+            String budgetTarget,
+            String stateTarget,
+            String gravityTarget,
+            String verticalVelocityTarget,
+            String velocityXTarget,
+            String velocityYTarget,
+            String velocityZTarget,
+            String stateGravityTarget,
+            String widthTarget,
+            String heightTarget,
+            String quadTarget,
+            String redTarget,
+            String greenTarget,
+            String blueTarget,
+            String alphaTarget,
+            String lifetimeTarget,
+            String rollTarget,
+            String frictionTarget
+    ) {
+        private static ParticleClassInfo create(String className) {
+            String stateTarget = "particle:state:" + className;
+            String velocityTarget = stateTarget + ":velocity";
+            return new ParticleClassInfo(
+                    className,
+                    className.hashCode(),
+                    "particle:budget:" + className,
+                    stateTarget,
+                    "particle:gravity:" + className,
+                    "particle:vertical_velocity:" + className,
+                    velocityTarget + ":x",
+                    velocityTarget + ":y",
+                    velocityTarget + ":z",
+                    stateTarget + ":gravity",
+                    stateTarget + ":width",
+                    stateTarget + ":height",
+                    stateTarget + ":quad",
+                    stateTarget + ":red",
+                    stateTarget + ":green",
+                    stateTarget + ":blue",
+                    stateTarget + ":alpha",
+                    stateTarget + ":lifetime",
+                    stateTarget + ":roll",
+                    stateTarget + ":friction"
+            );
+        }
     }
 }

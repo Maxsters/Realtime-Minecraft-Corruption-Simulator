@@ -1,6 +1,8 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ItemTextureCorruptionManager;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.access.TextureSheetParticleAccessor;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.ParticleFieldAccess;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.TerrainParticle;
@@ -52,6 +54,10 @@ public abstract class TerrainParticleMixin {
     }
 
     private TextureAtlasSprite rmc$getSprite() {
+        if (ParticleFieldAccess.textureSheetAvailable() && this instanceof TextureSheetParticleAccessor accessor) {
+            return accessor.rmc$getSprite();
+        }
+
         rmc$ensureReflection();
         if (rmc$spriteField == null) {
             return null;
@@ -64,6 +70,11 @@ public abstract class TerrainParticleMixin {
     }
 
     private void rmc$setSprite(TextureAtlasSprite sprite) {
+        if (ParticleFieldAccess.textureSheetAvailable() && this instanceof TextureSheetParticleAccessor accessor) {
+            accessor.rmc$invokeSetSprite(sprite);
+            return;
+        }
+
         rmc$ensureReflection();
         if (rmc$setSpriteMethod == null) {
             return;

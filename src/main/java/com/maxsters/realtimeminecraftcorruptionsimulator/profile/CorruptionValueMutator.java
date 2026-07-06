@@ -29,6 +29,13 @@ public final class CorruptionValueMutator {
         return new Vec3(x, y, z);
     }
 
+    public static Vec3 mutateVectorComponents(CorruptionEffectStack stack, CorruptionSurface surface, String xTargetId, String yTargetId, String zTargetId, Vec3 value, double span, double maxComponent, int salt, long clock) {
+        double x = mutateScalar(stack, surface, xTargetId, value.x, span, -maxComponent, maxComponent, salt ^ 0x11, clock);
+        double y = mutateScalar(stack, surface, yTargetId, value.y, span, -maxComponent, maxComponent, salt ^ 0x2B, clock);
+        double z = mutateScalar(stack, surface, zTargetId, value.z, span, -maxComponent, maxComponent, salt ^ 0x47, clock);
+        return new Vec3(x, y, z);
+    }
+
     public static int mutateColor(CorruptionEffectStack stack, CorruptionSurface surface, String targetId, int color, int salt, long clock) {
         int red = (color >> 16) & 0xFF;
         int green = (color >> 8) & 0xFF;

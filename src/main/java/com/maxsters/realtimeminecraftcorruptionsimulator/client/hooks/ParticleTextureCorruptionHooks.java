@@ -1,6 +1,7 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ClientCorruptionEffects;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.access.TextureSheetParticleAccessor;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -13,10 +14,20 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
 import java.lang.reflect.Field;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 @OnlyIn(Dist.CLIENT)
 public final class ParticleTextureCorruptionHooks {
     private static final ThreadLocal<ParticleTextureContext> PARTICLE_CONTEXT = new ThreadLocal<>();
+    private static final ParticleTextureContext DISABLED_CONTEXT = new ParticleTextureContext(0L, 0.0F, false);
+    private static final Map<TextureAtlasSprite, String> SPRITE_TARGET_IDS = new WeakHashMap<>();
+    private static final ClassValue<String> CLASS_TARGET_IDS = new ClassValue<>() {
+        @Override
+        protected String computeValue(Class<?> type) {
+            return "particle_texture_class:" + type.getName();
+        }
+    };
     private static Field spriteField;
     private static boolean reflectionChecked;
 
@@ -26,7 +37,7 @@ public final class ParticleTextureCorruptionHooks {
     public static void beginParticleRender(Particle particle) {
         ParticleTextureContext context = createContext(particle);
         if (context == null) {
-            PARTICLE_CONTEXT.remove();
+            PARTICLE_CONTEXT.set(DISABLED_CONTEXT);
         } else {
             PARTICLE_CONTEXT.set(context);
         }
@@ -63,6 +74,9 @@ public final class ParticleTextureCorruptionHooks {
 
     private static ParticleTextureContext currentContext(Particle particle) {
         ParticleTextureContext context = PARTICLE_CONTEXT.get();
+        if (context == DISABLED_CONTEXT) {
+            return null;
+        }
         if (context != null) {
             return context;
         }
@@ -105,16 +119,26 @@ public final class ParticleTextureCorruptionHooks {
 
     private static String targetId(Particle particle) {
         TextureAtlasSprite sprite = particleSprite(particle);
-        if (sprite != null && sprite.contents() != null && sprite.contents().name() != null) {
+        if (sprite != null) {
+            return SPRITE_TARGET_IDS.computeIfAbsent(sprite, ParticleTextureCorruptionHooks::spriteTargetId);
+        }
+        return CLASS_TARGET_IDS.get(particle.getClass());
+    }
+
+    private static String spriteTargetId(TextureAtlasSprite sprite) {
+        if (sprite.contents() != null && sprite.contents().name() != null) {
             ResourceLocation atlas = sprite.atlasLocation();
             return "particle_texture_sprite:" + (atlas == null ? "unknown_atlas" : atlas) + ":" + sprite.contents().name();
         }
-        return "particle_texture_class:" + particle.getClass().getName();
+        return "particle_texture_sprite:unknown";
     }
 
     private static TextureAtlasSprite particleSprite(Particle particle) {
         if (!(particle instanceof TextureSheetParticle)) {
             return null;
+        }
+        if (ParticleFieldAccess.textureSheetAvailable() && particle instanceof TextureSheetParticleAccessor accessor) {
+            return accessor.rmc$getSprite();
         }
         ensureSpriteReflection();
         if (spriteField == null) {
@@ -153,6 +177,8 @@ public final class ParticleTextureCorruptionHooks {
         private final boolean extreme;
         private int vertexOrdinal;
         private int lastUvOrdinal;
+        private float lastU;
+        private float lastV;
 
         private ParticleTextureContext(long seed, float intensity, boolean extreme) {
             this.seed = seed;
@@ -163,8 +189,8 @@ public final class ParticleTextureCorruptionHooks {
         private VertexConsumer uv(VertexConsumer consumer, float u, float v) {
             int ordinal = vertexOrdinal++;
             lastUvOrdinal = ordinal;
-            float[] uv = corruptUv(u, v, ordinal);
-            return consumer.uv(uv[0], uv[1]);
+            corruptUv(u, v, ordinal);
+            return consumer.uv(lastU, lastV);
         }
 
         private VertexConsumer color(VertexConsumer consumer, float red, float green, float blue, float alpha) {
@@ -183,14 +209,16 @@ public final class ParticleTextureCorruptionHooks {
             );
         }
 
-        private float[] corruptUv(float u, float v, int ordinal) {
+        private void corruptUv(float u, float v, int ordinal) {
             int quad = ordinal >> 2;
             int corner = ordinal & 3;
             long quadSeed = mixLong(seed ^ (long) quad * 0x9E3779B97F4A7C15L);
             long vertexSeed = mixLong(quadSeed ^ (long) corner * 0xD1B54A32D192ED03L);
             float chance = extreme ? 1.0F : Mth.clamp(0.14F + intensity * 0.78F, 0.0F, 0.96F);
             if (unit(vertexSeed ^ 0x55564741L) > chance) {
-                return new float[]{u, v};
+                lastU = u;
+                lastV = v;
+                return;
             }
 
             float du = u - 0.5F;
@@ -226,10 +254,8 @@ public final class ParticleTextureCorruptionHooks {
                 corruptedV = unit(vertexSeed ^ 0x56454447L);
             }
 
-            return new float[]{
-                    Mth.clamp(corruptedU, -2.0F, 3.0F),
-                    Mth.clamp(corruptedV, -2.0F, 3.0F)
-            };
+            lastU = Mth.clamp(corruptedU, -2.0F, 3.0F);
+            lastV = Mth.clamp(corruptedV, -2.0F, 3.0F);
         }
 
         private int corruptColor(int red, int green, int blue, int alpha, int ordinal) {
@@ -328,7 +354,7 @@ public final class ParticleTextureCorruptionHooks {
         public void vertex(float x, float y, float z, float red, float green, float blue, float alpha, float u, float v, int overlay, int light, float normalX, float normalY, float normalZ) {
             int ordinal = context.vertexOrdinal++;
             context.lastUvOrdinal = ordinal;
-            float[] uv = context.corruptUv(u, v, ordinal);
+            context.corruptUv(u, v, ordinal);
             int color = context.corruptColor(
                     Mth.clamp(Math.round(red * 255.0F), 0, 255),
                     Mth.clamp(Math.round(green * 255.0F), 0, 255),
@@ -344,8 +370,8 @@ public final class ParticleTextureCorruptionHooks {
                     ((color >>> 8) & 0xFF) / 255.0F,
                     (color & 0xFF) / 255.0F,
                     ((color >>> 24) & 0xFF) / 255.0F,
-                    uv[0],
-                    uv[1],
+                    context.lastU,
+                    context.lastV,
                     overlay,
                     light,
                     normalX,

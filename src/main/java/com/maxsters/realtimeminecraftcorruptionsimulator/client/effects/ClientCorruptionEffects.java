@@ -10,12 +10,16 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 
 @OnlyIn(Dist.CLIENT)
 public final class ClientCorruptionEffects {
+    private static final CorruptionEffectStack INACTIVE_STACK = CorruptionEffectStack.local(0);
+    private static volatile CorruptionStateSnapshot cachedSnapshot;
+    private static volatile CorruptionEffectStack cachedStack = INACTIVE_STACK;
+
     private ClientCorruptionEffects() {
     }
 
     public static CorruptionEffectStack current() {
         if (ClientCorruptionProtection.shouldSuppressClientCorruption()) {
-            return CorruptionEffectStack.local(0);
+            return INACTIVE_STACK;
         }
 
         return fromClientSnapshot();
@@ -28,18 +32,30 @@ public final class ClientCorruptionEffects {
     public static CorruptionEffectStack currentForWorldRendering() {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null || minecraft.level == null) {
-            return CorruptionEffectStack.local(0);
+            return INACTIVE_STACK;
         }
         return fromClientSnapshot();
     }
 
     public static CorruptionEffectStack currentForGameplay() {
         CorruptionStateSnapshot snapshot = ClientCorruptionState.snapshot();
-        return snapshot == null ? CorruptionEffectStack.local(0) : CorruptionEffectStack.fromGameplay(snapshot);
+        return snapshot == null ? INACTIVE_STACK : CorruptionEffectStack.fromGameplay(snapshot);
     }
 
     private static CorruptionEffectStack fromClientSnapshot() {
         CorruptionStateSnapshot snapshot = ClientCorruptionState.snapshot();
-        return snapshot == null ? CorruptionEffectStack.local(0) : CorruptionEffectStack.from(snapshot);
+        if (snapshot == null) {
+            return INACTIVE_STACK;
+        }
+
+        CorruptionStateSnapshot cachedSnapshot = ClientCorruptionEffects.cachedSnapshot;
+        if (snapshot == cachedSnapshot || snapshot.equals(cachedSnapshot)) {
+            return cachedStack;
+        }
+
+        CorruptionEffectStack stack = CorruptionEffectStack.from(snapshot);
+        ClientCorruptionEffects.cachedSnapshot = snapshot;
+        cachedStack = stack;
+        return stack;
     }
 }
