@@ -2,7 +2,7 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.effects;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.GuiAtlasSpriteCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.gui.GuiAtlasSpriteCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;

@@ -1,6 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.BiomeBlendCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.BiomeBlendCorruptionHooks;
 import net.minecraft.client.renderer.BiomeColors;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockAndTintGetter;

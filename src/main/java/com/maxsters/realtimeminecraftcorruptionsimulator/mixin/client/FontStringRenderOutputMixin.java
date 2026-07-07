@@ -1,6 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.FontRenderCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.gui.FontRenderCorruptionHooks;
 import com.mojang.blaze3d.font.GlyphInfo;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.gui.Font;

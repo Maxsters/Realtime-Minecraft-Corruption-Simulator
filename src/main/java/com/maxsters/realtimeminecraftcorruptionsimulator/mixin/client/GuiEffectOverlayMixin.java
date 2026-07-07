@@ -1,6 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.HudEffectLayoutHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.gui.HudEffectLayoutHooks;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiGraphics;
 import org.spongepowered.asm.mixin.Dynamic;

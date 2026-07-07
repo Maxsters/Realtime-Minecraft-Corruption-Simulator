@@ -1,6 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.BlockEntityAnimationCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.animation.BlockEntityAnimationCorruptionHooks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ConduitBlockEntity;
 import org.spongepowered.asm.mixin.Dynamic;

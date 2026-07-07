@@ -1,7 +1,7 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.access.SingleQuadParticleAccessor;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.ParticleFieldAccess;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.particles.ParticleFieldAccess;
 import net.minecraft.client.particle.SingleQuadParticle;
 import org.spongepowered.asm.mixin.Mixin;
 

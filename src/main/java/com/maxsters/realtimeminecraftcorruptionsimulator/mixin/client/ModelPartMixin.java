@@ -1,6 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.ModelRenderCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.ModelRenderCorruptionHooks;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.model.geom.ModelPart;
 import org.spongepowered.asm.mixin.Mixin;

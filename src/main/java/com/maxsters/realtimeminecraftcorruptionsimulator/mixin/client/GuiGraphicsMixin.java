@@ -1,6 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.GuiAtlasSpriteCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.gui.GuiAtlasSpriteCorruptionHooks;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;

@@ -1,11 +1,11 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.CloudRenderCorruptionHooks;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.BreakingTextureCorruptionHooks;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.LightingCorruptionHooks;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.SkyRenderCorruptionHooks;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.WeatherRenderCorruptionHooks;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.WorldRenderCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.CloudRenderCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.BreakingTextureCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.LightingCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.SkyRenderCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.WeatherRenderCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.WorldRenderCorruptionHooks;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;

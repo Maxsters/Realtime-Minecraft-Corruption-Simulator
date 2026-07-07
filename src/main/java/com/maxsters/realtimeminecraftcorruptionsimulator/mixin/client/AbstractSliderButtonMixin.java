@@ -1,6 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.GuiSliderCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.gui.GuiSliderCorruptionHooks;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.util.Mth;
 import org.spongepowered.asm.mixin.Dynamic;

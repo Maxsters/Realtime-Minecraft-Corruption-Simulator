@@ -8,7 +8,7 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.AudioCor
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.FontTextureCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.GuiTextureCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ItemTextureCorruptionManager;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.LightingCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.LightingCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.TextureMutationManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.VisualCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.config.GlobalCorruptionSettings;
@@ -47,7 +47,6 @@ import net.minecraftforge.fml.common.Mod;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 
-import java.util.Locale;
 import java.util.concurrent.ThreadLocalRandom;
 
 @OnlyIn(Dist.CLIENT)
@@ -84,14 +83,7 @@ public final class CorruptionOverlayManager {
     private static CorruptionAchievementManager.Achievement pendingAchievement;
     private static CorruptionAchievementManager.HudCorner pendingHudCorner;
     private static int pendingFunValue;
-    private static FunEditField funEditField = FunEditField.NONE;
-    private static String funIntervalEditText = "";
-    private static String funAmountEditText = "";
-    private static String funSeedRandomizerEditText = "";
-    private static boolean seedEditing;
-    private static String seedEditText = latestSnapshot.getCorruptionSeedLabel();
-    private static int textCursor = seedEditText.length();
-    private static int textSelectionAnchor = textCursor;
+    private static final OverlayTextEditState TEXT_EDIT = new OverlayTextEditState(latestSnapshot.getCorruptionSeedLabel());
     private static int achievementResetPresses;
     private static long lastAchievementResetPressMs;
     private static int dragOffsetX;
@@ -130,8 +122,8 @@ public final class CorruptionOverlayManager {
         latestSnapshot = snapshot == null ? ClientCorruptionState.localSnapshot() : snapshot;
         if (!preserveDraft) {
             syncDraftFromSnapshot();
-        } else if (!seedEditing && !hasDraftChanges()) {
-            seedEditText = draftSeedLabel;
+        } else if (!TEXT_EDIT.isSeedEditing() && !hasDraftChanges()) {
+            TEXT_EDIT.setSeedTextWhenIdle(draftSeedLabel);
         }
     }
 
@@ -140,9 +132,7 @@ public final class CorruptionOverlayManager {
         canUpdateServerSettings = canUpdateSettings;
         serverSettingsOperator = settingsOperator;
         if (!canUpdateSettings) {
-            seedEditing = false;
-            funEditField = FunEditField.NONE;
-            clearTextSelection();
+            TEXT_EDIT.cancel(draftSeedLabel);
         }
     }
 
@@ -198,8 +188,6 @@ public final class CorruptionOverlayManager {
             currentWorldKey = worldKey;
             requestedThisWorld = false;
             autoOpenedThisWorld = false;
-            seedEditing = false;
-            funEditField = FunEditField.NONE;
             syncDraftFromSnapshot();
         }
 
@@ -457,16 +445,16 @@ public final class CorruptionOverlayManager {
                                 displaySeedRandomizerInterval,
                                 draftDirty,
                                 currentPage,
-                                seedEditing,
-                                seedEditText,
-                                funEditField == FunEditField.INTERVAL,
-                                funIntervalEditText,
-                                funEditField == FunEditField.AMOUNT,
-                                funAmountEditText,
-                                funEditField == FunEditField.SEED_RANDOMIZER,
-                                funSeedRandomizerEditText,
-                                textCursor,
-                                textSelectionAnchor,
+                                TEXT_EDIT.isSeedEditing(),
+                                TEXT_EDIT.seedText(),
+                                TEXT_EDIT.isIntervalEditing(),
+                                TEXT_EDIT.intervalText(),
+                                TEXT_EDIT.isAmountEditing(),
+                                TEXT_EDIT.amountText(),
+                                TEXT_EDIT.isSeedRandomizerEditing(),
+                                TEXT_EDIT.seedRandomizerText(),
+                                TEXT_EDIT.cursor(),
+                                TEXT_EDIT.selectionAnchor(),
                                 achievementsScroll,
                                 achievementResetPresses,
                                 CorruptionAchievementManager.pinnedCorner(),
@@ -622,7 +610,7 @@ public final class CorruptionOverlayManager {
                     mouseAction = canEditSettings ? MouseAction.SEED_RANDOM : MouseAction.PANEL;
                     return true;
                 }
-                if (seedEditing) {
+                if (TEXT_EDIT.isSeedEditing()) {
                     mouseAction = MouseAction.PANEL;
                     return true;
                 }
@@ -670,7 +658,7 @@ public final class CorruptionOverlayManager {
                     mouseAction = MouseAction.PANEL;
                     return true;
                 }
-                if (funEditField != FunEditField.NONE) {
+                if (TEXT_EDIT.isFunEditing()) {
                     submitFunEdit();
                 }
                 CorruptionOverlayPanel.Rect intervalSlider = CorruptionOverlayPanel.funIntervalSliderBounds(LAYOUT, screenWidth, screenHeight);
@@ -965,10 +953,10 @@ public final class CorruptionOverlayManager {
     }
 
     private static void applyDraftSettings() {
-        if (seedEditing) {
+        if (TEXT_EDIT.isSeedEditing()) {
             submitSeedEdit();
         }
-        if (funEditField != FunEditField.NONE) {
+        if (TEXT_EDIT.isFunEditing()) {
             submitFunEdit();
         }
         if (!hasDraftChanges()) {
@@ -1110,9 +1098,7 @@ public final class CorruptionOverlayManager {
     }
 
     private static void cancelDraftSettings() {
-        seedEditing = false;
-        funEditField = FunEditField.NONE;
-        clearTextSelection();
+        TEXT_EDIT.cancel(draftSeedLabel);
         syncDraftFromSnapshot();
     }
 
@@ -1126,45 +1112,39 @@ public final class CorruptionOverlayManager {
     }
 
     private static void submitSeedEdit() {
-        if (!seedEditing) {
+        if (!TEXT_EDIT.isSeedEditing()) {
             return;
         }
-        String label = sanitizeSeedText(seedEditText);
+        String label = OverlayTextSupport.sanitizeSeedText(TEXT_EDIT.seedText());
         if (label.isBlank()) {
             return;
         }
-        long seed = seedFromText(label);
-        seedEditing = false;
+        long seed = OverlayTextSupport.seedFromText(label, draftSeed);
         draftSeed = seed;
         draftSeedLabel = CorruptionSavedData.sanitizeSeedLabel(label, seed);
-        seedEditText = draftSeedLabel;
-        moveTextCursorToEnd();
+        TEXT_EDIT.finishSeed(draftSeedLabel);
     }
 
     private static void randomizeSeed() {
         long seed = ThreadLocalRandom.current().nextLong();
         String label = CorruptionSavedData.seedLabel(seed);
-        seedEditing = false;
         draftSeed = seed;
         draftSeedLabel = label;
-        seedEditText = draftSeedLabel;
-        moveTextCursorToEnd();
+        TEXT_EDIT.finishSeed(draftSeedLabel);
     }
 
     private static void copySeedToClipboard() {
-        String text = seedEditing ? seedEditText : draftSeedLabel;
-        Minecraft.getInstance().keyboardHandler.setClipboard(sanitizeSeedText(text));
+        String text = TEXT_EDIT.isSeedEditing() ? TEXT_EDIT.seedText() : draftSeedLabel;
+        Minecraft.getInstance().keyboardHandler.setClipboard(OverlayTextSupport.sanitizeSeedText(text));
     }
 
     private static void pasteSeedFromClipboard() {
-        String pasted = sanitizeSeedText(Minecraft.getInstance().keyboardHandler.getClipboard());
+        String pasted = OverlayTextSupport.sanitizeSeedText(Minecraft.getInstance().keyboardHandler.getClipboard());
         if (pasted.isBlank()) {
             return;
         }
-        seedEditing = true;
         interactionMode = true;
-        seedEditText = pasted;
-        moveTextCursorToEnd();
+        TEXT_EDIT.beginSeed(pasted);
         releaseMouseForOverlay();
         KeyMapping.releaseAll();
     }
@@ -1178,55 +1158,43 @@ public final class CorruptionOverlayManager {
     }
 
     private static void beginSeedEditing() {
-        funEditField = FunEditField.NONE;
-        seedEditing = true;
         interactionMode = true;
-        seedEditText = draftSeedLabel;
-        moveTextCursorToEnd();
+        TEXT_EDIT.beginSeed(draftSeedLabel);
         releaseMouseForOverlay();
         KeyMapping.releaseAll();
     }
 
     private static void beginFunIntervalEditing() {
-        seedEditing = false;
-        funEditField = FunEditField.INTERVAL;
-        funIntervalEditText = formatIntervalEdit(draftAutoIntervalTicks);
         interactionMode = true;
-        moveTextCursorToEnd();
+        TEXT_EDIT.beginInterval(draftAutoIntervalTicks);
         releaseMouseForOverlay();
         KeyMapping.releaseAll();
     }
 
     private static void beginFunAmountEditing() {
-        seedEditing = false;
-        funEditField = FunEditField.AMOUNT;
-        funAmountEditText = signedPercentLabel(draftAutoAmount);
         interactionMode = true;
-        moveTextCursorToEnd();
+        TEXT_EDIT.beginAmount(draftAutoAmount);
         releaseMouseForOverlay();
         KeyMapping.releaseAll();
     }
 
     private static void beginFunSeedRandomizerEditing() {
-        seedEditing = false;
-        funEditField = FunEditField.SEED_RANDOMIZER;
-        funSeedRandomizerEditText = formatIntervalEdit(draftSeedRandomizerIntervalTicks);
         interactionMode = true;
-        moveTextCursorToEnd();
+        TEXT_EDIT.beginSeedRandomizer(draftSeedRandomizerIntervalTicks);
         releaseMouseForOverlay();
         KeyMapping.releaseAll();
     }
 
     private static void finishTextEditingBeforeNavigation() {
-        if (funEditField != FunEditField.NONE) {
+        if (TEXT_EDIT.isFunEditing()) {
             submitFunEdit();
         }
-        seedEditing = false;
-        clearTextSelection();
+        TEXT_EDIT.stopSeedEditing();
+        TEXT_EDIT.clearSelection();
     }
 
     private static boolean isTextEditing() {
-        return seedEditing || funEditField != FunEditField.NONE;
+        return TEXT_EDIT.isEditing();
     }
 
     private static boolean canUpdateSettingsNow() {
@@ -1349,9 +1317,9 @@ public final class CorruptionOverlayManager {
             return captureUnhandled;
         }
 
-        clampTextSelection();
+        TEXT_EDIT.clampSelection();
         if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
-            if (seedEditing) {
+            if (TEXT_EDIT.isSeedEditing()) {
                 submitSeedEdit();
             } else {
                 submitFunEdit();
@@ -1362,7 +1330,7 @@ public final class CorruptionOverlayManager {
             cancelActiveTextEdit();
             return true;
         }
-        return handleEditBufferKey(key, modifiers, captureUnhandled);
+        return TEXT_EDIT.handleEditBufferKey(key, modifiers, captureUnhandled);
     }
 
     private static boolean handleProtectedTextEditKey(int key, int modifiers, int action, boolean captureUnhandled) {
@@ -1371,499 +1339,24 @@ public final class CorruptionOverlayManager {
         return result[0];
     }
 
-    private static boolean handleEditBufferKey(int key, int modifiers, boolean captureUnhandled) {
-        boolean command = isCommandModifier(modifiers);
-        boolean shift = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0;
-
-        if (command && key == GLFW.GLFW_KEY_A) {
-            selectAllEditText();
-            return true;
-        }
-        if (command && key == GLFW.GLFW_KEY_C) {
-            copyActiveTextSelection();
-            return true;
-        }
-        if (command && key == GLFW.GLFW_KEY_X) {
-            cutActiveTextSelection();
-            return true;
-        }
-        if (command && key == GLFW.GLFW_KEY_V) {
-            insertActiveText(Minecraft.getInstance().keyboardHandler.getClipboard());
-            return true;
-        }
-        if (command && (key == GLFW.GLFW_KEY_Z || key == GLFW.GLFW_KEY_Y)) {
-            return true;
-        }
-
-        if (key == GLFW.GLFW_KEY_BACKSPACE) {
-            if (command) {
-                deletePreviousWord();
-            } else {
-                deletePreviousCharacter();
-            }
-            return true;
-        }
-        if (key == GLFW.GLFW_KEY_DELETE) {
-            if (command) {
-                deleteNextWord();
-            } else {
-                deleteNextCharacter();
-            }
-            return true;
-        }
-        if (key == GLFW.GLFW_KEY_LEFT) {
-            if (!shift && hasTextSelection()) {
-                moveTextCursor(selectionStart(), false);
-            } else {
-                moveTextCursor(command ? previousWordBoundary(activeEditText(), textCursor) : textCursor - 1, shift);
-            }
-            return true;
-        }
-        if (key == GLFW.GLFW_KEY_RIGHT) {
-            if (!shift && hasTextSelection()) {
-                moveTextCursor(selectionEnd(), false);
-            } else {
-                moveTextCursor(command ? nextWordBoundary(activeEditText(), textCursor) : textCursor + 1, shift);
-            }
-            return true;
-        }
-        if (key == GLFW.GLFW_KEY_HOME) {
-            moveTextCursor(0, shift);
-            return true;
-        }
-        if (key == GLFW.GLFW_KEY_END) {
-            moveTextCursor(activeEditText().length(), shift);
-            return true;
-        }
-
-        if (command || (modifiers & GLFW.GLFW_MOD_ALT) != 0) {
-            return true;
-        }
-
-        String character = seedEditing ? keyToSeedCharacter(key, shift) : keyToFunCharacter(key, shift);
-        if (!character.isEmpty()) {
-            insertActiveText(character);
-            return true;
-        }
-        return captureUnhandled;
-    }
-
-    private static boolean isCommandModifier(int modifiers) {
-        return (modifiers & (GLFW.GLFW_MOD_CONTROL | GLFW.GLFW_MOD_SUPER)) != 0;
-    }
-
     private static void cancelActiveTextEdit() {
-        if (seedEditing) {
-            seedEditing = false;
-            seedEditText = draftSeedLabel;
-        } else {
-            funEditField = FunEditField.NONE;
-        }
-        clearTextSelection();
-    }
-
-    private static String activeEditText() {
-        if (seedEditing) {
-            return seedEditText;
-        }
-        return switch (funEditField) {
-            case INTERVAL -> funIntervalEditText;
-            case AMOUNT -> funAmountEditText;
-            case SEED_RANDOMIZER -> funSeedRandomizerEditText;
-            case NONE -> seedEditText;
-        };
-    }
-
-    private static int activeEditMaxLength() {
-        return seedEditing ? 96 : 24;
-    }
-
-    private static String sanitizeActiveEditText(String value) {
-        return seedEditing ? sanitizeSeedText(value) : sanitizeFunEditText(value);
-    }
-
-    private static void setActiveEditText(String value, int requestedCursor) {
-        String sanitized = sanitizeActiveEditText(value);
-        if (seedEditing) {
-            seedEditText = sanitized;
-        } else if (funEditField == FunEditField.INTERVAL) {
-            funIntervalEditText = sanitized;
-        } else if (funEditField == FunEditField.AMOUNT) {
-            funAmountEditText = sanitized;
-        } else if (funEditField == FunEditField.SEED_RANDOMIZER) {
-            funSeedRandomizerEditText = sanitized;
-        }
-        textCursor = clampTextIndex(requestedCursor, sanitized.length());
-        textSelectionAnchor = textCursor;
-    }
-
-    private static void insertActiveText(String value) {
-        String insert = sanitizeActiveEditText(value);
-        if (insert.isEmpty()) {
-            return;
-        }
-        String text = activeEditText();
-        int start = selectionStart();
-        int end = selectionEnd();
-        int remaining = activeEditMaxLength() - (text.length() - (end - start));
-        if (remaining <= 0) {
-            return;
-        }
-        if (insert.length() > remaining) {
-            insert = insert.substring(0, remaining);
-        }
-        setActiveEditText(text.substring(0, start) + insert + text.substring(end), start + insert.length());
-    }
-
-    private static void copyActiveTextSelection() {
-        String text = activeEditText();
-        String copied = hasTextSelection() ? text.substring(selectionStart(), selectionEnd()) : text;
-        Minecraft.getInstance().keyboardHandler.setClipboard(copied);
-    }
-
-    private static void cutActiveTextSelection() {
-        if (!hasTextSelection()) {
-            return;
-        }
-        copyActiveTextSelection();
-        deleteTextSelection();
-    }
-
-    private static void selectAllEditText() {
-        textSelectionAnchor = 0;
-        textCursor = activeEditText().length();
-    }
-
-    private static void deletePreviousCharacter() {
-        if (deleteTextSelection()) {
-            return;
-        }
-        String text = activeEditText();
-        if (textCursor <= 0) {
-            return;
-        }
-        int start = textCursor - 1;
-        setActiveEditText(text.substring(0, start) + text.substring(textCursor), start);
-    }
-
-    private static void deleteNextCharacter() {
-        if (deleteTextSelection()) {
-            return;
-        }
-        String text = activeEditText();
-        if (textCursor >= text.length()) {
-            return;
-        }
-        setActiveEditText(text.substring(0, textCursor) + text.substring(textCursor + 1), textCursor);
-    }
-
-    private static void deletePreviousWord() {
-        if (deleteTextSelection()) {
-            return;
-        }
-        String text = activeEditText();
-        int start = previousWordBoundary(text, textCursor);
-        if (start < textCursor) {
-            setActiveEditText(text.substring(0, start) + text.substring(textCursor), start);
-        }
-    }
-
-    private static void deleteNextWord() {
-        if (deleteTextSelection()) {
-            return;
-        }
-        String text = activeEditText();
-        int end = nextWordBoundary(text, textCursor);
-        if (end > textCursor) {
-            setActiveEditText(text.substring(0, textCursor) + text.substring(end), textCursor);
-        }
-    }
-
-    private static boolean deleteTextSelection() {
-        if (!hasTextSelection()) {
-            return false;
-        }
-        String text = activeEditText();
-        int start = selectionStart();
-        int end = selectionEnd();
-        setActiveEditText(text.substring(0, start) + text.substring(end), start);
-        return true;
-    }
-
-    private static void moveTextCursor(int position, boolean selecting) {
-        String text = activeEditText();
-        int clamped = clampTextIndex(position, text.length());
-        if (!selecting && hasTextSelection()) {
-            clamped = position < textCursor ? selectionStart() : selectionEnd();
-        }
-        textCursor = clamped;
-        if (!selecting) {
-            textSelectionAnchor = textCursor;
-        }
-    }
-
-    private static void moveTextCursorToEnd() {
-        textCursor = activeEditText().length();
-        textSelectionAnchor = textCursor;
-    }
-
-    private static void clearTextSelection() {
-        textCursor = clampTextIndex(textCursor, activeEditText().length());
-        textSelectionAnchor = textCursor;
-    }
-
-    private static void clampTextSelection() {
-        int length = activeEditText().length();
-        textCursor = clampTextIndex(textCursor, length);
-        textSelectionAnchor = clampTextIndex(textSelectionAnchor, length);
-    }
-
-    private static boolean hasTextSelection() {
-        clampTextSelection();
-        return textCursor != textSelectionAnchor;
-    }
-
-    private static int selectionStart() {
-        clampTextSelection();
-        return Math.min(textCursor, textSelectionAnchor);
-    }
-
-    private static int selectionEnd() {
-        clampTextSelection();
-        return Math.max(textCursor, textSelectionAnchor);
-    }
-
-    private static int clampTextIndex(int index, int length) {
-        return Math.max(0, Math.min(length, index));
-    }
-
-    private static int previousWordBoundary(String text, int cursor) {
-        int index = clampTextIndex(cursor, text.length());
-        while (index > 0 && Character.isWhitespace(text.charAt(index - 1))) {
-            index--;
-        }
-        if (index <= 0) {
-            return 0;
-        }
-        boolean word = isWordCharacter(text.charAt(index - 1));
-        while (index > 0 && isWordCharacter(text.charAt(index - 1)) == word && !Character.isWhitespace(text.charAt(index - 1))) {
-            index--;
-        }
-        return index;
-    }
-
-    private static int nextWordBoundary(String text, int cursor) {
-        int index = clampTextIndex(cursor, text.length());
-        while (index < text.length() && Character.isWhitespace(text.charAt(index))) {
-            index++;
-        }
-        if (index >= text.length()) {
-            return text.length();
-        }
-        boolean word = isWordCharacter(text.charAt(index));
-        while (index < text.length() && isWordCharacter(text.charAt(index)) == word && !Character.isWhitespace(text.charAt(index))) {
-            index++;
-        }
-        return index;
-    }
-
-    private static boolean isWordCharacter(char character) {
-        return Character.isLetterOrDigit(character) || character == '_';
+        TEXT_EDIT.cancel(draftSeedLabel);
     }
 
     private static void submitFunEdit() {
-        if (funEditField == FunEditField.INTERVAL) {
-            int ticks = parseIntervalTicks(funIntervalEditText, draftAutoIntervalTicks);
-            funEditField = FunEditField.NONE;
+        if (TEXT_EDIT.funField() == OverlayTextEditState.FunField.INTERVAL) {
+            int ticks = OverlayTextSupport.parseIntervalTicks(TEXT_EDIT.intervalText(), draftAutoIntervalTicks);
             draftAutoIntervalTicks = ticks;
-            clearTextSelection();
-        } else if (funEditField == FunEditField.AMOUNT) {
-            int amount = parseAutoAmount(funAmountEditText, draftAutoAmount);
-            funEditField = FunEditField.NONE;
+            TEXT_EDIT.finishFun();
+        } else if (TEXT_EDIT.funField() == OverlayTextEditState.FunField.AMOUNT) {
+            int amount = OverlayTextSupport.parseAutoAmount(TEXT_EDIT.amountText(), draftAutoAmount);
             draftAutoAmount = amount;
-            clearTextSelection();
-        } else if (funEditField == FunEditField.SEED_RANDOMIZER) {
-            int ticks = parseIntervalTicks(funSeedRandomizerEditText, draftSeedRandomizerIntervalTicks);
-            funEditField = FunEditField.NONE;
+            TEXT_EDIT.finishFun();
+        } else if (TEXT_EDIT.funField() == OverlayTextEditState.FunField.SEED_RANDOMIZER) {
+            int ticks = OverlayTextSupport.parseIntervalTicks(TEXT_EDIT.seedRandomizerText(), draftSeedRandomizerIntervalTicks);
             draftSeedRandomizerIntervalTicks = ticks;
-            clearTextSelection();
+            TEXT_EDIT.finishFun();
         }
-    }
-
-    private static int parseIntervalTicks(String value, int fallbackTicks) {
-        String text = sanitizeFunEditText(value).toLowerCase(Locale.ROOT).replace(" ", "");
-        if (text.isBlank()) {
-            return fallbackTicks;
-        }
-        if (text.equals("off") || text.equals("none") || text.equals("disabled") || text.equals("0")) {
-            return 0;
-        }
-        double multiplier = 20.0D;
-        if (text.endsWith("ticks")) {
-            multiplier = 1.0D;
-            text = text.substring(0, text.length() - 5);
-        } else if (text.endsWith("tick")) {
-            multiplier = 1.0D;
-            text = text.substring(0, text.length() - 4);
-        } else if (text.endsWith("t")) {
-            multiplier = 1.0D;
-            text = text.substring(0, text.length() - 1);
-        } else if (text.endsWith("h")) {
-            multiplier = 72_000.0D;
-            text = text.substring(0, text.length() - 1);
-        } else if (text.endsWith("m")) {
-            multiplier = 1_200.0D;
-            text = text.substring(0, text.length() - 1);
-        } else if (text.endsWith("s")) {
-            multiplier = 20.0D;
-            text = text.substring(0, text.length() - 1);
-        }
-        try {
-            double valueNumber = Double.parseDouble(text);
-            if (!Double.isFinite(valueNumber)) {
-                return fallbackTicks;
-            }
-            int ticks = (int) Math.round(valueNumber * multiplier);
-            if (ticks <= 0) {
-                return 0;
-            }
-            return Math.max(20, Math.min(CorruptionOverlayPanel.MAX_AUTO_INTERVAL_TICKS, ticks));
-        } catch (NumberFormatException ignored) {
-            return fallbackTicks;
-        }
-    }
-
-    private static int parseAutoAmount(String value, int fallbackAmount) {
-        String text = sanitizeFunEditText(value).replace("%", "").trim();
-        if (text.isBlank()) {
-            return fallbackAmount;
-        }
-        try {
-            double parsed = Double.parseDouble(text);
-            if (!Double.isFinite(parsed)) {
-                return fallbackAmount;
-            }
-            return Math.max(CorruptionOverlayPanel.MIN_AUTO_AMOUNT, Math.min(CorruptionOverlayPanel.MAX_AUTO_AMOUNT, (int) Math.round(parsed)));
-        } catch (NumberFormatException ignored) {
-            return fallbackAmount;
-        }
-    }
-
-    private static String formatIntervalEdit(int ticks) {
-        if (ticks <= 0) {
-            return "off";
-        }
-        int seconds = Math.max(1, Math.round(ticks / 20.0F));
-        if (seconds % 3600 == 0) {
-            return (seconds / 3600) + "h";
-        }
-        if (seconds % 60 == 0) {
-            return (seconds / 60) + "m";
-        }
-        return seconds + "s";
-    }
-
-    private static String signedPercentLabel(int amount) {
-        return (amount > 0 ? "+" : "") + amount + "%";
-    }
-
-    private static String keyToSeedCharacter(int key, boolean shift) {
-        if (key >= GLFW.GLFW_KEY_0 && key <= GLFW.GLFW_KEY_9) {
-            return Integer.toString(key - GLFW.GLFW_KEY_0);
-        }
-        if (key >= GLFW.GLFW_KEY_KP_0 && key <= GLFW.GLFW_KEY_KP_9) {
-            return Integer.toString(key - GLFW.GLFW_KEY_KP_0);
-        }
-        if (key >= GLFW.GLFW_KEY_A && key <= GLFW.GLFW_KEY_Z) {
-            char character = (char) ('A' + key - GLFW.GLFW_KEY_A);
-            return shift ? Character.toString(character) : Character.toString(Character.toLowerCase(character));
-        }
-        return switch (key) {
-            case GLFW.GLFW_KEY_MINUS -> "-";
-            case GLFW.GLFW_KEY_EQUAL -> shift ? "+" : "=";
-            case GLFW.GLFW_KEY_PERIOD -> ".";
-            case GLFW.GLFW_KEY_COMMA -> ",";
-            case GLFW.GLFW_KEY_SLASH -> shift ? "?" : "/";
-            case GLFW.GLFW_KEY_SEMICOLON -> shift ? ":" : ";";
-            case GLFW.GLFW_KEY_APOSTROPHE -> shift ? "\"" : "'";
-            case GLFW.GLFW_KEY_SPACE -> " ";
-            default -> "";
-        };
-    }
-
-    private static String keyToFunCharacter(int key, boolean shift) {
-        if (shift && key == GLFW.GLFW_KEY_5) {
-            return "%";
-        }
-        String character = keyToSeedCharacter(key, shift);
-        if (character.length() != 1) {
-            return "";
-        }
-        char c = character.charAt(0);
-        if (Character.isLetterOrDigit(c) || c == '-' || c == '+' || c == '.' || c == '%' || c == ' ') {
-            return character;
-        }
-        return "";
-    }
-
-    private static String sanitizeSeedText(String value) {
-        if (value == null) {
-            return "";
-        }
-        StringBuilder builder = new StringBuilder(Math.min(96, value.length()));
-        for (int i = 0; i < value.length() && builder.length() < 96; i++) {
-            char character = value.charAt(i);
-            if (character >= 32 && character <= 126) {
-                builder.append(character);
-            }
-        }
-        return builder.toString().trim();
-    }
-
-    private static String sanitizeFunEditText(String value) {
-        if (value == null) {
-            return "";
-        }
-        StringBuilder builder = new StringBuilder(Math.min(24, value.length()));
-        for (int i = 0; i < value.length() && builder.length() < 24; i++) {
-            char character = value.charAt(i);
-            if (character >= 32 && character <= 126) {
-                builder.append(character);
-            }
-        }
-        return builder.toString().trim();
-    }
-
-    private static long seedFromText(String text) {
-        String trimmed = sanitizeSeedText(text);
-        if (trimmed.isBlank()) {
-            return draftSeed;
-        }
-        try {
-            if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
-                return Long.parseUnsignedLong(trimmed.substring(2), 16);
-            }
-            if (trimmed.matches("-?\\d+")) {
-                return Long.parseLong(trimmed);
-            }
-        } catch (NumberFormatException ignored) {
-            try {
-                return Long.parseUnsignedLong(trimmed.toLowerCase(Locale.ROOT), 36);
-            } catch (NumberFormatException ignoredAgain) {
-                return stableStringSeed(trimmed);
-            }
-        }
-        return stableStringSeed(trimmed);
-    }
-
-    private static long stableStringSeed(String text) {
-        long hash = 0xcbf29ce484222325L;
-        for (int i = 0; i < text.length(); i++) {
-            hash ^= text.charAt(i);
-            hash *= 0x100000001b3L;
-            hash ^= hash >>> 32;
-        }
-        return hash;
     }
 
     private static CorruptionStateSnapshot renderSnapshot() {
@@ -1902,20 +1395,7 @@ public final class CorruptionOverlayManager {
     }
 
     private static boolean hasEditorChanges() {
-        if (seedEditing) {
-            String label = sanitizeSeedText(seedEditText);
-            return !label.isBlank() && (!label.equals(draftSeedLabel) || seedFromText(label) != draftSeed);
-        }
-        if (funEditField == FunEditField.INTERVAL) {
-            return parseIntervalTicks(funIntervalEditText, draftAutoIntervalTicks) != draftAutoIntervalTicks;
-        }
-        if (funEditField == FunEditField.AMOUNT) {
-            return parseAutoAmount(funAmountEditText, draftAutoAmount) != draftAutoAmount;
-        }
-        if (funEditField == FunEditField.SEED_RANDOMIZER) {
-            return parseIntervalTicks(funSeedRandomizerEditText, draftSeedRandomizerIntervalTicks) != draftSeedRandomizerIntervalTicks;
-        }
-        return false;
+        return TEXT_EDIT.hasEditorChanges(draftSeedLabel, draftSeed, draftAutoIntervalTicks, draftAutoAmount, draftSeedRandomizerIntervalTicks);
     }
 
     private static void syncDraftFromSnapshot() {
@@ -1927,11 +1407,7 @@ public final class CorruptionOverlayManager {
         draftAutoAmount = latestSnapshot.getAutoIncreaseAmount();
         draftClientDriftEnabled = latestSnapshot.isClientDriftEnabled();
         draftSeedRandomizerIntervalTicks = latestSnapshot.getSeedRandomizerIntervalTicks();
-        seedEditText = draftSeedLabel;
-        funIntervalEditText = formatIntervalEdit(draftAutoIntervalTicks);
-        funAmountEditText = signedPercentLabel(draftAutoAmount);
-        funSeedRandomizerEditText = formatIntervalEdit(draftSeedRandomizerIntervalTicks);
-        moveTextCursorToEnd();
+        TEXT_EDIT.reset(draftSeedLabel, draftAutoIntervalTicks, draftAutoAmount, draftSeedRandomizerIntervalTicks);
     }
 
     private static boolean isProfileDraftPage(CorruptionOverlayPanel.Page page) {
@@ -1966,8 +1442,6 @@ public final class CorruptionOverlayManager {
         serverAllowsNonOpSettingsUpdates = false;
         canUpdateServerSettings = true;
         serverSettingsOperator = true;
-        seedEditing = false;
-        funEditField = FunEditField.NONE;
         achievementsScroll = 0;
         ClientCorruptionState.reset();
         latestSnapshot = ClientCorruptionState.localSnapshot();
@@ -2007,13 +1481,6 @@ public final class CorruptionOverlayManager {
         NONE,
         MINIMIZE,
         COLLAPSE
-    }
-
-    private enum FunEditField {
-        NONE,
-        INTERVAL,
-        AMOUNT,
-        SEED_RANDOMIZER
     }
 
     private record QuickToggleSnapshot(

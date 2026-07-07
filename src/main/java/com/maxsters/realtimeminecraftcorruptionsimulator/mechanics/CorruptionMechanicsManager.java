@@ -26,10 +26,6 @@ import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MoverType;
-import net.minecraft.world.entity.ai.attributes.AttributeInstance;
-import net.minecraft.world.entity.ai.attributes.AttributeModifier;
-import net.minecraft.world.entity.ai.attributes.Attribute;
-import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
@@ -71,44 +67,21 @@ import net.minecraftforge.eventbus.api.Event;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.common.ForgeMod;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
-import java.util.Collections;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.WeakHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
 @Mod.EventBusSubscriber(modid = RealtimeMinecraftCorruptionSimulator.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class CorruptionMechanicsManager {
     private static final Supplier<CorruptionEffectStack> CLIENT_GAMEPLAY_STACK_SUPPLIER = createClientGameplayStackSupplier();
-    private static final UUID LEGACY_NON_PLAYER_SPEED_ID = UUID.fromString("0e627e2a-9d3a-4d9b-a4b8-a1830ed20401");
-    private static final UUID LEGACY_PLAYER_MAX_HEALTH_ID = UUID.fromString("3ed6bc4d-1875-4b4a-9e4f-80f359996081");
-    private static final EntityMechanic[] ENTITY_MECHANICS = new EntityMechanic[]{
-            new EntityMechanic("max_health", () -> Attributes.MAX_HEALTH, AttributeModifier.Operation.MULTIPLY_TOTAL, 1.35D, -0.96D, 5.0D, 14.0D),
-            new EntityMechanic("movement_speed", () -> Attributes.MOVEMENT_SPEED, AttributeModifier.Operation.MULTIPLY_TOTAL, 1.80D, -0.98D, 7.0D, 24.0D),
-            new EntityMechanic("flying_speed", () -> Attributes.FLYING_SPEED, AttributeModifier.Operation.MULTIPLY_TOTAL, 1.65D, -0.98D, 6.0D, 18.0D),
-            new EntityMechanic("attack_damage", () -> Attributes.ATTACK_DAMAGE, AttributeModifier.Operation.MULTIPLY_TOTAL, 1.65D, -1.0D, 6.0D, 18.0D),
-            new EntityMechanic("attack_speed", () -> Attributes.ATTACK_SPEED, AttributeModifier.Operation.MULTIPLY_TOTAL, 1.90D, -0.99D, 10.0D, 30.0D),
-            new EntityMechanic("attack_knockback", () -> Attributes.ATTACK_KNOCKBACK, AttributeModifier.Operation.ADDITION, 3.00D, -4.0D, 8.0D, 24.0D),
-            new EntityMechanic("knockback_resistance", () -> Attributes.KNOCKBACK_RESISTANCE, AttributeModifier.Operation.ADDITION, 1.20D, -1.0D, 2.0D, 4.0D),
-            new EntityMechanic("armor", () -> Attributes.ARMOR, AttributeModifier.Operation.ADDITION, 16.0D, -24.0D, 48.0D, 96.0D),
-            new EntityMechanic("armor_toughness", () -> Attributes.ARMOR_TOUGHNESS, AttributeModifier.Operation.ADDITION, 12.0D, -20.0D, 36.0D, 72.0D),
-            new EntityMechanic("luck", () -> Attributes.LUCK, AttributeModifier.Operation.ADDITION, 32.0D, -96.0D, 96.0D, 192.0D),
-            new EntityMechanic("jump_strength", () -> Attributes.JUMP_STRENGTH, AttributeModifier.Operation.MULTIPLY_TOTAL, 1.70D, -0.98D, 6.0D, 20.0D),
-            new EntityMechanic("swim_speed", () -> ForgeMod.SWIM_SPEED.get(), AttributeModifier.Operation.MULTIPLY_TOTAL, 1.70D, -0.98D, 7.0D, 22.0D),
-            new EntityMechanic("gravity", () -> ForgeMod.ENTITY_GRAVITY.get(), AttributeModifier.Operation.MULTIPLY_TOTAL, 1.90D, -0.99D, 8.0D, 28.0D),
-            new EntityMechanic("step_height", () -> ForgeMod.STEP_HEIGHT_ADDITION.get(), AttributeModifier.Operation.ADDITION, 1.80D, -1.0D, 3.5D, 8.0D)
-    };
     private static final int SERVER_DIMENSION_MUTATION_WARMUP_TICKS = 120;
     private static final int SERVER_LEVEL_LOAD_MUTATION_WARMUP_TICKS = 80;
     private static final int SERVER_SAVE_MUTATION_COOLDOWN_TICKS = 80;
@@ -138,11 +111,8 @@ public final class CorruptionMechanicsManager {
     private static int cachedServerIdentity;
     private static long cachedServerStackTick = Long.MIN_VALUE;
     private static CorruptionEffectStack cachedServerStack = CorruptionEffectStack.local(0);
-    private static final ThreadLocal<Integer> ENTITY_HITBOX_DIMENSION_BYPASS_DEPTH = ThreadLocal.withInitial(() -> 0);
     private static final ArrayDeque<TerrainMutationRequest> pendingTerrainMutations = new ArrayDeque<>();
     private static final Set<String> pendingTerrainMutationKeys = new HashSet<>();
-    private static final Map<LivingEntity, Integer> ENTITY_MECHANICS_SYNC_SIGNATURES = Collections.synchronizedMap(new WeakHashMap<>());
-    private static final Map<Entity, HitboxSignatureCache> ENTITY_HITBOX_SIGNATURE_CACHE = Collections.synchronizedMap(new WeakHashMap<>());
 
     private CorruptionMechanicsManager() {
     }
@@ -1115,68 +1085,23 @@ public final class CorruptionMechanicsManager {
     }
 
     public static EntityDimensions corruptEntityHitboxDimensions(Entity entity, EntityDimensions original) {
-        if (ENTITY_HITBOX_DIMENSION_BYPASS_DEPTH.get() > 0) {
-            return original;
-        }
-        EntityHitboxMutation mutation = entityHitboxMutation(entity);
-        if (original == null || mutation == EntityHitboxMutation.PASS) {
-            return original;
-        }
-        return original.scale(mutation.widthScale(), mutation.heightScale());
+        return EntityHitboxCorruptionMechanics.corruptDimensions(entity, original, activeStackFor(entity));
     }
 
     public static AABB corruptEntityHitboxBounds(Entity entity, AABB original) {
-        EntityHitboxMutation mutation = entityHitboxMutation(entity);
-        if (original == null || mutation == EntityHitboxMutation.PASS) {
-            return original;
-        }
-
-        double halfWidth = original.getXsize() * 0.5D * mutation.widthScale();
-        double halfDepth = original.getZsize() * 0.5D * mutation.widthScale();
-        double height = original.getYsize() * mutation.heightScale();
-        if (!Double.isFinite(halfWidth) || !Double.isFinite(halfDepth) || !Double.isFinite(height)) {
-            return original;
-        }
-
-        double centerX = (original.minX + original.maxX) * 0.5D;
-        double centerZ = (original.minZ + original.maxZ) * 0.5D;
-        return new AABB(centerX - halfWidth, original.minY, centerZ - halfDepth, centerX + halfWidth, original.minY + height, centerZ + halfDepth);
+        return EntityHitboxCorruptionMechanics.corruptBounds(entity, original, activeStackFor(entity));
     }
 
     public static int entityHitboxMutationSignature(Entity entity) {
-        if (entity == null || entity.level() == null) {
-            return EntityHitboxMutation.PASS.signature();
-        }
-        CorruptionEffectStack stack = activeStackFor(entity);
-        int profileSignature = entityHitboxProfileSignature(stack);
-        HitboxSignatureCache cached = ENTITY_HITBOX_SIGNATURE_CACHE.get(entity);
-        if (cached != null
-                && cached.profileSignature() == profileSignature
-                && entity.tickCount < cached.nextCheckTick()) {
-            return cached.signature();
-        }
-
-        int signature = entityHitboxMutation(entity, stack).signature();
-        int cadence = stack.level() <= 0 ? 20 : stack.extreme(CorruptionSurface.ENTITY_STATE) || stack.extreme(CorruptionSurface.ANIMATION_TIMING) ? 5 : 10;
-        ENTITY_HITBOX_SIGNATURE_CACHE.put(entity, new HitboxSignatureCache(
-                profileSignature,
-                signature,
-                entity.tickCount + cadence + Math.floorMod(entity.getId(), Math.max(1, cadence))
-        ));
-        return signature;
+        return EntityHitboxCorruptionMechanics.mutationSignature(entity, activeStackFor(entity));
     }
 
     public static void beginEntityHitboxDimensionBypass() {
-        ENTITY_HITBOX_DIMENSION_BYPASS_DEPTH.set(ENTITY_HITBOX_DIMENSION_BYPASS_DEPTH.get() + 1);
+        EntityHitboxCorruptionMechanics.beginDimensionBypass();
     }
 
     public static void endEntityHitboxDimensionBypass() {
-        int depth = ENTITY_HITBOX_DIMENSION_BYPASS_DEPTH.get() - 1;
-        if (depth <= 0) {
-            ENTITY_HITBOX_DIMENSION_BYPASS_DEPTH.remove();
-        } else {
-            ENTITY_HITBOX_DIMENSION_BYPASS_DEPTH.set(depth);
-        }
+        EntityHitboxCorruptionMechanics.endDimensionBypass();
     }
 
     public static void corruptCraftingPreviewResult(AbstractContainerMenu menu, Level level, Player player, CraftingContainer craftSlots, ResultContainer resultSlots) {
@@ -1295,11 +1220,11 @@ public final class CorruptionMechanicsManager {
     }
 
     public static int corruptRedstoneSignal(BlockState state, BlockGetter level, BlockPos pos, Direction direction, int original, String channel) {
-        return corruptRedstoneValue(state, level, pos, direction, original, channel, false);
+        return RedstoneCorruptionMechanics.corruptSignal(state, pos, direction, original, channel, false, redstoneStack(level), redstoneGameTime(level), MIN_WORLD_PROCESS_INTENSITY);
     }
 
     public static int corruptRedstoneAnalogSignal(BlockState state, Level level, BlockPos pos, int original) {
-        return corruptRedstoneValue(state, level, pos, null, original, "analog", true);
+        return RedstoneCorruptionMechanics.corruptSignal(state, pos, null, original, "analog", true, redstoneStack(level), redstoneGameTime(level), MIN_WORLD_PROCESS_INTENSITY);
     }
 
     @SubscribeEvent
@@ -1499,11 +1424,11 @@ public final class CorruptionMechanicsManager {
 
         CorruptionEffectStack stack = serverStack(level);
         String targetId = "redstone_neighbor_notify:" + blockTargetId(event.getState());
-        if (!redstoneMechanicsActive(stack, targetId)) {
+        if (!RedstoneCorruptionMechanics.active(stack, targetId, MIN_WORLD_PROCESS_INTENSITY)) {
             return;
         }
 
-        float intensity = redstoneMechanicsIntensity(stack, targetId);
+        float intensity = RedstoneCorruptionMechanics.intensity(stack, targetId);
         long hash = stack.stableLong(CorruptionSurface.REDSTONE_MECHANICS, targetId, event.getPos().hashCode() ^ 0x4E4F5449)
                 ^ mixLong(event.getPos().asLong() ^ level.getGameTime() * 0x9E3779B97F4A7C15L);
         float chance = stack.extreme(CorruptionSurface.REDSTONE_MECHANICS)
@@ -1579,62 +1504,6 @@ public final class CorruptionMechanicsManager {
         return Mth.clamp(stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) ? 1.0F : stack.intensity(CorruptionSurface.GUI_FUNCTIONALITY), 0.0F, 1.0F);
     }
 
-    private static int corruptRedstoneValue(BlockState state, BlockGetter level, BlockPos pos, Direction direction, int original, String channel, boolean analog) {
-        if (state == null || level == null || pos == null) {
-            return original;
-        }
-        if (!isRelevantRedstoneState(state, original, analog)) {
-            return original;
-        }
-
-        CorruptionEffectStack stack = redstoneStack(level);
-        String directionId = direction == null ? "none" : direction.getName();
-        String targetId = "redstone:" + channel + ":" + blockTargetId(state) + ":" + directionId;
-        if (!redstoneMechanicsActive(stack, targetId)) {
-            return original;
-        }
-
-        float intensity = redstoneMechanicsIntensity(stack, targetId);
-        long gameTime = redstoneGameTime(level);
-        long cadence = Math.max(1L, Math.round(Mth.lerp(intensity, 8.0F, 1.0F)));
-        long bucket = Math.floorDiv(gameTime, cadence);
-        long seed = stack.stableLong(CorruptionSurface.REDSTONE_MECHANICS, targetId, pos.hashCode() ^ channel.hashCode() ^ 0x525344)
-                ^ mixLong(pos.asLong() + bucket * 0x9E3779B97F4A7C15L)
-                ^ (long) original * 0xBF58476D1CE4E5B9L;
-        float chance = stack.extreme(CorruptionSurface.REDSTONE_MECHANICS)
-                ? 0.98F
-                : Mth.clamp(0.06F + intensity * 0.72F + stack.instability() * 0.08F, 0.0F, 0.92F);
-        if (unitHash(seed ^ 0x5349474EL) > chance) {
-            return original;
-        }
-
-        int mode = Math.floorMod((int) (seed >>> 28), 7);
-        int mutated = switch (mode) {
-            case 0 -> 0;
-            case 1 -> 15;
-            case 2 -> 15 - original;
-            case 3 -> Math.round(unitHash(seed ^ 0x52414E44L) * 15.0F);
-            case 4 -> unitHash(seed ^ 0x464C4950L) < 0.5F ? 0 : 15;
-            case 5 -> clampInt(original + Math.round(signedUnit(seed ^ 0x44524946L) * (2.0F + intensity * 18.0F)), 0, 15);
-            default -> Math.round(CorruptionValueMutator.mutateScalar(
-                    stack,
-                    CorruptionSurface.REDSTONE_MECHANICS,
-                    targetId,
-                    original,
-                    2.0F + intensity * 18.0F,
-                    0.0F,
-                    15.0F,
-                    0x5253,
-                    seed
-            ));
-        };
-        return clampInt(mutated, 0, 15);
-    }
-
-    private static boolean isRelevantRedstoneState(BlockState state, int original, boolean analog) {
-        return original > 0 || state.isSignalSource() || (analog && state.hasAnalogOutputSignal());
-    }
-
     private static CorruptionEffectStack redstoneStack(BlockGetter level) {
         if (level instanceof ServerLevel serverLevel) {
             return serverStack(serverLevel);
@@ -1647,15 +1516,6 @@ public final class CorruptionMechanicsManager {
 
     private static long redstoneGameTime(BlockGetter level) {
         return level instanceof Level gameLevel ? gameLevel.getGameTime() : 0L;
-    }
-
-    private static boolean redstoneMechanicsActive(CorruptionEffectStack stack, String targetId) {
-        return surfaceActive(stack, CorruptionSurface.REDSTONE_MECHANICS, MIN_WORLD_PROCESS_INTENSITY)
-                || targetActive(stack, CorruptionSurface.REDSTONE_MECHANICS, targetId, MIN_WORLD_PROCESS_INTENSITY);
-    }
-
-    private static float redstoneMechanicsIntensity(CorruptionEffectStack stack, String targetId) {
-        return Mth.clamp(weightedSurfaceIntensity(stack, CorruptionSurface.REDSTONE_MECHANICS, targetId, 1.0F), 0.0F, 1.0F);
     }
 
     private static CorruptionEffectStack blockEntityStack(BlockEntity blockEntity) {
@@ -2139,17 +1999,7 @@ public final class CorruptionMechanicsManager {
     }
 
     private static boolean shouldSyncEntityMechanics(LivingEntity entity, CorruptionEffectStack stack, boolean player) {
-        if (entity == null || stack == null) {
-            return false;
-        }
-        int signature = entityMechanicsSyncSignature(stack);
-        Integer previous = ENTITY_MECHANICS_SYNC_SIGNATURES.get(entity);
-        if (previous == null || previous != signature) {
-            ENTITY_MECHANICS_SYNC_SIGNATURES.put(entity, signature);
-            return true;
-        }
-        int cadence = stack.level() <= 0 ? 80 : player ? 10 : 20;
-        return Math.floorMod(entity.tickCount + entity.getId(), cadence) == 0;
+        return EntityAttributeCorruptionMechanics.shouldSync(entity, stack, player);
     }
 
     private static void forceSyncPlayerMechanics(ServerPlayer player) {
@@ -2160,266 +2010,15 @@ public final class CorruptionMechanicsManager {
     }
 
     private static void forceSyncEntityMechanics(LivingEntity entity, CorruptionEffectStack stack, String entityTargetId) {
-        if (entity == null || stack == null) {
-            return;
-        }
-        syncEntityMechanics(entity, stack, entityTargetId);
-        ENTITY_MECHANICS_SYNC_SIGNATURES.put(entity, entityMechanicsSyncSignature(stack));
-    }
-
-    private static int entityMechanicsSyncSignature(CorruptionEffectStack stack) {
-        int signature = 23;
-        signature = signature * 31 + stack.level();
-        signature = signature * 31 + stack.enabledTargetsMask();
-        signature = signature * 31 + (int) (stack.fixedSeed() ^ (stack.fixedSeed() >>> 32));
-        signature = signature * 31 + Math.round(stack.instability() * 1000.0F);
-        signature = signature * 31 + Math.round(stack.intensity(CorruptionSurface.ENTITY_KINEMATICS) * 1000.0F);
-        signature = signature * 31 + Math.round(stack.intensity(CorruptionSurface.ENTITY_STATE) * 1000.0F);
-        signature = signature * 31 + Math.round(stack.intensity(CorruptionSurface.ANIMATION_TIMING) * 1000.0F);
-        signature = signature * 31 + Math.round(stack.intensity(CorruptionSurface.TICK_SPEED) * 1000.0F);
-        return signature == 0 ? 1 : signature;
+        EntityAttributeCorruptionMechanics.forceSync(entity, stack, entityTargetId);
     }
 
     private static void syncEntityMechanics(LivingEntity entity, CorruptionEffectStack stack, String entityTargetId) {
-        if (entity == null) {
-            return;
-        }
-
-        String baseTargetId = "entity_mechanics:" + entityTargetId + (entity instanceof Player ? ":player" : ":living");
-        for (EntityMechanic mechanic : ENTITY_MECHANICS) {
-            AttributeInstance attribute = attributeInstance(entity, mechanic);
-            if (attribute == null) {
-                continue;
-            }
-
-            double amount = entityMechanicAmount(entity, stack, baseTargetId, mechanic);
-            if (Double.isNaN(amount)) {
-                removeMechanicModifier(attribute, mechanic);
-            } else {
-                syncMechanicModifier(attribute, mechanic, amount);
-            }
-        }
-
-        cleanupLegacyEntityMechanics(entity);
-        clampLivingHealthToMax(entity);
-    }
-
-    private static AttributeInstance attributeInstance(LivingEntity entity, EntityMechanic mechanic) {
-        try {
-            Attribute attribute = mechanic.attribute().get();
-            return attribute == null ? null : entity.getAttribute(attribute);
-        } catch (RuntimeException ignored) {
-            return null;
-        }
-    }
-
-    private static double entityMechanicAmount(LivingEntity entity, CorruptionEffectStack stack, String baseTargetId, EntityMechanic mechanic) {
-        if (stack.level() <= 0 || entity.isSpectator()) {
-            return Double.NaN;
-        }
-
-        String targetId = baseTargetId + ":" + mechanic.id();
-        float intensity = entityMechanicIntensity(stack, targetId, entity instanceof Player);
-        if (intensity <= MIN_ENTITY_MECHANICS_INTENSITY) {
-            return Double.NaN;
-        }
-
-        CorruptionSurface surface = entityMechanicSurface(stack, targetId, entity instanceof Player);
-        long hash = stack.stableLong(surface, targetId, entityStableSalt(entity, mechanic.id().hashCode()));
-        double high = stack.extreme(surface) ? mechanic.extremeMaxAmount() : mechanic.maxAmount();
-        double span = mechanic.span() * (0.55D + intensity * 1.45D + stack.instability() * 0.60D);
-        if (mechanic.operation() == AttributeModifier.Operation.MULTIPLY_TOTAL) {
-            double exponent = signedUnit(hash ^ 0x4D554C54L) * span;
-            if (unitHash(hash ^ 0x5354414CL) < 0.08F + intensity * 0.28F) {
-                exponent = unitHash(hash ^ 0x46524545L) < 0.42F
-                        ? -8.0D * (0.35D + intensity * 0.65D)
-                        : 4.8D * (0.25D + intensity * 0.75D);
-            }
-            double amount = Math.pow(2.0D, exponent) - 1.0D;
-            return Mth.clamp(amount, mechanic.minAmount(), high);
-        }
-
-        long mechanicClock = entityMechanicClock(entity, stack, surface, targetId, mechanic, intensity);
-        double amount = CorruptionValueMutator.mutateScalar(stack, surface, targetId, 0.0D, span, mechanic.minAmount(), high, mechanic.id().hashCode(), mechanicClock);
-        if (unitHash(hash ^ 0x42495446L) < 0.06F + intensity * 0.22F) {
-            amount = unitHash(hash ^ 0x4D41584DL) < 0.5F ? mechanic.minAmount() : high;
-        }
-        return Mth.clamp(amount, mechanic.minAmount(), high);
-    }
-
-    private static long entityMechanicClock(LivingEntity entity, CorruptionEffectStack stack, CorruptionSurface surface, String targetId, EntityMechanic mechanic, float intensity) {
-        long seed = stack.stableLong(surface, targetId + ":mechanic_clock", mechanic.id().hashCode());
-        // Attribute modifiers are synced state, not a tick animation. Keeping this clock
-        // independent of client/server tick counters prevents no-drift clients from rerolling
-        // a different max-health, speed, or jump-strength modifier than the server.
-        return seed ^ (entityStableIdentity(entity) * 0x9E3779B97F4A7C15L);
-    }
-
-    private static float entityMechanicIntensity(CorruptionEffectStack stack, String targetId, boolean player) {
-        float intensity = Math.max(
-                stack.extreme(CorruptionSurface.ENTITY_KINEMATICS) ? 1.0F : stack.targetIntensity(CorruptionSurface.ENTITY_KINEMATICS, targetId),
-                (stack.extreme(CorruptionSurface.ENTITY_STATE) ? 1.0F : stack.targetIntensity(CorruptionSurface.ENTITY_STATE, targetId)) * 0.82F
-        );
-        return Mth.clamp(intensity, 0.0F, 1.0F);
-    }
-
-    private static CorruptionSurface entityMechanicSurface(CorruptionEffectStack stack, String targetId, boolean player) {
-        CorruptionSurface best = CorruptionSurface.ENTITY_KINEMATICS;
-        float bestIntensity = stack.extreme(best) ? 1.0F : stack.targetIntensity(best, targetId);
-        float stateIntensity = stack.extreme(CorruptionSurface.ENTITY_STATE) ? 1.0F : stack.targetIntensity(CorruptionSurface.ENTITY_STATE, targetId) * 0.82F;
-        if (stateIntensity > bestIntensity) {
-            best = CorruptionSurface.ENTITY_STATE;
-            bestIntensity = stateIntensity;
-        }
-        return best;
+        EntityAttributeCorruptionMechanics.sync(entity, stack, entityTargetId);
     }
 
     private static float mobilityMotionIntensity(CorruptionEffectStack stack, String targetId) {
-        if (stack.extreme(CorruptionSurface.PLAYER_PHYSICS)) {
-            return 1.0F;
-        }
-        return Mth.clamp(Math.max(
-                stack.targetIntensity(CorruptionSurface.PLAYER_PHYSICS, targetId),
-                stack.intensity(CorruptionSurface.PLAYER_PHYSICS) * 0.86F
-        ), 0.0F, 1.0F);
-    }
-
-    private static int entityHitboxProfileSignature(CorruptionEffectStack stack) {
-        int signature = 29;
-        signature = signature * 31 + stack.level();
-        signature = signature * 31 + stack.enabledTargetsMask();
-        signature = signature * 31 + (int) (stack.fixedSeed() ^ (stack.fixedSeed() >>> 32));
-        signature = signature * 31 + Math.round(stack.intensity(CorruptionSurface.ENTITY_STATE) * 1000.0F);
-        signature = signature * 31 + Math.round(stack.intensity(CorruptionSurface.ANIMATION_TIMING) * 1000.0F);
-        return signature == 0 ? 1 : signature;
-    }
-
-    private static EntityHitboxMutation entityHitboxMutation(Entity entity) {
-        if (entity == null) {
-            return EntityHitboxMutation.PASS;
-        }
-        return entityHitboxMutation(entity, activeStackFor(entity));
-    }
-
-    private static EntityHitboxMutation entityHitboxMutation(Entity entity, CorruptionEffectStack stack) {
-        if (entity == null || entity.level() == null) {
-            return EntityHitboxMutation.PASS;
-        }
-
-        if (stack.level() <= 0) {
-            return EntityHitboxMutation.PASS;
-        }
-
-        boolean stateActive = surfaceActive(stack, CorruptionSurface.ENTITY_STATE, MIN_ENTITY_MECHANICS_INTENSITY);
-        boolean timingActive = surfaceActive(stack, CorruptionSurface.ANIMATION_TIMING, MIN_ENTITY_MECHANICS_INTENSITY);
-        if (!stateActive && !timingActive) {
-            return EntityHitboxMutation.PASS;
-        }
-
-        String targetId = "entity_hitbox_dimensions:" + entityTargetId(entity);
-        float stateIntensity = stack.extreme(CorruptionSurface.ENTITY_STATE)
-                ? 1.0F
-                : Math.max(stack.targetIntensity(CorruptionSurface.ENTITY_STATE, targetId), stack.intensity(CorruptionSurface.ENTITY_STATE) * 0.74F);
-        float timingIntensity = stack.extreme(CorruptionSurface.ANIMATION_TIMING)
-                ? 1.0F
-                : Math.max(stack.targetIntensity(CorruptionSurface.ANIMATION_TIMING, targetId), stack.intensity(CorruptionSurface.ANIMATION_TIMING) * 0.58F);
-        float intensity = Mth.clamp(Math.max(stateIntensity, timingIntensity * 0.88F), 0.0F, 1.0F);
-        if (intensity <= MIN_ENTITY_MECHANICS_INTENSITY) {
-            return EntityHitboxMutation.PASS;
-        }
-
-        CorruptionSurface surface = stateIntensity >= timingIntensity ? CorruptionSurface.ENTITY_STATE : CorruptionSurface.ANIMATION_TIMING;
-        long seed = stack.stableLong(surface, targetId, 0x48495458);
-        float widthScale = entityHitboxScale(seed ^ 0x5749445448L, intensity, stack.extreme(surface));
-        float heightScale = entityHitboxScale(seed ^ 0x484549474854L, intensity, stack.extreme(surface));
-        if (unitHash(seed ^ 0x4D4F4445L) < 0.06F + intensity * 0.30F) {
-            int mode = Math.floorMod((int) (seed >>> 27), 7);
-            switch (mode) {
-                case 0 -> widthScale = Math.min(widthScale, 0.06F + unitHash(seed ^ 0x54494E59L) * 0.12F);
-                case 1 -> heightScale = Math.min(heightScale, 0.06F + unitHash(seed ^ 0x464C4154L) * 0.14F);
-                case 2 -> widthScale = Mth.clamp(widthScale * (2.5F + intensity * 7.5F), 0.05F, stack.extreme(surface) ? 12.0F : 6.5F);
-                case 3 -> heightScale = Mth.clamp(heightScale * (2.5F + intensity * 7.5F), 0.05F, stack.extreme(surface) ? 12.0F : 6.5F);
-                case 4 -> {
-                    widthScale = Mth.clamp(widthScale * 0.18F, 0.05F, 2.5F);
-                    heightScale = Mth.clamp(heightScale * (2.0F + intensity * 5.0F), 0.05F, stack.extreme(surface) ? 12.0F : 6.5F);
-                }
-                case 5 -> {
-                    widthScale = Mth.clamp(widthScale * (2.0F + intensity * 5.0F), 0.05F, stack.extreme(surface) ? 12.0F : 6.5F);
-                    heightScale = Mth.clamp(heightScale * 0.18F, 0.05F, 2.5F);
-                }
-                default -> {
-                    widthScale = Mth.clamp(1.0F / Math.max(0.08F, widthScale), 0.05F, stack.extreme(surface) ? 12.0F : 6.5F);
-                    heightScale = Mth.clamp(1.0F / Math.max(0.08F, heightScale), 0.05F, stack.extreme(surface) ? 12.0F : 6.5F);
-                }
-            }
-        }
-
-        int signature = 17;
-        signature = signature * 31 + stack.level();
-        signature = signature * 31 + stack.enabledTargetsMask();
-        signature = signature * 31 + (int) (stack.fixedSeed() ^ (stack.fixedSeed() >>> 32));
-        signature = signature * 31 + surface.ordinal();
-        signature = signature * 31 + Math.round(widthScale * 1000.0F);
-        signature = signature * 31 + Math.round(heightScale * 1000.0F);
-        return new EntityHitboxMutation(widthScale, heightScale, signature == 0 ? 1 : signature);
-    }
-
-    private static float entityHitboxScale(long seed, float intensity, boolean extreme) {
-        double exponent = signedUnit(seed) * intensity * (extreme ? 5.2D : 3.0D);
-        float scale = (float) Math.pow(2.0D, exponent);
-        if (unitHash(seed ^ 0x53545554L) < 0.05F + intensity * 0.22F) {
-            scale = unitHash(seed ^ 0x424947L) < 0.52F
-                    ? 0.05F + unitHash(seed ^ 0x534D4C4CL) * (0.24F + intensity * 0.18F)
-                    : 2.0F + unitHash(seed ^ 0x4C415247L) * (extreme ? 10.0F : 4.5F);
-        }
-        return Mth.clamp(scale, 0.05F, extreme ? 12.0F : 6.5F);
-    }
-
-    private static void syncMechanicModifier(AttributeInstance attribute, EntityMechanic mechanic, double amount) {
-        AttributeModifier existing = attribute.getModifier(mechanic.uuid());
-        if (existing != null && Math.abs(existing.getAmount() - amount) < 0.015D) {
-            return;
-        }
-        removeMechanicModifier(attribute, mechanic);
-        try {
-            attribute.addTransientModifier(new AttributeModifier(
-                    mechanic.uuid(),
-                    "realtime_minecraft_corruption_simulator_" + mechanic.id(),
-                    amount,
-                    mechanic.operation()
-            ));
-        } catch (RuntimeException ignored) {
-        }
-    }
-
-    private static void removeMechanicModifier(AttributeInstance attribute, EntityMechanic mechanic) {
-        if (attribute.getModifier(mechanic.uuid()) != null) {
-            attribute.removeModifier(mechanic.uuid());
-        }
-    }
-
-    private static void cleanupLegacyEntityMechanics(LivingEntity entity) {
-        AttributeInstance movementSpeed = entity.getAttribute(Attributes.MOVEMENT_SPEED);
-        if (movementSpeed != null && movementSpeed.getModifier(LEGACY_NON_PLAYER_SPEED_ID) != null) {
-            movementSpeed.removeModifier(LEGACY_NON_PLAYER_SPEED_ID);
-        }
-        AttributeInstance maxHealth = entity.getAttribute(Attributes.MAX_HEALTH);
-        if (maxHealth != null && maxHealth.getModifier(LEGACY_PLAYER_MAX_HEALTH_ID) != null) {
-            maxHealth.removeModifier(LEGACY_PLAYER_MAX_HEALTH_ID);
-        }
-    }
-
-    private static void clampLivingHealthToMax(LivingEntity entity) {
-        AttributeInstance maxHealth = entity.getAttribute(Attributes.MAX_HEALTH);
-        if (maxHealth == null) {
-            return;
-        }
-        float max = entity.getMaxHealth();
-        if (entity.getHealth() > max) {
-            entity.setHealth(max);
-        } else if (entity.getHealth() <= 0.0F && max > 0.0F && !entity.isDeadOrDying()) {
-            entity.setHealth(Math.min(1.0F, max));
-        }
+        return EntityAttributeCorruptionMechanics.mobilityMotionIntensity(stack, targetId);
     }
 
     private static int corruptedCadence(CorruptionEffectStack stack, String targetId, int baseCadence, int maxCadence) {
@@ -3221,8 +2820,8 @@ public final class CorruptionMechanicsManager {
     }
 
     private static synchronized void clearEntityRuntimeCaches() {
-        ENTITY_MECHANICS_SYNC_SIGNATURES.clear();
-        ENTITY_HITBOX_SIGNATURE_CACHE.clear();
+        EntityAttributeCorruptionMechanics.clearCaches();
+        EntityHitboxCorruptionMechanics.clearCaches();
     }
 
     private static synchronized void resetTerrainMutationBudget() {
@@ -3440,32 +3039,6 @@ public final class CorruptionMechanicsManager {
         value *= 0xc4ceb9fe1a85ec53L;
         value ^= value >>> 33;
         return value;
-    }
-
-    private static UUID mechanicUuid(String id) {
-        return UUID.nameUUIDFromBytes(("realtime_minecraft_corruption_simulator:entity_mechanic:" + id).getBytes(StandardCharsets.UTF_8));
-    }
-
-    private record EntityMechanic(
-            String id,
-            Supplier<Attribute> attribute,
-            AttributeModifier.Operation operation,
-            double span,
-            double minAmount,
-            double maxAmount,
-            double extremeMaxAmount,
-            UUID uuid
-    ) {
-        private EntityMechanic(String id, Supplier<Attribute> attribute, AttributeModifier.Operation operation, double span, double minAmount, double maxAmount, double extremeMaxAmount) {
-            this(id, attribute, operation, span, minAmount, maxAmount, extremeMaxAmount, mechanicUuid(id));
-        }
-    }
-
-    private record EntityHitboxMutation(float widthScale, float heightScale, int signature) {
-        private static final EntityHitboxMutation PASS = new EntityHitboxMutation(1.0F, 1.0F, 0);
-    }
-
-    private record HitboxSignatureCache(int profileSignature, int signature, int nextCheckTick) {
     }
 
     private record TerrainMutationRequest(ServerLevel level, ChunkPos chunkPos, String key, CorruptionEffectStack stack) {

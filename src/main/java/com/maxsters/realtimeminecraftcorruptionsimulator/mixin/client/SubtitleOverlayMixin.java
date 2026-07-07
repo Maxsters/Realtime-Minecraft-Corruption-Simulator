@@ -1,6 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.SubtitleCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.gui.SubtitleCorruptionHooks;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.SubtitleOverlay;
 import net.minecraft.client.resources.sounds.SoundInstance;

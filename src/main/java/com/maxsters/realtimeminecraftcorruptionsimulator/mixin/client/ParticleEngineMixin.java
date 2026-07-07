@@ -1,6 +1,6 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.ParticleCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.particles.ParticleCorruptionHooks;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleEngine;
 import org.spongepowered.asm.mixin.Dynamic;

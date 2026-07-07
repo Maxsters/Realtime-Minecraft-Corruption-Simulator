@@ -2,7 +2,7 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ItemTextureCorruptionManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.access.TextureSheetParticleAccessor;
-import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.ParticleFieldAccess;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.particles.ParticleFieldAccess;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.TerrainParticle;
