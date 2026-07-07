@@ -67,7 +67,7 @@ public final class FontTextureCorruptionManager {
         if (event.phase != TickEvent.Phase.END) {
             return;
         }
-        if (ClientCorruptionProtection.shouldSuppressClientCorruption()) {
+        if (ClientCorruptionProtection.isProtectedGuiRendering()) {
             installCooldown = 0;
             return;
         }
@@ -76,7 +76,7 @@ public final class FontTextureCorruptionManager {
         }
         installCooldown = pendingFontRefresh ? 0 : 6;
 
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForGuiRendering();
         String desiredSignature = fontMutationActive(stack) ? fontSignature(stack) : "";
         boolean forceRefresh = pendingFontRefresh || STALE_SIGNATURE.equals(activeSignature) || !desiredSignature.equals(activeSignature);
         if (!fontMutationActive(stack)) {

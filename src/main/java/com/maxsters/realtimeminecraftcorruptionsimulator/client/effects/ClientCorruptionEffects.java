@@ -29,6 +29,22 @@ public final class ClientCorruptionEffects {
         return fromClientSnapshot();
     }
 
+    public static CorruptionEffectStack currentForGuiRendering() {
+        if (ClientCorruptionProtection.isProtectedGuiRendering()) {
+            return INACTIVE_STACK;
+        }
+
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft != null
+                && (ClientCorruptionProtection.isModScreen(minecraft.screen)
+                || ClientCorruptionProtection.isDeathScreen(minecraft.screen)
+                || (minecraft.screen == null && minecraft.level == null && minecraft.player == null))) {
+            return INACTIVE_STACK;
+        }
+
+        return fromClientSnapshot();
+    }
+
     public static CorruptionEffectStack currentForWorldRendering() {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null || minecraft.level == null) {

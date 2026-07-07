@@ -22,7 +22,7 @@ public final class BreakingTextureCorruptionHooks {
             return list.get(stage);
         }
 
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         if (!stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)) {
             return list.get(stage);
         }
@@ -32,7 +32,7 @@ public final class BreakingTextureCorruptionHooks {
     }
 
     public static VertexConsumer uv(VertexConsumer consumer, float u, float v) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         if (!stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)) {
             return consumer.uv(u, v);
         }
@@ -56,7 +56,7 @@ public final class BreakingTextureCorruptionHooks {
     }
 
     public static VertexConsumer color(VertexConsumer consumer, float red, float green, float blue, float alpha) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForWorldRendering();
         if (!stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)) {
             return consumer.color(red, green, blue, alpha);
         }

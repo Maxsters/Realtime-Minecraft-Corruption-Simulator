@@ -81,7 +81,7 @@ public final class FontRenderCorruptionHooks {
     }
 
     private static FontMutation mutation() {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        CorruptionEffectStack stack = ClientCorruptionEffects.currentForGuiRendering();
         if (!stack.activeOrExtreme(CorruptionSurface.GUI_SURFACE)) {
             return INACTIVE;
         }

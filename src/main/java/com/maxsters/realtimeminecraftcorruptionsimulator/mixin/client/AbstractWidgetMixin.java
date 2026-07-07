@@ -2,17 +2,48 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.gui.GuiInteractionCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.gui.GuiLayoutCorruptionHooks;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import org.spongepowered.asm.mixin.Dynamic;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(AbstractWidget.class)
 @SuppressWarnings("target")
 public abstract class AbstractWidgetMixin {
+    @Inject(
+            method = {
+                    "render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V",
+                    "m_88315_(Lnet/minecraft/client/gui/GuiGraphics;IIF)V"
+            },
+            at = @At("HEAD"),
+            remap = false,
+            require = 0
+    )
+    @Dynamic("Targets both mapped dev names and SRG runtime aliases for AbstractWidget#render.")
+    private void rmc$corruptWidgetLayout(GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo callback) {
+        GuiLayoutCorruptionHooks.applyWidgetLayout((AbstractWidget) (Object) this);
+    }
+
+    @Inject(
+            method = {
+                    "render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V",
+                    "m_88315_(Lnet/minecraft/client/gui/GuiGraphics;IIF)V"
+            },
+            at = @At("RETURN"),
+            remap = false,
+            require = 0
+    )
+    @Dynamic("Targets both mapped dev names and SRG runtime aliases for AbstractWidget#render.")
+    private void rmc$restoreWidgetLayout(GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo callback) {
+        GuiLayoutCorruptionHooks.restoreWidgetLayout((AbstractWidget) (Object) this);
+    }
+
     @Inject(
             method = {
                     "mouseClicked(DDI)Z",

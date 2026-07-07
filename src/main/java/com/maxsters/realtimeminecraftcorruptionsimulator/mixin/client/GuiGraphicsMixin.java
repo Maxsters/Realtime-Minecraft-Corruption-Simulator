@@ -1,6 +1,7 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.gui.GuiAtlasSpriteCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.gui.GuiDirectTextureCorruptionHooks;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -14,6 +15,26 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(GuiGraphics.class)
 @SuppressWarnings("target")
 public abstract class GuiGraphicsMixin {
+    @Inject(
+            method = {
+                    "blit(Lnet/minecraft/resources/ResourceLocation;IIIIIIIFFII)V",
+                    "m_280312_(Lnet/minecraft/resources/ResourceLocation;IIIIIIIFFII)V"
+            },
+            at = @At("HEAD"),
+            cancellable = true,
+            remap = false,
+            require = 0
+    )
+    @Dynamic("Targets both mapped dev names and SRG runtime aliases for GuiGraphics' direct ResourceLocation blit.")
+    private void rmc$corruptDirectGuiTexture(ResourceLocation texture, int minX, int maxX, int minY, int maxY, int z, int sourceWidth, int sourceHeight, float sourceU, float sourceV, int textureWidth, int textureHeight, CallbackInfo callback) {
+        GuiDirectTextureCorruptionHooks.DirectDraw draw = GuiDirectTextureCorruptionHooks.corruptGuiBlit(texture, minX, maxX, minY, maxY, z, sourceWidth, sourceHeight, sourceU, sourceV, textureWidth, textureHeight);
+        if (draw == null) {
+            return;
+        }
+        innerBlit(draw.texture(), minX, maxX, minY, maxY, z, draw.u0(), draw.u1(), draw.v0(), draw.v1());
+        callback.cancel();
+    }
+
     @Inject(
             method = {
                     "blit(IIIIILnet/minecraft/client/renderer/texture/TextureAtlasSprite;)V",
@@ -53,6 +74,9 @@ public abstract class GuiGraphicsMixin {
         innerBlit(draw.atlasLocation(), x, x + width, y, y + height, z, draw.u0(), draw.u1(), draw.v0(), draw.v1(), draw.red(), draw.green(), draw.blue(), draw.alpha());
         callback.cancel();
     }
+
+    @Shadow(remap = false, aliases = "m_280444_")
+    abstract void innerBlit(ResourceLocation atlasLocation, int minX, int maxX, int minY, int maxY, int z, float minU, float maxU, float minV, float maxV);
 
     @Shadow(remap = false, aliases = "m_280479_")
     abstract void innerBlit(ResourceLocation atlasLocation, int minX, int maxX, int minY, int maxY, int z, float minU, float maxU, float minV, float maxV, float red, float green, float blue, float alpha);

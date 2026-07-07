@@ -6,11 +6,11 @@ public enum CorruptionTarget {
     CAMERA(0, "camera", "Camera", "View drift, FOV changes."),
     MOBILITY(1, "mobility", "Mobility", "Fluid checks, motion, collision, phasing."),
     WORLD_VISUALS(2, "world_visuals", "World Visuals", "Chunks, weather, light, biomes."),
-    TEXTURES(3, "textures", "Textures", "Image data for world and UI."),
+    TEXTURES(3, "textures", "Textures", "World, item, liquid, and particle image data."),
     AUDIO(4, "audio", "Audio", "Sound playback and placement."),
-    GUI(5, "gui", "GUI", "Menus, sliders, container actions."),
+    GUI(5, "gui", "GUI", "Menus, buttons, GUI textures, container actions."),
     ENTITY_BEHAVIOR(6, "entity_behavior", "Entities & Timing", "Stats, AI, fire, hitboxes, spawns."),
-    PROJECTILES_AND_ITEMS(7, "projectiles_items", "Items & Actions", "Crafting, items, impacts, redstone."),
+    PROJECTILES_AND_ITEMS(7, "projectiles_items", "Items & Actions", "Projectiles, items, impacts, redstone."),
     WORLD_MUTATION(8, "world_mutation", "Worldgen & Terrain", "Terrain, carvers, growth."),
     MODELS(9, "models", "Models", "Geometry warping.");
 
