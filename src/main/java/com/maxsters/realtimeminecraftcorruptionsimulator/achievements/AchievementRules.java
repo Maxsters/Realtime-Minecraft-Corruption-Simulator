@@ -17,4 +17,12 @@ public final class AchievementRules {
         int mask = CorruptionTarget.normalizeMask(enabledTargetsMask);
         return (mask & WARRANTY_VOIDED_REQUIRED_TARGETS) == WARRANTY_VOIDED_REQUIRED_TARGETS;
     }
+
+    public static boolean blessingStartSettingsActive(int corruptionLevel, int enabledTargetsMask) {
+        return warrantySettingsActive(corruptionLevel, enabledTargetsMask);
+    }
+
+    public static boolean blessingRuntimeSettingsActive(int corruptionLevel, int enabledTargetsMask) {
+        return warrantySettingsActive(corruptionLevel, enabledTargetsMask);
+    }
 }

@@ -9,6 +9,8 @@ public record AchievementWorldStateSnapshot(
         boolean disqualified,
         boolean warrantyStarted,
         boolean warrantyDisqualified,
+        boolean blessingStarted,
+        boolean blessingDisqualified,
         String disqualificationReason,
         Set<String> armedDragonIds,
         Set<String> spoiledDragonIds
@@ -24,7 +26,7 @@ public record AchievementWorldStateSnapshot(
     }
 
     public static AchievementWorldStateSnapshot empty() {
-        return new AchievementWorldStateSnapshot(false, false, false, "", Set.of(), Set.of());
+        return new AchievementWorldStateSnapshot(false, false, false, false, false, "", Set.of(), Set.of());
     }
 
     public static AchievementWorldStateSnapshot from(CorruptionSavedData data) {
@@ -35,6 +37,8 @@ public record AchievementWorldStateSnapshot(
                 data.isAchievementWorldDisqualified(),
                 data.isWarrantyStarted(),
                 data.isWarrantyDisqualified(),
+                data.isBlessingStarted(),
+                data.isBlessingDisqualified(),
                 data.serverAchievementDisqualificationReason(),
                 data.armedDragonIds(),
                 data.spoiledDragonIds()
@@ -42,13 +46,15 @@ public record AchievementWorldStateSnapshot(
     }
 
     public AchievementWorldStateSnapshot withDisqualificationReason(String reason) {
-        return new AchievementWorldStateSnapshot(disqualified, warrantyStarted, warrantyDisqualified, reason, armedDragonIds, spoiledDragonIds);
+        return new AchievementWorldStateSnapshot(disqualified, warrantyStarted, warrantyDisqualified, blessingStarted, blessingDisqualified, reason, armedDragonIds, spoiledDragonIds);
     }
 
     public void encode(FriendlyByteBuf buffer) {
         buffer.writeBoolean(disqualified);
         buffer.writeBoolean(warrantyStarted);
         buffer.writeBoolean(warrantyDisqualified);
+        buffer.writeBoolean(blessingStarted);
+        buffer.writeBoolean(blessingDisqualified);
         writeSet(buffer, armedDragonIds);
         writeSet(buffer, spoiledDragonIds);
     }
@@ -64,9 +70,11 @@ public record AchievementWorldStateSnapshot(
         boolean disqualified = buffer.readBoolean();
         boolean warrantyStarted = buffer.readBoolean();
         boolean warrantyDisqualified = buffer.readBoolean();
+        boolean blessingStarted = buffer.readBoolean();
+        boolean blessingDisqualified = buffer.readBoolean();
         Set<String> armedDragonIds = readSet(buffer);
         Set<String> spoiledDragonIds = readSet(buffer);
-        return new AchievementWorldStateSnapshot(disqualified, warrantyStarted, warrantyDisqualified, "", armedDragonIds, spoiledDragonIds);
+        return new AchievementWorldStateSnapshot(disqualified, warrantyStarted, warrantyDisqualified, blessingStarted, blessingDisqualified, "", armedDragonIds, spoiledDragonIds);
     }
 
     public static String decodeDisqualificationReason(FriendlyByteBuf buffer) {

@@ -1087,7 +1087,7 @@ public final class WorldgenCorruptionHooks {
         if (!stack.activeOrExtreme(CorruptionSurface.WORLDGEN_SURFACE)) {
             return 0.0F;
         }
-        return clamp01(Math.max(stack.intensityOrExtreme(CorruptionSurface.WORLDGEN_SURFACE), stack.level() / 100.0F * 0.92F));
+        return clamp01(Math.max(stack.intensityOrExtreme(CorruptionSurface.WORLDGEN_SURFACE), stack.effectiveLevel() * 0.92F));
     }
 
     private static DensityChannelPlan densityPlan(String channel) {

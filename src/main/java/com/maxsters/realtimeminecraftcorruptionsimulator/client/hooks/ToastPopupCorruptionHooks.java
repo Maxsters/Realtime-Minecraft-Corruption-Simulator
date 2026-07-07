@@ -11,27 +11,13 @@ import net.minecraft.client.gui.components.toasts.AdvancementToast;
 import net.minecraft.client.gui.components.toasts.RecipeToast;
 import net.minecraft.client.gui.components.toasts.Toast;
 import net.minecraft.util.Mth;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
 
-import java.lang.reflect.Field;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-
-@OnlyIn(Dist.CLIENT)
 public final class ToastPopupCorruptionHooks {
     private static final ThreadLocal<Integer> RENDER_DEPTH = ThreadLocal.withInitial(() -> 0);
-    private static final Map<Class<?>, Optional<Field>> TOAST_FIELDS = new ConcurrentHashMap<>();
-
     private ToastPopupCorruptionHooks() {
     }
 
-    public static float toastYOffset(Object toastInstance, float originalY) {
-        Toast toast = toastFromInstance(toastInstance);
-        if (!isAdvancementOrRecipeToast(toast)) {
-            return originalY;
-        }
+    public static float toastYOffset(float originalY) {
         return originalY + CorruptionOverlayPanel.topRightPinnedToastOffset();
     }
 
@@ -137,36 +123,6 @@ public final class ToastPopupCorruptionHooks {
                 : Mth.clamp(0.015F + intensity * 0.17F + stack.instability() * 0.035F, 0.0F, 0.24F);
         long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, 0x48494445);
         return unit(seed ^ (visibleTime / 250L)) < chance ? Toast.Visibility.HIDE : visibility;
-    }
-
-    private static Toast toastFromInstance(Object toastInstance) {
-        if (toastInstance == null) {
-            return null;
-        }
-        Optional<Field> field = TOAST_FIELDS.computeIfAbsent(toastInstance.getClass(), ToastPopupCorruptionHooks::toastField);
-        if (field.isEmpty()) {
-            return null;
-        }
-        try {
-            Object value = field.get().get(toastInstance);
-            return value instanceof Toast toast ? toast : null;
-        } catch (IllegalAccessException | RuntimeException ignored) {
-            return null;
-        }
-    }
-
-    private static Optional<Field> toastField(Class<?> type) {
-        for (Class<?> cursor = type; cursor != null && cursor != Object.class; cursor = cursor.getSuperclass()) {
-            for (String name : new String[]{"toast", "f_94931_"}) {
-                try {
-                    Field field = cursor.getDeclaredField(name);
-                    field.setAccessible(true);
-                    return Optional.of(field);
-                } catch (NoSuchFieldException | RuntimeException ignored) {
-                }
-            }
-        }
-        return Optional.empty();
     }
 
     private static boolean isAdvancementOrRecipeToast(Toast toast) {

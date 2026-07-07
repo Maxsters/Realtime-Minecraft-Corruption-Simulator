@@ -14,7 +14,8 @@ import java.util.concurrent.ConcurrentHashMap;
 // All intensity comes from the current level, seed, target mask, and surface tuning.
 public final class CorruptionEffectStack {
     private static final float ACTIVE_THRESHOLD = 0.00025F;
-    private static final float LOG_RESPONSE_CURVE = 9.0F;
+    private static final double RESPONSE_CURVE_STEEPNESS = 7.0D;
+    private static final double RESPONSE_CURVE_CENTER = 0.42D;
 
     private final int corruptionLevel;
     private final float effectiveLevel;
@@ -367,7 +368,9 @@ public final class CorruptionEffectStack {
     }
 
     private static float mappedPercent(int visiblePercent) {
-        // The GUI stays linear while the backend preserves fine control at low corruption.
+        // The GUI stays linear while the backend ramps through an S curve:
+        // low values remain controllable, mid values become meaningfully stronger,
+        // and the top end stops spending most of the slider on the final jump.
         if (visiblePercent <= 0) {
             return 0.0F;
         }
@@ -375,9 +378,14 @@ public final class CorruptionEffectStack {
             return 1.0F;
         }
         float visible = visiblePercent / 100.0F;
-        double denominator = Math.log1p(LOG_RESPONSE_CURVE);
-        double mapped = 1.0D - Math.log1p(LOG_RESPONSE_CURVE * (1.0D - visible)) / denominator;
+        double floor = sigmoid(0.0D);
+        double ceiling = sigmoid(1.0D);
+        double mapped = (sigmoid(visible) - floor) / (ceiling - floor);
         return clamp01((float) mapped);
+    }
+
+    private static double sigmoid(double value) {
+        return 1.0D / (1.0D + Math.exp(-RESPONSE_CURVE_STEEPNESS * (value - RESPONSE_CURVE_CENTER)));
     }
 
     private static float computeInstability(float effectiveLevel) {

@@ -29,6 +29,7 @@ public final class ServerAchievementStateManager {
             return changed;
         }
         changed |= updateWarrantyWorldState(data);
+        changed |= updateBlessingWorldState(data);
         changed |= updateLiveDragonFights(server, data);
         return changed;
     }
@@ -67,6 +68,19 @@ public final class ServerAchievementStateManager {
         }
         if (changed || eligible) {
             ModNetwork.broadcastState(server);
+        }
+    }
+
+    public static void handleDiamondOreMined(ServerPlayer player) {
+        if (player == null || player.getServer() == null) {
+            return;
+        }
+        if (player.gameMode.getGameModeForPlayer() != GameType.SURVIVAL || player.isSpectator()) {
+            return;
+        }
+        CorruptionSavedData data = CorruptionSavedData.get(player.getServer());
+        if (blessingEligible(data)) {
+            ModNetwork.sendAchievementEvent(player, AchievementEventPacket.DIAMOND_ORE_MINED);
         }
     }
 
@@ -112,6 +126,24 @@ public final class ServerAchievementStateManager {
         return false;
     }
 
+    private static boolean updateBlessingWorldState(CorruptionSavedData data) {
+        if (data.isAchievementWorldDisqualified() || data.isBlessingDisqualified()) {
+            return false;
+        }
+
+        boolean runtimeSettings = AchievementRules.blessingRuntimeSettingsActive(data.getCorruptionLevel(), data.getEnabledTargetsMask());
+        if (!data.isBlessingStarted()) {
+            if (AchievementRules.blessingStartSettingsActive(data.getCorruptionLevel(), data.getEnabledTargetsMask())) {
+                return data.setBlessingStarted(true);
+            }
+            return data.setBlessingDisqualified(true);
+        }
+        if (!runtimeSettings) {
+            return data.setBlessingDisqualified(true);
+        }
+        return false;
+    }
+
     private static boolean updateLiveDragonFights(MinecraftServer server, CorruptionSavedData data) {
         ServerLevel end = server.getLevel(Level.END);
         if (end == null) {
@@ -146,6 +178,15 @@ public final class ServerAchievementStateManager {
                 && data.isWarrantyStarted()
                 && !data.isWarrantyDisqualified()
                 && AchievementRules.warrantySettingsActive(data.getCorruptionLevel(), data.getEnabledTargetsMask());
+    }
+
+    private static boolean blessingEligible(CorruptionSavedData data) {
+        return data != null
+                && data.isInitialized()
+                && !data.isAchievementWorldDisqualified()
+                && data.isBlessingStarted()
+                && !data.isBlessingDisqualified()
+                && AchievementRules.blessingRuntimeSettingsActive(data.getCorruptionLevel(), data.getEnabledTargetsMask());
     }
 
     private static String dragonId(Entity dragon) {

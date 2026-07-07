@@ -2,7 +2,6 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.achievements;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.ModNetwork;
-import com.maxsters.realtimeminecraftcorruptionsimulator.network.packet.AchievementEventPacket;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
@@ -61,7 +60,7 @@ public final class AchievementServerHooks {
         }
         BlockState state = event.getState();
         if (state.is(Blocks.DIAMOND_ORE) || state.is(Blocks.DEEPSLATE_DIAMOND_ORE)) {
-            ModNetwork.sendAchievementEvent(player, AchievementEventPacket.DIAMOND_ORE_MINED);
+            ServerAchievementStateManager.handleDiamondOreMined(player);
         }
     }
 }

@@ -54,6 +54,7 @@
     "client.CreativeModeInventoryScreenMixin",
     "client.FontStringRenderOutputMixin",
     "client.GameRendererMixin",
+    "client.GuiEffectOverlayMixin",
     "client.GuiGraphicsMixin",
     "client.ItemEntityRendererMixin",
     "client.LevelRendererMixin",

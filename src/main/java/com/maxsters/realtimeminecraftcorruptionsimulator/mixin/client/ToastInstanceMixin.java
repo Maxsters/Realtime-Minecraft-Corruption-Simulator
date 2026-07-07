@@ -25,6 +25,6 @@ public abstract class ToastInstanceMixin {
     )
     @Dynamic("Targets ToastComponent.ToastInstance#render Y translation.")
     private float rmc$offsetPinnedAwardToastY(float y) {
-        return ToastPopupCorruptionHooks.toastYOffset(this, y);
+        return ToastPopupCorruptionHooks.toastYOffset(y);
     }
 }

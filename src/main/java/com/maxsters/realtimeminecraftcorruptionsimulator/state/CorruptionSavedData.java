@@ -42,6 +42,8 @@ public class CorruptionSavedData extends SavedData {
     private String serverAchievementDisqualificationReason = "";
     private boolean warrantyStarted;
     private boolean warrantyDisqualified;
+    private boolean blessingStarted;
+    private boolean blessingDisqualified;
     private final Set<String> armedDragonIds = new LinkedHashSet<>();
     private final Set<String> spoiledDragonIds = new LinkedHashSet<>();
     private boolean initialized;
@@ -131,6 +133,16 @@ public class CorruptionSavedData extends SavedData {
         if (tag.contains("warranty_disqualified", Tag.TAG_BYTE)) {
             data.warrantyDisqualified = tag.getBoolean("warranty_disqualified");
         }
+        if (tag.contains("blessing_started", Tag.TAG_BYTE)) {
+            data.blessingStarted = tag.getBoolean("blessing_started");
+        } else {
+            data.blessingStarted = data.warrantyStarted;
+        }
+        if (tag.contains("blessing_disqualified", Tag.TAG_BYTE)) {
+            data.blessingDisqualified = tag.getBoolean("blessing_disqualified");
+        } else {
+            data.blessingDisqualified = data.initialized && (!data.blessingStarted || data.warrantyDisqualified);
+        }
         if (tag.contains("armed_dragon_ids", Tag.TAG_STRING)) {
             data.armedDragonIds.addAll(parseCsvSet(tag.getString("armed_dragon_ids")));
         }
@@ -166,6 +178,8 @@ public class CorruptionSavedData extends SavedData {
         tag.putString("server_achievement_disqualification_reason", serverAchievementDisqualificationReason);
         tag.putBoolean("warranty_started", warrantyStarted);
         tag.putBoolean("warranty_disqualified", warrantyDisqualified);
+        tag.putBoolean("blessing_started", blessingStarted);
+        tag.putBoolean("blessing_disqualified", blessingDisqualified);
         tag.putString("armed_dragon_ids", csv(armedDragonIds));
         tag.putString("spoiled_dragon_ids", csv(spoiledDragonIds));
         tag.putBoolean("initialized", true);
@@ -363,6 +377,32 @@ public class CorruptionSavedData extends SavedData {
             return false;
         }
         this.warrantyDisqualified = warrantyDisqualified;
+        setDirty();
+        return true;
+    }
+
+    public boolean isBlessingStarted() {
+        return blessingStarted;
+    }
+
+    public boolean setBlessingStarted(boolean blessingStarted) {
+        if (this.blessingStarted == blessingStarted) {
+            return false;
+        }
+        this.blessingStarted = blessingStarted;
+        setDirty();
+        return true;
+    }
+
+    public boolean isBlessingDisqualified() {
+        return blessingDisqualified;
+    }
+
+    public boolean setBlessingDisqualified(boolean blessingDisqualified) {
+        if (this.blessingDisqualified == blessingDisqualified) {
+            return false;
+        }
+        this.blessingDisqualified = blessingDisqualified;
         setDirty();
         return true;
     }

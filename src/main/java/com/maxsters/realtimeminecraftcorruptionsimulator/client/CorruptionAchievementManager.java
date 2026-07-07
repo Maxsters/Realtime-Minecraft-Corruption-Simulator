@@ -1,6 +1,7 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
+import com.maxsters.realtimeminecraftcorruptionsimulator.achievements.AchievementRules;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionTarget;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.AchievementWorldStateSnapshot;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
@@ -61,7 +62,7 @@ public final class CorruptionAchievementManager {
             new Achievement("dragon_ten", "Warranty Voided", "Start at 10% with all targets except optional Camera; never change settings; defeat the Ender Dragon.", Blocks.DRAGON_EGG, 1),
             new Achievement("skyhook", "Skyhook", "Gain 300 vertical blocks in 5s at 35%+ corruption with Entities & Timing enabled.", Blocks.SLIME_BLOCK, SKYHOOK_REQUIRED_BLOCKS),
             new Achievement("nightmare", "It Was Just a Nightmare", "Start at 100% corruption with all targets and auto -1% every 30s; never die before 0%.", Blocks.CRYING_OBSIDIAN, 100),
-            new Achievement("diamond_blessing", "A Blessing in Disguise", "Mine 7 diamond ore blocks at 10%+ corruption with all targets enabled.", Blocks.DIAMOND_ORE, DIAMOND_REQUIRED_BLOCKS),
+            new Achievement("diamond_blessing", "A Blessing in Disguise", "Start at 10% with all targets except optional Camera; never change settings; mine 7 diamond ore blocks.", Blocks.DIAMOND_ORE, DIAMOND_REQUIRED_BLOCKS),
             new Achievement("stable_release", "Stable Release", "Play 90m at 0% corruption with auto off and every target disabled.", Blocks.EMERALD_BLOCK, minutes(90))
     };
 
@@ -169,7 +170,8 @@ public final class CorruptionAchievementManager {
         }
         ensureWorldContext(worldKey);
         return activeWorldState.disqualified
-                || indexOf(achievement) == WARRANTY_VOIDED && activeWorldState.warrantyDisqualified;
+                || indexOf(achievement) == WARRANTY_VOIDED && activeWorldState.warrantyDisqualified
+                || indexOf(achievement) == DIAMOND_BLESSING && activeWorldState.blessingDisqualified;
     }
 
     public static String disqualificationReason(Achievement achievement) {
@@ -194,6 +196,9 @@ public final class CorruptionAchievementManager {
         }
         if (index == WARRANTY_VOIDED && currentDragonFightSpoiled(Minecraft.getInstance())) {
             return "current Ender Dragon fight was disqualified before the kill";
+        }
+        if (index == DIAMOND_BLESSING && activeWorldState.blessingDisqualified) {
+            return "world did not keep 10% corruption with all required targets";
         }
         return "";
     }
@@ -543,8 +548,9 @@ public final class CorruptionAchievementManager {
     private static boolean diamondBlessingEligible(Minecraft minecraft, CorruptionStateSnapshot snapshot) {
         return snapshot != null
                 && eligibleSurvival(minecraft)
-                && snapshot.getCorruptionLevel() >= 10
-                && allTargets(snapshot);
+                && activeWorldState.blessingStarted
+                && !activeWorldState.blessingDisqualified
+                && AchievementRules.blessingRuntimeSettingsActive(snapshot.getCorruptionLevel(), snapshot.getEnabledTargetsMask());
     }
 
     private static boolean stableReleaseSettingsActive(CorruptionStateSnapshot snapshot) {
@@ -815,6 +821,8 @@ public final class CorruptionAchievementManager {
         private boolean disqualified;
         private String disqualificationReason = "";
         private boolean warrantyDisqualified;
+        private boolean blessingStarted;
+        private boolean blessingDisqualified;
         private final Set<String> spoiledDragonIds = new LinkedHashSet<>();
 
         private static WorldAchievementState from(AchievementWorldStateSnapshot snapshot) {
@@ -825,6 +833,8 @@ public final class CorruptionAchievementManager {
             state.disqualified = snapshot.disqualified();
             state.disqualificationReason = snapshot.disqualificationReason();
             state.warrantyDisqualified = snapshot.warrantyDisqualified();
+            state.blessingStarted = snapshot.blessingStarted();
+            state.blessingDisqualified = snapshot.blessingDisqualified();
             state.spoiledDragonIds.addAll(snapshot.spoiledDragonIds());
             return state;
         }
