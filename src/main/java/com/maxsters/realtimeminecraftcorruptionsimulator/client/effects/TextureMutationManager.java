@@ -702,49 +702,9 @@ public final class TextureMutationManager {
         }
     }
 
-    private static final class PendingGuiTextureScan {
-        private final String signature;
-        private final CorruptionEffectStack stack;
-        private final Map<ResourceLocation, Resource> resources;
-        private final List<ResourceLocation> textureIds;
-        private final List<ResourceLocation> donorTextureIds;
-        private final Set<ResourceLocation> staleTextureIds;
-        private int ordinal;
-        private int mutatedCount;
-
-        private PendingGuiTextureScan(String signature, CorruptionEffectStack stack, Map<ResourceLocation, Resource> resources, List<ResourceLocation> textureIds, List<ResourceLocation> donorTextureIds, Set<ResourceLocation> staleTextureIds) {
-            this.signature = signature;
-            this.stack = stack;
-            this.resources = resources;
-            this.textureIds = textureIds;
-            this.donorTextureIds = donorTextureIds;
-            this.staleTextureIds = staleTextureIds;
-        }
-    }
-
     private record GuiTextureInventory(Map<ResourceLocation, Resource> resources, List<ResourceLocation> textureIds) {
         private static GuiTextureInventory empty() {
             return new GuiTextureInventory(Map.of(), List.of());
-        }
-    }
-
-    private static final class PendingGlobalTextureScan {
-        private final String signature;
-        private final CorruptionEffectStack stack;
-        private final Map<ResourceLocation, Resource> resources;
-        private final List<ResourceLocation> textureIds;
-        private final List<ResourceLocation> donorTextureIds;
-        private final Set<ResourceLocation> staleTextureIds;
-        private int ordinal;
-        private int mutatedCount;
-
-        private PendingGlobalTextureScan(String signature, CorruptionEffectStack stack, Map<ResourceLocation, Resource> resources, List<ResourceLocation> textureIds, List<ResourceLocation> donorTextureIds, Set<ResourceLocation> staleTextureIds) {
-            this.signature = signature;
-            this.stack = stack;
-            this.resources = resources;
-            this.textureIds = textureIds;
-            this.donorTextureIds = donorTextureIds;
-            this.staleTextureIds = staleTextureIds;
         }
     }
 
