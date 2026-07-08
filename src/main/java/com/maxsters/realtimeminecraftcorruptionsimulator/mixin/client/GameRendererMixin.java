@@ -19,13 +19,16 @@ public abstract class GameRendererMixin {
                     "pick(F)V",
                     "m_109087_(F)V"
             },
-            at = @At("RETURN"),
+            at = @At("HEAD"),
+            cancellable = true,
             remap = false,
             require = 0
     )
     @Dynamic("Targets both mapped dev names and SRG runtime aliases for GameRenderer#pick.")
-    private void rmc$corruptPickResult(float partialTick, CallbackInfo callback) {
-        InteractionCorruptionHooks.corruptPick(Minecraft.getInstance(), partialTick);
+    private void rmc$corruptPickRay(float partialTick, CallbackInfo callback) {
+        if (InteractionCorruptionHooks.pickWithCorruptedRay(Minecraft.getInstance(), partialTick)) {
+            callback.cancel();
+        }
     }
 
     @Inject(

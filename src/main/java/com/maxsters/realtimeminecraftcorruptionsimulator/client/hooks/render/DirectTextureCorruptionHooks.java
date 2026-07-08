@@ -156,6 +156,9 @@ public final class DirectTextureCorruptionHooks {
         if (path.startsWith("textures/gui/") || path.startsWith("textures/font/") || path.startsWith("textures/atlas/")) {
             return false;
         }
+        if (isDestroyStageTexture(path)) {
+            return true;
+        }
         return !path.startsWith("textures/block/")
                 && !path.startsWith("textures/item/")
                 && !path.startsWith("textures/particle/");
@@ -171,13 +174,22 @@ public final class DirectTextureCorruptionHooks {
         if (path.startsWith("textures/environment/")) {
             return 0;
         }
-        if (path.startsWith("textures/entity/")) {
+        if (isDestroyStageTexture(path)) {
             return 1;
         }
-        if (path.startsWith("textures/models/") || path.startsWith("textures/effect/") || path.startsWith("textures/misc/")) {
+        if (path.startsWith("textures/entity/")) {
             return 2;
         }
-        return 3;
+        if (path.startsWith("textures/models/") || path.startsWith("textures/effect/") || path.startsWith("textures/misc/")) {
+            return 3;
+        }
+        return 4;
+    }
+
+    private static boolean isDestroyStageTexture(String path) {
+        return path != null
+                && path.startsWith("textures/block/destroy_stage_")
+                && path.endsWith(".png");
     }
 
     private static float signed(long seed, float amplitude) {

@@ -1,13 +1,19 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ClientCorruptionEffects;
+import com.maxsters.realtimeminecraftcorruptionsimulator.mechanics.InteractionRayCorruptionMechanics;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.util.Mth;
-import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySelector;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.decoration.ItemFrame;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -15,116 +21,111 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
-import java.util.Locale;
+import java.util.function.Predicate;
 
 @OnlyIn(Dist.CLIENT)
 public final class InteractionCorruptionHooks {
+    private static final float MIN_INTERACTION_INTENSITY = 0.00025F;
+
     private InteractionCorruptionHooks() {
     }
 
-    public static void corruptPick(Minecraft minecraft, float partialTick) {
-        if (minecraft == null || minecraft.player == null || minecraft.level == null || minecraft.hitResult == null
-                || minecraft.hitResult.getType() == HitResult.Type.MISS) {
-            return;
+    public static boolean pickWithCorruptedRay(Minecraft minecraft, float partialTick) {
+        if (minecraft == null || minecraft.level == null || minecraft.gameMode == null) {
+            return false;
+        }
+
+        Entity cameraEntity = minecraft.getCameraEntity();
+        if (cameraEntity == null) {
+            return false;
         }
 
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForGameplay();
-        if (!stack.clientDriftEnabled()) {
-            return;
-        }
         if (!stack.activeOrExtreme(CorruptionSurface.INTERACTION_ROUTING)) {
-            return;
-        }
-
-        Player player = minecraft.player;
-        HitResult hitResult = minecraft.hitResult;
-        if (hitResult instanceof BlockHitResult && blockTargetingBroken(minecraft, stack)) {
-            missCurrentTarget(minecraft, player, hitResult, partialTick, stack, blockTargetId(minecraft), 0.0F);
-            return;
-        }
-        if (!(hitResult instanceof EntityHitResult)) {
-            return;
-        }
-
-        String targetId = targetId(hitResult);
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING),
-                stack.targetIntensity(CorruptionSurface.INTERACTION_ROUTING, targetId)
-        ), 0.0F, 1.0F);
-        long clock = gameTime(minecraft) ^ Float.floatToIntBits(partialTick);
-        long seed = stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, targetId, player.getId() ^ (int) clock);
-        float chance = stack.extreme(CorruptionSurface.INTERACTION_ROUTING)
-                ? 0.94F
-                : Mth.clamp(0.04F + intensity * 0.76F + stack.instability() * 0.10F, 0.0F, 0.88F);
-        if (stack.unit(CorruptionSurface.INTERACTION_ROUTING, targetId + ":client_pick", (int) (seed ^ 0x5049434BL)) > chance) {
-            return;
-        }
-
-        missCurrentTarget(minecraft, player, hitResult, partialTick, stack, targetId, intensity);
-    }
-
-    private static boolean blockTargetingBroken(Minecraft minecraft, CorruptionEffectStack stack) {
-        String targetId = blockTargetId(minecraft);
-        float intensity = Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING),
-                stack.targetIntensity(CorruptionSurface.INTERACTION_ROUTING, targetId)
-        ), 0.0F, 1.0F);
-        if (intensity <= 0.0F) {
             return false;
         }
-        long seed = stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, targetId, 0x424C4F43);
-        float chance = stack.extreme(CorruptionSurface.INTERACTION_ROUTING)
-                ? 0.96F
-                : Mth.clamp(Math.max(0.0F, intensity - 0.18F) * 0.86F + stack.instability() * 0.12F, 0.0F, 0.88F);
-        return stack.unit(CorruptionSurface.INTERACTION_ROUTING, targetId + ":ray_function", (int) (seed ^ 0x524159)) < chance;
-    }
 
-    private static void missCurrentTarget(Minecraft minecraft, Player player, HitResult hitResult, float partialTick, CorruptionEffectStack stack, String targetId, float intensity) {
-        Vec3 location = hitResult.getLocation();
-        Vec3 view = player.getViewVector(partialTick);
-        Direction direction = Direction.getNearest(view.x, view.y, view.z).getOpposite();
-        long clock = gameTime(minecraft) ^ Float.floatToIntBits(partialTick);
-        long seed = stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, targetId, player.getId() ^ (int) clock);
-        if (unit(seed ^ 0x4F464653L) < intensity * 0.46F) {
-            location = location.add(
-                    signed(seed ^ 0x584F4646L, intensity * 0.28D),
-                    signed(seed ^ 0x594F4646L, intensity * 0.18D),
-                    signed(seed ^ 0x5A4F4646L, intensity * 0.28D)
-            );
+        InteractionRayCorruptionMechanics.RayMutation ray = InteractionRayCorruptionMechanics.mutateCameraRay(
+                stack,
+                cameraEntity,
+                partialTick,
+                minecraft.gameMode.getPickRange(),
+                MIN_INTERACTION_INTENSITY
+        );
+        if (!ray.mutated()) {
+            return false;
         }
-        minecraft.hitResult = BlockHitResult.miss(location, direction, BlockPos.containing(location));
-        minecraft.crosshairPickEntity = null;
-    }
 
-    private static String blockTargetId(Minecraft minecraft) {
-        String dimension = minecraft == null || minecraft.level == null ? "unknown" : minecraft.level.dimension().location().toString();
-        return "client_block_targeting:" + dimension;
-    }
+        minecraft.getProfiler().push("pick");
+        try {
+            minecraft.crosshairPickEntity = null;
+            if (ray.disabled()) {
+                minecraft.hitResult = miss(ray.origin(), ray.direction());
+                return true;
+            }
 
-    private static String targetId(HitResult hitResult) {
-        if (hitResult instanceof BlockHitResult blockHit) {
-            return "client_hover:block:" + blockHit.getBlockPos().getX() + ":" + blockHit.getBlockPos().getY() + ":" + blockHit.getBlockPos().getZ();
+            runCorruptedPick(minecraft, cameraEntity, ray);
+            return true;
+        } finally {
+            minecraft.getProfiler().pop();
         }
-        if (hitResult instanceof EntityHitResult entityHit) {
-            return "client_hover:entity:" + entityHit.getEntity().getType();
+    }
+
+    private static void runCorruptedPick(Minecraft minecraft, Entity cameraEntity, InteractionRayCorruptionMechanics.RayMutation ray) {
+        Vec3 origin = ray.origin();
+        Vec3 direction = ray.direction().normalize();
+        double blockRange = ray.range();
+        Vec3 blockEnd = origin.add(direction.scale(blockRange));
+
+        HitResult blockHit = minecraft.level.clip(new ClipContext(
+                origin,
+                blockEnd,
+                ClipContext.Block.OUTLINE,
+                ClipContext.Fluid.NONE,
+                cameraEntity
+        ));
+        minecraft.hitResult = blockHit;
+
+        double entityRange = blockRange;
+        boolean limitedEntityRange = !minecraft.gameMode.hasFarPickRange() && entityRange > 3.0D;
+
+        double maxEntityDistanceSqr = entityRange * entityRange;
+        if (blockHit != null) {
+            maxEntityDistanceSqr = blockHit.getLocation().distanceToSqr(origin);
         }
-        return "client_hover:" + hitResult.getType().name().toLowerCase(Locale.ROOT);
+
+        Vec3 entityEnd = origin.add(direction.scale(entityRange));
+        AABB searchBox = cameraEntity.getBoundingBox().expandTowards(direction.scale(entityRange)).inflate(1.0D);
+        Predicate<Entity> predicate = EntitySelector.NO_SPECTATORS.and(Entity::isPickable);
+        EntityHitResult entityHit = ProjectileUtil.getEntityHitResult(cameraEntity, origin, entityEnd, searchBox, predicate, maxEntityDistanceSqr);
+        if (entityHit == null) {
+            return;
+        }
+
+        Entity target = entityHit.getEntity();
+        Vec3 entityLocation = entityHit.getLocation();
+        double entityDistanceSqr = origin.distanceToSqr(entityLocation);
+        if (limitedEntityRange && entityDistanceSqr > 9.0D) {
+            minecraft.hitResult = BlockHitResult.miss(entityLocation, hitDirection(direction), BlockPos.containing(entityLocation));
+            return;
+        }
+        if (entityDistanceSqr >= maxEntityDistanceSqr && minecraft.hitResult != null) {
+            return;
+        }
+
+        minecraft.hitResult = entityHit;
+        if (target instanceof LivingEntity || target instanceof ItemFrame) {
+            minecraft.crosshairPickEntity = target;
+        }
     }
 
-    private static long gameTime(Minecraft minecraft) {
-        return minecraft.level == null ? System.currentTimeMillis() / 50L : minecraft.level.getGameTime();
+    private static BlockHitResult miss(Vec3 origin, Vec3 direction) {
+        Vec3 location = origin == null ? Vec3.ZERO : origin;
+        Vec3 rayDirection = direction == null || direction.lengthSqr() < 1.0E-7D ? new Vec3(0.0D, 0.0D, 1.0D) : direction.normalize();
+        return BlockHitResult.miss(location, hitDirection(rayDirection), BlockPos.containing(location));
     }
 
-    private static double signed(long seed, double amplitude) {
-        return (unit(seed) * 2.0D - 1.0D) * amplitude;
-    }
-
-    private static float unit(long value) {
-        value ^= value >>> 33;
-        value *= 0xff51afd7ed558ccdL;
-        value ^= value >>> 33;
-        value *= 0xc4ceb9fe1a85ec53L;
-        value ^= value >>> 33;
-        return ((value >>> 40) & 0xFF_FFFFL) / 16_777_215.0F;
+    private static Direction hitDirection(Vec3 direction) {
+        return Direction.getNearest(direction.x, direction.y, direction.z);
     }
 }

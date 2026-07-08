@@ -501,6 +501,9 @@ public final class TextureMutationManager {
         if (path.startsWith(GUI_TEXTURE_PREFIX + "/") || path.startsWith("textures/font/") || path.startsWith("textures/atlas/")) {
             return false;
         }
+        if (isDestroyStageTexturePath(path)) {
+            return true;
+        }
         return !isAtlasBackedTexturePath(path);
     }
 
@@ -520,16 +523,25 @@ public final class TextureMutationManager {
         if (isBlockEntityTexturePath(path)) {
             return 0;
         }
-        if (path.startsWith("textures/environment/")) {
+        if (isDestroyStageTexturePath(path)) {
             return 1;
         }
-        if (path.startsWith("textures/misc/") || path.startsWith("textures/effect/")) {
+        if (path.startsWith("textures/environment/")) {
             return 2;
         }
-        if (path.startsWith("textures/entity/") || path.startsWith("textures/models/") || path.startsWith("textures/painting/")) {
+        if (path.startsWith("textures/misc/") || path.startsWith("textures/effect/")) {
             return 3;
         }
-        return 4;
+        if (path.startsWith("textures/entity/") || path.startsWith("textures/models/") || path.startsWith("textures/painting/")) {
+            return 4;
+        }
+        return 5;
+    }
+
+    private static boolean isDestroyStageTexturePath(String path) {
+        return path != null
+                && path.startsWith("textures/block/destroy_stage_")
+                && path.endsWith(".png");
     }
 
     private static boolean isBlockEntityTexturePath(String path) {

@@ -101,6 +101,7 @@ public final class CorruptionMechanicsManager {
     private static final float MIN_DAY_TIME_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
     private static final float MIN_FIRE_MECHANICS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
     private static final float MIN_POWDER_SNOW_MECHANICS_INTENSITY = MIN_RUNTIME_MECHANICS_INTENSITY;
+    private static final String BLOCK_BREAK_SPEED_TARGET_ID = "block_break_speed:global";
     private static final int MAX_CORRUPTED_NO_PHYSICS_TICKS = 24;
     private static volatile boolean serverMutationSuspended;
     private static volatile long serverMutationResumeTick;
@@ -989,7 +990,8 @@ public final class CorruptionMechanicsManager {
             return false;
         }
         float intensity = Mth.clamp(Math.max(stack.targetIntensity(CorruptionSurface.INTERACTION_ROUTING, targetId), stack.intensity(CorruptionSurface.INTERACTION_ROUTING)), 0.0F, 1.0F);
-        long hash = stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, targetId, player.getId() ^ target.getId() ^ 0x4154544B);
+        int salt = player.level().dimension().location().hashCode() ^ InteractionRayCorruptionMechanics.entitySalt(target) ^ 0x4154544B;
+        long hash = stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, targetId, salt);
         return unitHash(hash ^ 0x43414E43L) < Mth.clamp(0.04F + intensity * 0.78F + stack.instability() * 0.10F, 0.0F, 0.96F);
     }
 
@@ -1014,12 +1016,12 @@ public final class CorruptionMechanicsManager {
                 stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING),
                 stack.targetIntensity(CorruptionSurface.INTERACTION_ROUTING, targetId)
         ), 0.0F, 1.0F);
-        int salt = player.getId() ^ phase.hashCode() ^ itemId.hashCode();
+        int salt = player.level().dimension().location().hashCode() ^ phase.hashCode() ^ itemId.hashCode();
         if (pos != null) {
-            salt ^= pos.hashCode();
+            salt ^= InteractionRayCorruptionMechanics.positionSalt(pos);
         }
         if (target != null) {
-            salt ^= target.getId() * 31;
+            salt ^= InteractionRayCorruptionMechanics.entitySalt(target) * 31;
         }
         long hash = stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, targetId, salt);
         float chance = stack.extreme(CorruptionSurface.INTERACTION_ROUTING)
@@ -1028,9 +1030,50 @@ public final class CorruptionMechanicsManager {
         return stack.unit(CorruptionSurface.INTERACTION_ROUTING, targetId + ":cancel", (int) (hash ^ 0x43414E43L)) < chance;
     }
 
+    public static float corruptBlockBreakSpeed(Player player, BlockState state, BlockPos pos, float original) {
+        if (player == null || state == null || player.level() == null || player.isSpectator() || original <= 0.0F) {
+            return original;
+        }
+
+        CorruptionEffectStack stack = blockBreakGameplayStackFor(player);
+        String targetId = blockBreakTargetId();
+        if (!blockBreakInteractionActive(stack, targetId)) {
+            return original;
+        }
+
+        float intensity = blockBreakInteractionIntensity(stack, targetId);
+        long hash = blockBreakInteractionHash(stack, player, "speed_multiplier");
+        float chance = stack.extreme(CorruptionSurface.INTERACTION_ROUTING)
+                ? 0.98F
+                : Mth.clamp(0.05F + intensity * 0.78F + stack.instability() * 0.08F, 0.0F, 0.92F);
+        if (unitHash(hash ^ 0x53504544L) > chance) {
+            return original;
+        }
+
+        boolean faster = unitHash(hash ^ 0x46415354L) < 0.50F;
+        float magnitude = 0.18F + unitHash(hash ^ 0x4D41474EL) * 0.82F;
+        float multiplier;
+        if (faster) {
+            float maximumBoost = stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 160.0F : 54.0F;
+            multiplier = 1.0F + magnitude * magnitude * (4.0F + intensity * maximumBoost);
+        } else {
+            float minimum = stack.extreme(CorruptionSurface.INTERACTION_ROUTING) && unitHash(hash ^ 0x5A45524FL) < 0.18F ? 0.0F : 0.003F;
+            float slowPressure = magnitude * (0.64F + intensity * 0.36F);
+            multiplier = Mth.clamp(1.0F - slowPressure, minimum, 0.86F);
+        }
+
+        float mutated = original * multiplier;
+        return (float) Mth.clamp(mutated, 0.0D, Math.max(64.0D, original * 192.0D));
+    }
+
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
         cancelPlayerInteraction(event, "right_click_block", event.getPos(), null);
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+        cancelPlayerInteraction(event, "left_click_block", event.getPos(), null);
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
@@ -1058,6 +1101,14 @@ public final class CorruptionMechanicsManager {
         }
         event.setCancellationResult(InteractionResult.FAIL);
         event.setCanceled(true);
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onBreakSpeed(PlayerEvent.BreakSpeed event) {
+        Player player = event.getEntity();
+        BlockPos pos = event.getPosition().orElse(null);
+        float mutated = corruptBlockBreakSpeed(player, event.getState(), pos, event.getNewSpeed());
+        event.setNewSpeed(mutated);
     }
 
     public static boolean shouldDisableEntityTargeting(Entity entity, String phase) {
@@ -2391,6 +2442,35 @@ public final class CorruptionMechanicsManager {
 
     private static boolean targetActive(CorruptionEffectStack stack, CorruptionSurface surface, String targetId, float minimumIntensity) {
         return stack.extreme(surface) || (stack.intensity(surface) >= minimumIntensity && stack.active(surface, targetId));
+    }
+
+    private static CorruptionEffectStack blockBreakGameplayStackFor(Player player) {
+        if (player == null || player.level() == null) {
+            return CorruptionEffectStack.local(0);
+        }
+        return player.level().isClientSide ? activeStackFor(player) : authoritativeGameplayStackFor(player);
+    }
+
+    private static boolean blockBreakInteractionActive(CorruptionEffectStack stack, String targetId) {
+        return stack != null
+                && (surfaceActive(stack, CorruptionSurface.INTERACTION_ROUTING, MIN_PLAYER_MECHANICS_INTENSITY)
+                || targetActive(stack, CorruptionSurface.INTERACTION_ROUTING, targetId, MIN_PLAYER_MECHANICS_INTENSITY));
+    }
+
+    private static float blockBreakInteractionIntensity(CorruptionEffectStack stack, String targetId) {
+        return Mth.clamp(Math.max(
+                stack.extreme(CorruptionSurface.INTERACTION_ROUTING) ? 1.0F : stack.intensity(CorruptionSurface.INTERACTION_ROUTING),
+                stack.targetIntensity(CorruptionSurface.INTERACTION_ROUTING, targetId)
+        ), 0.0F, 1.0F);
+    }
+
+    private static long blockBreakInteractionHash(CorruptionEffectStack stack, Player player, String channel) {
+        int salt = channel.hashCode() ^ player.level().dimension().location().hashCode();
+        return stack.stableLong(CorruptionSurface.INTERACTION_ROUTING, blockBreakTargetId() + ":" + channel, salt);
+    }
+
+    private static String blockBreakTargetId() {
+        return BLOCK_BREAK_SPEED_TARGET_ID;
     }
 
     private static boolean collisionMechanicsActive(CorruptionEffectStack stack, String targetId) {

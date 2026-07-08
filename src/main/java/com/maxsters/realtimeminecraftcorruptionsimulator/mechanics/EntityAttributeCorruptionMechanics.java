@@ -38,6 +38,7 @@ final class EntityAttributeCorruptionMechanics {
             new EntityMechanic("jump_strength", () -> Attributes.JUMP_STRENGTH, AttributeModifier.Operation.MULTIPLY_TOTAL, 1.70D, -0.98D, 6.0D, 20.0D),
             new EntityMechanic("swim_speed", () -> ForgeMod.SWIM_SPEED.get(), AttributeModifier.Operation.MULTIPLY_TOTAL, 1.70D, -0.98D, 7.0D, 22.0D),
             new EntityMechanic("gravity", () -> ForgeMod.ENTITY_GRAVITY.get(), AttributeModifier.Operation.MULTIPLY_TOTAL, 1.90D, -0.99D, 8.0D, 28.0D),
+            new EntityMechanic("entity_reach", () -> ForgeMod.ENTITY_REACH.get(), AttributeModifier.Operation.ADDITION, 5.50D, -2.9D, 18.0D, 64.0D),
             new EntityMechanic("step_height", () -> ForgeMod.STEP_HEIGHT_ADDITION.get(), AttributeModifier.Operation.ADDITION, 1.80D, -1.0D, 3.5D, 8.0D)
     };
     private static final Map<LivingEntity, Integer> SYNC_SIGNATURES = Collections.synchronizedMap(new WeakHashMap<>());
