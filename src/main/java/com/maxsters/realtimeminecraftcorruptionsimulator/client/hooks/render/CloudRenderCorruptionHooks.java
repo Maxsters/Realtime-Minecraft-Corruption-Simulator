@@ -61,7 +61,7 @@ public final class CloudRenderCorruptionHooks {
         }
 
         int corner = ordinal & 3;
-        long seed = stack.stableLong(CorruptionSurface.WORLD_RENDER, context.renderSignature(), face ^ 0x56455254);
+        long seed = stack.stableLong(CorruptionSurface.MODEL_GEOMETRY, context.renderSignature(), face ^ 0x56455254);
         int mode = Math.floorMod((int) (seed >>> 27), 8);
         double wave = Math.sin((x + z) * (0.018D + intensity * 0.075D) + unit(seed ^ 0x57415645L) * Mth.TWO_PI);
         double dx = signed(seed ^ (corner * 0x9E3779B97F4A7C15L), intensity * 2.8D);
@@ -111,7 +111,7 @@ public final class CloudRenderCorruptionHooks {
             }
         }
 
-        if (stack.extreme(CorruptionSurface.WORLD_RENDER) || unit(seed ^ 0x45585452L) < intensity * 0.20F) {
+        if (stack.extreme(CorruptionSurface.MODEL_GEOMETRY) || unit(seed ^ 0x45585452L) < intensity * 0.20F) {
             double flatten = 0.004D + unit(seed ^ 0x504C414EL) * 0.08D;
             y *= flatten;
         }
@@ -165,19 +165,19 @@ public final class CloudRenderCorruptionHooks {
     }
 
     private static boolean cloudMutationActive(CorruptionEffectStack stack) {
-        return stack.activeOrExtreme(CorruptionSurface.WORLD_RENDER)
+        return stack.activeOrExtreme(CorruptionSurface.MODEL_GEOMETRY)
                 || stack.activeOrExtreme(CorruptionSurface.MODEL_UV)
                 || stack.activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY)
                 || stack.activeOrExtreme(CorruptionSurface.LIGHT_FIELD);
     }
 
     private static float cloudIntensity(CorruptionEffectStack stack, int face) {
-        if (stack.extreme(CorruptionSurface.WORLD_RENDER)) {
+        if (stack.extreme(CorruptionSurface.MODEL_GEOMETRY)) {
             return 1.0F;
         }
         String targetId = "cloud:face:" + face;
-        float world = Math.max(stack.targetIntensity(CorruptionSurface.WORLD_RENDER, targetId), stack.intensity(CorruptionSurface.WORLD_RENDER) * 0.64F);
-        return Mth.clamp(world, 0.0F, 1.0F);
+        float model = Math.max(stack.targetIntensity(CorruptionSurface.MODEL_GEOMETRY, targetId), stack.intensity(CorruptionSurface.MODEL_GEOMETRY) * 0.64F);
+        return Mth.clamp(model, 0.0F, 1.0F);
     }
 
     private static float cloudUvIntensity(CorruptionEffectStack stack, int face) {
@@ -209,7 +209,7 @@ public final class CloudRenderCorruptionHooks {
     private static String cloudRenderSignature(CorruptionEffectStack stack) {
         return stack.level()
                 + ":" + stack.fixedSeed()
-                + ":" + stack.bucket(CorruptionSurface.WORLD_RENDER, 0x434C4F44, 96)
+                + ":" + stack.bucket(CorruptionSurface.MODEL_GEOMETRY, 0x434C4F44, 96)
                 + ":" + stack.bucket(CorruptionSurface.LIGHT_FIELD, 0x4C494748, 96);
     }
 

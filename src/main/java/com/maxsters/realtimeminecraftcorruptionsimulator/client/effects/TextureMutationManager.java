@@ -3,6 +3,7 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.effects;
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.gui.GuiAtlasSpriteCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.DirectTextureCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionStateSnapshot;
@@ -250,6 +251,7 @@ public final class TextureMutationManager {
 
         List<ResourceLocation> textureIds = new ArrayList<>(resources.keySet());
         textureIds.sort(TextureMutationManager::compareGlobalTexturePriority);
+        DirectTextureCorruptionHooks.updateTexturePool(textureIds);
 
         pendingGlobalTextureScan = new PendingGlobalTextureScan(signature, stack, resources, textureIds, List.of(), new HashSet<>(MUTATED_GLOBAL_TEXTURES));
         processPendingGlobalTextureMutations(minecraft);

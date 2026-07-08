@@ -1,11 +1,14 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.CloudRenderCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.BlockOutlineCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.BreakingTextureCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.DirectTextureCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.LightingCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.SkyRenderCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.WeatherRenderCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.WorldRenderCorruptionHooks;
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -14,6 +17,8 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -55,7 +60,63 @@ public abstract class LevelRendererMixin {
             require = 0
     )
     private void rmc$refreshCorruptedStars(PoseStack poseStack, Matrix4f projectionMatrix, float partialTick, net.minecraft.client.Camera camera, boolean fog, Runnable setupFog, CallbackInfo callback) {
+        DirectTextureCorruptionHooks.clearRawTexture();
         SkyRenderCorruptionHooks.onRenderSky((LevelRenderer) (Object) this);
+    }
+
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;setShaderTexture(ILnet/minecraft/resources/ResourceLocation;)V", remap = false),
+            remap = false,
+            require = 0
+    )
+    private void rmc$corruptSkyDirectTexture(int slot, ResourceLocation texture) {
+        ResourceLocation replacement = DirectTextureCorruptionHooks.bindTexture(texture, "sky_direct_texture", texture == null ? 0x534B59 : texture.hashCode(), true);
+        RenderSystem.setShaderTexture(slot, replacement);
+    }
+
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/VertexConsumer;uv(FF)Lcom/mojang/blaze3d/vertex/VertexConsumer;", remap = false),
+            remap = false,
+            require = 0
+    )
+    private VertexConsumer rmc$corruptSkyDirectUv(VertexConsumer consumer, float u, float v) {
+        DirectTextureCorruptionHooks.Uv corrupted = DirectTextureCorruptionHooks.rawUv(u, v);
+        return consumer.uv(corrupted.u(), corrupted.v());
+    }
+
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/VertexConsumer;m_7421_(FF)Lcom/mojang/blaze3d/vertex/VertexConsumer;", remap = false),
+            remap = false,
+            require = 0
+    )
+    private VertexConsumer rmc$corruptSkyDirectUvSrg(VertexConsumer consumer, float u, float v) {
+        DirectTextureCorruptionHooks.Uv corrupted = DirectTextureCorruptionHooks.rawUv(u, v);
+        return consumer.uv(corrupted.u(), corrupted.v());
+    }
+
+    @Inject(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At("RETURN"),
+            remap = false,
+            require = 0
+    )
+    private void rmc$clearSkyDirectTexture(PoseStack poseStack, Matrix4f projectionMatrix, float partialTick, net.minecraft.client.Camera camera, boolean fog, Runnable setupFog, CallbackInfo callback) {
+        DirectTextureCorruptionHooks.clearRawTexture();
     }
 
     @Redirect(
@@ -69,6 +130,32 @@ public abstract class LevelRendererMixin {
     )
     private Object rmc$corruptDestroyTextureStage(List<?> list, int index) {
         return BreakingTextureCorruptionHooks.getDestroyTexture(list, index);
+    }
+
+    @Redirect(
+            method = {
+                    "renderLevel(Lcom/mojang/blaze3d/vertex/PoseStack;FJZLnet/minecraft/client/Camera;Lnet/minecraft/client/renderer/GameRenderer;Lnet/minecraft/client/renderer/LightTexture;Lorg/joml/Matrix4f;)V",
+                    "m_109599_"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/LevelRenderer;renderHitOutline(Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;Lnet/minecraft/world/entity/Entity;DDDLnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;)V", remap = false),
+            remap = false,
+            require = 0
+    )
+    private void rmc$renderCorruptedBlockOutline(LevelRenderer renderer, PoseStack poseStack, VertexConsumer consumer, Entity entity, double cameraX, double cameraY, double cameraZ, BlockPos pos, BlockState state) {
+        BlockOutlineCorruptionHooks.renderHitOutline(poseStack, consumer, entity, cameraX, cameraY, cameraZ, pos, state);
+    }
+
+    @Redirect(
+            method = {
+                    "renderLevel(Lcom/mojang/blaze3d/vertex/PoseStack;FJZLnet/minecraft/client/Camera;Lnet/minecraft/client/renderer/GameRenderer;Lnet/minecraft/client/renderer/LightTexture;Lorg/joml/Matrix4f;)V",
+                    "m_109599_"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/LevelRenderer;m_109637_(Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;Lnet/minecraft/world/entity/Entity;DDDLnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;)V", remap = false),
+            remap = false,
+            require = 0
+    )
+    private void rmc$renderCorruptedBlockOutlineSrg(LevelRenderer renderer, PoseStack poseStack, VertexConsumer consumer, Entity entity, double cameraX, double cameraY, double cameraZ, BlockPos pos, BlockState state) {
+        BlockOutlineCorruptionHooks.renderHitOutline(poseStack, consumer, entity, cameraX, cameraY, cameraZ, pos, state);
     }
 
     @Inject(
@@ -143,9 +230,11 @@ public abstract class LevelRendererMixin {
             require = 0
     )
     private void rmc$corruptWeatherOverlay(LightTexture lightTexture, float partialTick, double cameraX, double cameraY, double cameraZ, CallbackInfo callback) {
+        DirectTextureCorruptionHooks.clearRawTexture();
         WeatherRenderCorruptionHooks.beginWeather(net.minecraft.client.Minecraft.getInstance().level, partialTick, cameraX, cameraY, cameraZ);
         if (WeatherRenderCorruptionHooks.shouldSkipWeatherOverlay(net.minecraft.client.Minecraft.getInstance().level, partialTick)) {
             WeatherRenderCorruptionHooks.endWeather();
+            DirectTextureCorruptionHooks.clearRawTexture();
             callback.cancel();
         }
     }
@@ -161,6 +250,21 @@ public abstract class LevelRendererMixin {
     )
     private void rmc$endWeatherOverlay(LightTexture lightTexture, float partialTick, double cameraX, double cameraY, double cameraZ, CallbackInfo callback) {
         WeatherRenderCorruptionHooks.endWeather();
+        DirectTextureCorruptionHooks.clearRawTexture();
+    }
+
+    @Redirect(
+            method = {
+                    "renderSnowAndRain(Lnet/minecraft/client/renderer/LightTexture;FDDD)V",
+                    "m_109703_(Lnet/minecraft/client/renderer/LightTexture;FDDD)V"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;setShaderTexture(ILnet/minecraft/resources/ResourceLocation;)V", remap = false),
+            remap = false,
+            require = 0
+    )
+    private void rmc$corruptWeatherDirectTexture(int slot, ResourceLocation texture) {
+        ResourceLocation replacement = DirectTextureCorruptionHooks.bindTexture(texture, "weather_direct_texture", texture == null ? 0x57454154 : texture.hashCode(), true);
+        RenderSystem.setShaderTexture(slot, replacement);
     }
 
     @ModifyVariable(
@@ -427,6 +531,20 @@ public abstract class LevelRendererMixin {
     )
     private void rmc$refreshCorruptedCloudMesh(PoseStack poseStack, Matrix4f projectionMatrix, float partialTick, double cameraX, double cameraY, double cameraZ, CallbackInfo callback) {
         CloudRenderCorruptionHooks.onRenderClouds((LevelRenderer) (Object) this);
+    }
+
+    @Redirect(
+            method = {
+                    "renderClouds(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FDDD)V",
+                    "m_253054_"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;setShaderTexture(ILnet/minecraft/resources/ResourceLocation;)V", remap = false),
+            remap = false,
+            require = 0
+    )
+    private void rmc$corruptCloudDirectTexture(int slot, ResourceLocation texture) {
+        ResourceLocation replacement = DirectTextureCorruptionHooks.bindTexture(texture, "cloud_direct_texture", texture == null ? 0x434C4F44 : texture.hashCode(), false);
+        RenderSystem.setShaderTexture(slot, replacement);
     }
 
     @Inject(

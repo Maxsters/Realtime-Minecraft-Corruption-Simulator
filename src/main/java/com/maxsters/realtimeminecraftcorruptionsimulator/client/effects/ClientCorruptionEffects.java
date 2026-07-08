@@ -37,7 +37,6 @@ public final class ClientCorruptionEffects {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft != null
                 && (ClientCorruptionProtection.isModScreen(minecraft.screen)
-                || ClientCorruptionProtection.isDeathScreen(minecraft.screen)
                 || (minecraft.screen == null && minecraft.level == null && minecraft.player == null))) {
             return INACTIVE_STACK;
         }

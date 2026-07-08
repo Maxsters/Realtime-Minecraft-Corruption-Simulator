@@ -85,6 +85,7 @@
     "client.SubtitleOverlayMixin",
     "client.TheEndGatewayBlockEntityAnimationMixin",
     "client.TheEndGatewayRendererAnimationMixin",
+    "client.TextureStateShardMixin",
     "client.TextureSheetParticleAccessorMixin",
     "client.TerrainParticleMixin",
     "client.ToastInstanceMixin",

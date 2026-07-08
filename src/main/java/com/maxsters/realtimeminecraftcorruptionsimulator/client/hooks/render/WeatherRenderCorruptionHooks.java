@@ -229,6 +229,10 @@ public final class WeatherRenderCorruptionHooks {
     }
 
     public static VertexConsumer uv(VertexConsumer consumer, float u, float v) {
+        DirectTextureCorruptionHooks.Uv directUv = DirectTextureCorruptionHooks.rawUv(u, v);
+        u = directUv.u();
+        v = directUv.v();
+
         WeatherContext context = WEATHER_CONTEXT.get();
         if (context == null || context.intensity <= 0.01F) {
             return consumer.uv(u, v);
