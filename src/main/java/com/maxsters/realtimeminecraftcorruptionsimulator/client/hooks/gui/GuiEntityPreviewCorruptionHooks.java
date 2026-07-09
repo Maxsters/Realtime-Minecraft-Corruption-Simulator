@@ -13,6 +13,15 @@ import net.minecraftforge.registries.ForgeRegistries;
 
 @OnlyIn(Dist.CLIENT)
 public final class GuiEntityPreviewCorruptionHooks {
+    private static final int FAMILY_LAYOUT = 0;
+    private static final int FAMILY_SCALE = 1;
+    private static final int FAMILY_MOUSE_TRACKING = 2;
+    private static final int FAMILY_ROTATION = 3;
+    private static final int FAMILY_RENDER_STATE = 4;
+    private static final int FAMILY_TIMING = 5;
+    private static final int FAMILY_VISIBILITY = 6;
+    private static final int FAMILY_MIXED = 7;
+
     private GuiEntityPreviewCorruptionHooks() {
     }
 
@@ -26,7 +35,11 @@ public final class GuiEntityPreviewCorruptionHooks {
         if (intensity <= 0.025F) {
             return false;
         }
-        int salt = stableSalt(entity, x, y, scale, mouseX, mouseY) ^ 0x48494445;
+        int family = behaviorFamily(stack, entity, x, y, scale);
+        if (!allowsVisibilityMutation(family, stack)) {
+            return false;
+        }
+        int salt = previewSalt(entity, x, y, scale) ^ 0x48494445;
         float chance = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
                 ? 0.26F
                 : Mth.clamp(0.015F + intensity * 0.22F + stack.instability() * 0.06F, 0.0F, 0.24F);
@@ -34,11 +47,17 @@ public final class GuiEntityPreviewCorruptionHooks {
     }
 
     public static int x(LivingEntity entity, int value, int x, int y, int scale, float mouseX, float mouseY) {
-        return Math.round(value + offset(entity, x, y, scale, mouseX, mouseY, 0, 24.0F, 118.0F));
+        if (!allowsPositionMutation(entity, x, y, scale)) {
+            return value;
+        }
+        return Math.round(value + layoutOffset(entity, x, y, scale, 0, 24.0F, 118.0F));
     }
 
     public static int y(LivingEntity entity, int value, int x, int y, int scale, float mouseX, float mouseY) {
-        return Math.round(value + offset(entity, x, y, scale, mouseX, mouseY, 1, 18.0F, 92.0F));
+        if (!allowsPositionMutation(entity, x, y, scale)) {
+            return value;
+        }
+        return Math.round(value + layoutOffset(entity, x, y, scale, 1, 18.0F, 92.0F));
     }
 
     public static int scale(LivingEntity entity, int value, int x, int y, int scale, float mouseX, float mouseY) {
@@ -51,7 +70,11 @@ public final class GuiEntityPreviewCorruptionHooks {
         if (intensity <= 0.025F) {
             return value;
         }
-        long seed = seed(stack, entity, x, y, scale, mouseX, mouseY) ^ 0x5343414CL;
+        int family = behaviorFamily(stack, entity, x, y, scale);
+        if (!allowsScaleMutation(family, stack)) {
+            return value;
+        }
+        long seed = previewSeed(stack, entity, x, y, scale, ":scale", 0x5343414C);
         float multiplier = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
                 ? 0.08F + unit(seed ^ 0x45585452L) * 3.75F
                 : Mth.clamp(1.0F + signed(seed, 0.22F + intensity * 1.35F), 0.16F, 2.85F);
@@ -62,11 +85,17 @@ public final class GuiEntityPreviewCorruptionHooks {
     }
 
     public static float mouseX(LivingEntity entity, float value, int x, int y, int scale, float mouseX, float mouseY) {
-        return value + offset(entity, x, y, scale, mouseX, mouseY, 2, 26.0F, 160.0F);
+        if (!allowsMouseMutation(entity, x, y, scale)) {
+            return value;
+        }
+        return corruptMouseCoordinate(entity, value, x, y, scale, mouseX, mouseY, 0);
     }
 
     public static float mouseY(LivingEntity entity, float value, int x, int y, int scale, float mouseX, float mouseY) {
-        return value + offset(entity, x, y, scale, mouseX, mouseY, 3, 22.0F, 135.0F);
+        if (!allowsMouseMutation(entity, x, y, scale)) {
+            return value;
+        }
+        return corruptMouseCoordinate(entity, value, x, y, scale, mouseX, mouseY, 1);
     }
 
     public static float angleX(LivingEntity entity, float value, float angleX, float angleY, int x, int y, int scale) {
@@ -84,6 +113,10 @@ public final class GuiEntityPreviewCorruptionHooks {
         if (intensity <= 0.025F) {
             return value;
         }
+        int family = behaviorFamily(stack, entity, x, y, scale);
+        if (!allowsRotationMutation(family, stack)) {
+            return value;
+        }
         long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, previewSalt(entity, x, y, scale) ^ 0x52594157);
         return value + signed(seed, stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) ? 360.0F : 12.0F + intensity * 180.0F);
     }
@@ -93,6 +126,10 @@ public final class GuiEntityPreviewCorruptionHooks {
         String targetId = targetId(entity) + ":partial_tick";
         float intensity = intensity(stack, targetId);
         if (intensity <= 0.025F) {
+            return value;
+        }
+        int family = behaviorFamily(stack, entity, x, y, scale);
+        if (!allowsTimingMutation(family, stack)) {
             return value;
         }
         long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, previewSalt(entity, x, y, scale) ^ 0x50544943);
@@ -109,6 +146,10 @@ public final class GuiEntityPreviewCorruptionHooks {
         String targetId = targetId(entity) + ":packed_light";
         float intensity = intensity(stack, targetId);
         if (intensity <= 0.025F) {
+            return value;
+        }
+        int family = behaviorFamily(stack, entity, x, y, scale);
+        if (!allowsRenderStateMutation(family, stack)) {
             return value;
         }
         long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, previewSalt(entity, x, y, scale) ^ 0x4C494748);
@@ -134,6 +175,10 @@ public final class GuiEntityPreviewCorruptionHooks {
         if (intensity <= 0.025F) {
             return original;
         }
+        int family = behaviorFamily(stack, entity, x, y, scale);
+        if (!allowsRenderStateMutation(family, stack)) {
+            return original;
+        }
         float chance = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
                 ? 0.52F
                 : Mth.clamp(0.04F + intensity * 0.36F + stack.instability() * 0.05F, 0.0F, 0.44F);
@@ -145,6 +190,10 @@ public final class GuiEntityPreviewCorruptionHooks {
         String targetId = targetId(entity) + ":angle_" + axis;
         float intensity = intensity(stack, targetId);
         if (intensity <= 0.025F) {
+            return value;
+        }
+        int family = behaviorFamily(stack, entity, x, y, scale);
+        if (!allowsAngleMutation(family, stack)) {
             return value;
         }
         long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId, previewSalt(entity, x, y, scale) ^ (0x414E474C + axis));
@@ -169,7 +218,7 @@ public final class GuiEntityPreviewCorruptionHooks {
         return primary * (1.4F + intensity * (stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) ? 8.5F : 4.5F)) + offset;
     }
 
-    private static float offset(LivingEntity entity, int x, int y, int scale, float mouseX, float mouseY, int axis, float normalSpan, float extremeSpan) {
+    private static float layoutOffset(LivingEntity entity, int x, int y, int scale, int axis, float normalSpan, float extremeSpan) {
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
         if (!stack.activeOrExtreme(CorruptionSurface.GUI_FUNCTIONALITY)) {
             return 0.0F;
@@ -179,7 +228,7 @@ public final class GuiEntityPreviewCorruptionHooks {
         if (intensity <= 0.025F) {
             return 0.0F;
         }
-        long seed = seed(stack, entity, x, y, scale, mouseX, mouseY) ^ (0x504F5358L + axis * 0x9E37L);
+        long seed = previewSeed(stack, entity, x, y, scale, ":layout", 0x504F5358 + axis * 0x9E37);
         float span = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
                 ? extremeSpan
                 : normalSpan * (0.20F + intensity * 1.35F);
@@ -191,6 +240,108 @@ public final class GuiEntityPreviewCorruptionHooks {
         return drift;
     }
 
+    private static float corruptMouseCoordinate(LivingEntity entity, float value, int x, int y, int scale, float mouseX, float mouseY, int axis) {
+        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        String targetId = targetId(entity);
+        float intensity = intensity(stack, targetId);
+        if (intensity <= 0.025F) {
+            return value;
+        }
+
+        long seed = previewSeed(stack, entity, x, y, scale, ":mouse_tracking", 0x4D4F5553 + axis * 0x9E37);
+        int mode = Math.floorMod((int) (seed >>> 57), 7);
+        float center = axis == 0 ? x : y;
+        float secondary = axis == 0 ? mouseY : mouseX;
+        float span = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
+                ? 180.0F
+                : 26.0F * (0.35F + intensity * 3.8F);
+        float offset = signed(seed ^ 0x4F464653L, span);
+        return switch (mode) {
+            case 0 -> center + offset;
+            case 1 -> secondary + offset * 0.55F;
+            case 2 -> center - (value - center) * (0.65F + intensity * 2.6F) + offset * 0.35F;
+            case 3 -> {
+                float step = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
+                        ? 4.0F + unit(seed ^ 0x53544550L) * 94.0F
+                        : 5.0F + unit(seed ^ 0x53544550L) * (12.0F + intensity * 62.0F);
+                yield center + Math.round((value - center) / step) * step + offset * 0.20F;
+            }
+            case 4 -> {
+                float factor = stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
+                        ? -4.0F + unit(seed ^ 0x5343414CL) * 8.0F
+                        : -1.15F + unit(seed ^ 0x5343414CL) * (2.4F + intensity * 4.6F);
+                yield center + (value - center) * factor + offset * 0.25F;
+            }
+            case 5 -> center + signed(seed ^ 0x4652455AL, stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) ? 260.0F : 42.0F + intensity * 135.0F);
+            default -> value + offset;
+        };
+    }
+
+    private static boolean allowsPositionMutation(LivingEntity entity, int x, int y, int scale) {
+        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        if (!stack.activeOrExtreme(CorruptionSurface.GUI_FUNCTIONALITY)) {
+            return false;
+        }
+        return allowsPositionMutation(behaviorFamily(stack, entity, x, y, scale), stack);
+    }
+
+    private static boolean allowsMouseMutation(LivingEntity entity, int x, int y, int scale) {
+        CorruptionEffectStack stack = ClientCorruptionEffects.current();
+        if (!stack.activeOrExtreme(CorruptionSurface.GUI_FUNCTIONALITY)) {
+            return false;
+        }
+        return allowsMouseMutation(behaviorFamily(stack, entity, x, y, scale), stack);
+    }
+
+    private static int behaviorFamily(CorruptionEffectStack stack, LivingEntity entity, int x, int y, int scale) {
+        if (stack == null) {
+            return FAMILY_MIXED;
+        }
+        String targetId = targetId(entity);
+        long seed = stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId + ":behavior_family", behaviorSalt(entity) ^ 0x42484156);
+        return Math.floorMod((int) (seed ^ (seed >>> 32)), 8);
+    }
+
+    private static boolean allowsPositionMutation(int family, CorruptionEffectStack stack) {
+        return family == FAMILY_LAYOUT || family == FAMILY_MIXED
+                || (stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) && family == FAMILY_VISIBILITY);
+    }
+
+    private static boolean allowsScaleMutation(int family, CorruptionEffectStack stack) {
+        return family == FAMILY_SCALE || family == FAMILY_MIXED
+                || (stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) && family == FAMILY_LAYOUT);
+    }
+
+    private static boolean allowsMouseMutation(int family, CorruptionEffectStack stack) {
+        return family == FAMILY_MOUSE_TRACKING || family == FAMILY_MIXED
+                || (stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) && family == FAMILY_ROTATION);
+    }
+
+    private static boolean allowsAngleMutation(int family, CorruptionEffectStack stack) {
+        return family == FAMILY_MOUSE_TRACKING || family == FAMILY_ROTATION || family == FAMILY_MIXED
+                || (stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) && family == FAMILY_TIMING);
+    }
+
+    private static boolean allowsRotationMutation(int family, CorruptionEffectStack stack) {
+        return family == FAMILY_ROTATION || family == FAMILY_MIXED
+                || (stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) && family == FAMILY_MOUSE_TRACKING);
+    }
+
+    private static boolean allowsTimingMutation(int family, CorruptionEffectStack stack) {
+        return family == FAMILY_TIMING || family == FAMILY_MIXED
+                || (stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) && family == FAMILY_RENDER_STATE);
+    }
+
+    private static boolean allowsRenderStateMutation(int family, CorruptionEffectStack stack) {
+        return family == FAMILY_RENDER_STATE || family == FAMILY_MIXED
+                || (stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) && family == FAMILY_VISIBILITY);
+    }
+
+    private static boolean allowsVisibilityMutation(int family, CorruptionEffectStack stack) {
+        return family == FAMILY_VISIBILITY || family == FAMILY_MIXED
+                || (stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY) && family == FAMILY_RENDER_STATE);
+    }
+
     private static float intensity(CorruptionEffectStack stack, String targetId) {
         return stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
                 ? 1.0F
@@ -200,22 +351,8 @@ public final class GuiEntityPreviewCorruptionHooks {
                 ) + stack.instability() * 0.06F, 0.0F, 1.0F);
     }
 
-    private static long seed(CorruptionEffectStack stack, LivingEntity entity, int x, int y, int scale, float mouseX, float mouseY) {
-        return stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId(entity), stableSalt(entity, x, y, scale, mouseX, mouseY));
-    }
-
-    private static int stableSalt(LivingEntity entity, int x, int y, int scale, float mouseX, float mouseY) {
-        int salt = 0x47505549;
-        salt = salt * 31 + x;
-        salt = salt * 31 + y;
-        salt = salt * 31 + scale;
-        salt = salt * 31 + Math.round(mouseX / 24.0F);
-        salt = salt * 31 + Math.round(mouseY / 24.0F);
-        salt = salt * 31 + screenSalt();
-        if (entity != null) {
-            salt = salt * 31 + entity.getType().hashCode();
-        }
-        return salt;
+    private static long previewSeed(CorruptionEffectStack stack, LivingEntity entity, int x, int y, int scale, String channel, int salt) {
+        return stack.stableLong(CorruptionSurface.GUI_FUNCTIONALITY, targetId(entity) + channel, previewSalt(entity, x, y, scale) ^ salt);
     }
 
     private static int previewSalt(LivingEntity entity, int x, int y, int scale) {
@@ -223,6 +360,15 @@ public final class GuiEntityPreviewCorruptionHooks {
         salt = salt * 31 + x;
         salt = salt * 31 + y;
         salt = salt * 31 + scale;
+        salt = salt * 31 + screenSalt();
+        if (entity != null) {
+            salt = salt * 31 + entity.getType().hashCode();
+        }
+        return salt;
+    }
+
+    private static int behaviorSalt(LivingEntity entity) {
+        int salt = 0x50524641;
         salt = salt * 31 + screenSalt();
         if (entity != null) {
             salt = salt * 31 + entity.getType().hashCode();
