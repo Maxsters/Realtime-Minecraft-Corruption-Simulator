@@ -8,15 +8,18 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.Lig
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.SkyRenderCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.WeatherRenderCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.WorldRenderCorruptionHooks;
+import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.VertexBuffer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.BlockAndTintGetter;
@@ -61,7 +64,7 @@ public abstract class LevelRendererMixin {
     )
     private void rmc$refreshCorruptedStars(PoseStack poseStack, Matrix4f projectionMatrix, float partialTick, net.minecraft.client.Camera camera, boolean fog, Runnable setupFog, CallbackInfo callback) {
         DirectTextureCorruptionHooks.clearRawTexture();
-        SkyRenderCorruptionHooks.onRenderSky((LevelRenderer) (Object) this);
+        SkyRenderCorruptionHooks.beginRenderSky((LevelRenderer) (Object) this, partialTick);
     }
 
     @Redirect(
@@ -106,6 +109,123 @@ public abstract class LevelRendererMixin {
         return consumer.uv(corrupted.u(), corrupted.v());
     }
 
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/VertexConsumer;color(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;", remap = false),
+            remap = false,
+            require = 0
+    )
+    private VertexConsumer rmc$corruptSkyColor(VertexConsumer consumer, float red, float green, float blue, float alpha) {
+        return SkyRenderCorruptionHooks.color(consumer, red, green, blue, alpha);
+    }
+
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/VertexConsumer;m_85950_(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;", remap = false),
+            remap = false,
+            require = 0
+    )
+    private VertexConsumer rmc$corruptSkyColorSrg(VertexConsumer consumer, float red, float green, float blue, float alpha) {
+        return SkyRenderCorruptionHooks.color(consumer, red, green, blue, alpha);
+    }
+
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;setShaderColor(FFFF)V", remap = false),
+            remap = false,
+            require = 0
+    )
+    private void rmc$corruptSkyShaderColor(float red, float green, float blue, float alpha) {
+        SkyRenderCorruptionHooks.shaderColor(red, green, blue, alpha);
+    }
+
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;depthMask(Z)V", remap = false),
+            remap = false,
+            require = 0
+    )
+    private void rmc$corruptSkyDepthMask(boolean mask) {
+        SkyRenderCorruptionHooks.depthMask(mask);
+    }
+
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;enableBlend()V", remap = false),
+            remap = false,
+            require = 0
+    )
+    private void rmc$corruptSkyEnableBlend() {
+        SkyRenderCorruptionHooks.enableBlend();
+    }
+
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;disableBlend()V", remap = false),
+            remap = false,
+            require = 0
+    )
+    private void rmc$corruptSkyDisableBlend() {
+        SkyRenderCorruptionHooks.disableBlend();
+    }
+
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;defaultBlendFunc()V", remap = false),
+            remap = false,
+            require = 0
+    )
+    private void rmc$corruptSkyDefaultBlendFunc() {
+        SkyRenderCorruptionHooks.defaultBlendFunc();
+    }
+
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;blendFuncSeparate(Lcom/mojang/blaze3d/platform/GlStateManager$SourceFactor;Lcom/mojang/blaze3d/platform/GlStateManager$DestFactor;Lcom/mojang/blaze3d/platform/GlStateManager$SourceFactor;Lcom/mojang/blaze3d/platform/GlStateManager$DestFactor;)V", remap = false),
+            remap = false,
+            require = 0
+    )
+    private void rmc$corruptSkyBlendFuncSeparate(GlStateManager.SourceFactor sourceColor, GlStateManager.DestFactor destColor, GlStateManager.SourceFactor sourceAlpha, GlStateManager.DestFactor destAlpha) {
+        SkyRenderCorruptionHooks.blendFuncSeparate(sourceColor, destColor, sourceAlpha, destAlpha);
+    }
+
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/VertexBuffer;drawWithShader(Lorg/joml/Matrix4f;Lorg/joml/Matrix4f;Lnet/minecraft/client/renderer/ShaderInstance;)V", remap = false),
+            remap = false,
+            require = 0
+    )
+    private void rmc$corruptSkyBufferDraw(VertexBuffer buffer, Matrix4f modelViewMatrix, Matrix4f projectionMatrix, ShaderInstance shader) {
+        SkyRenderCorruptionHooks.drawSkyBuffer(buffer, modelViewMatrix, projectionMatrix, shader);
+    }
+
     @Inject(
             method = {
                     "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
@@ -117,6 +237,7 @@ public abstract class LevelRendererMixin {
     )
     private void rmc$clearSkyDirectTexture(PoseStack poseStack, Matrix4f projectionMatrix, float partialTick, net.minecraft.client.Camera camera, boolean fog, Runnable setupFog, CallbackInfo callback) {
         DirectTextureCorruptionHooks.clearRawTexture();
+        SkyRenderCorruptionHooks.endRenderSky();
     }
 
     @Redirect(

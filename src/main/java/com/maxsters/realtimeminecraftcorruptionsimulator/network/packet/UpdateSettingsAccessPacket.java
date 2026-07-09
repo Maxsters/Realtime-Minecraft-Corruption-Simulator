@@ -31,6 +31,15 @@ public final class UpdateSettingsAccessPacket {
             if (sender == null || sender.getServer() == null) {
                 return;
             }
+            if (!sender.getServer().isDedicatedServer()) {
+                CorruptionSavedData data = CorruptionSavedData.get(sender.getServer());
+                if (data.setAllowNonOpSettingsUpdates(true)) {
+                    ModNetwork.broadcastState(sender.getServer());
+                } else {
+                    ModNetwork.sendState(sender);
+                }
+                return;
+            }
             if (!ModNetwork.isSettingsOperator(sender)) {
                 ModNetwork.sendState(sender);
                 return;

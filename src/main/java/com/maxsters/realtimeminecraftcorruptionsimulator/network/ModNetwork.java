@@ -109,6 +109,9 @@ public final class ModNetwork {
         if (player == null || player.getServer() == null) {
             return false;
         }
+        if (!player.getServer().isDedicatedServer()) {
+            return true;
+        }
         if (isSettingsOperator(player)) {
             return true;
         }
@@ -122,7 +125,8 @@ public final class ModNetwork {
     private static CorruptionStateSyncPacket syncPacket(CorruptionSavedData data, boolean initialized, ServerPlayer player) {
         AchievementWorldStateSnapshot achievementWorldState = AchievementWorldStateSnapshot.from(data);
         boolean operator = isSettingsOperator(player);
-        boolean allowNonOpSettingsUpdates = data.allowNonOpSettingsUpdates();
+        boolean dedicatedServer = player != null && player.getServer() != null && player.getServer().isDedicatedServer();
+        boolean allowNonOpSettingsUpdates = !dedicatedServer || data.allowNonOpSettingsUpdates();
         return new CorruptionStateSyncPacket(
                 CorruptionStateSnapshot.from(data),
                 achievementWorldState.disqualified(),
@@ -130,7 +134,7 @@ public final class ModNetwork {
                 achievementWorldState,
                 allowNonOpSettingsUpdates,
                 operator || allowNonOpSettingsUpdates,
-                operator
+                dedicatedServer && operator
         );
     }
 }

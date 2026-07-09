@@ -7,12 +7,15 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.saveddata.SavedData;
 
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 
 public class CorruptionSavedData extends SavedData {
     public static final String DATA_NAME = "realtime_minecraft_corruption_simulator";
     private static final int MAX_DRAGON_IDS = 64;
+    private static final int MAX_WEATHER_SNAPSHOTS = 16;
 
     // Keep world persistence to settings that actually change runtime behavior.
     // Old progression keys are intentionally ignored on load.
@@ -46,6 +49,7 @@ public class CorruptionSavedData extends SavedData {
     private boolean blessingDisqualified;
     private final Set<String> armedDragonIds = new LinkedHashSet<>();
     private final Set<String> spoiledDragonIds = new LinkedHashSet<>();
+    private final Map<String, WeatherSnapshot> capturedWeatherSnapshots = new LinkedHashMap<>();
     private boolean initialized;
 
     public static CorruptionSavedData get(MinecraftServer server) {
@@ -121,6 +125,17 @@ public class CorruptionSavedData extends SavedData {
         if (tag.contains("quick_toggle_restore_seed_randomizer_ticks", Tag.TAG_INT)) {
             data.quickToggleRestoreSeedRandomizerIntervalTicks = clampIntervalTicks(tag.getInt("quick_toggle_restore_seed_randomizer_ticks"));
         }
+        if (tag.contains("captured_weather_states", Tag.TAG_COMPOUND)) {
+            CompoundTag weatherStates = tag.getCompound("captured_weather_states");
+            for (String key : weatherStates.getAllKeys()) {
+                String dimensionKey = sanitizeWeatherDimensionKey(key);
+                if (dimensionKey.isBlank() || data.capturedWeatherSnapshots.size() >= MAX_WEATHER_SNAPSHOTS) {
+                    continue;
+                }
+                CompoundTag weatherTag = weatherStates.getCompound(key);
+                data.capturedWeatherSnapshots.put(dimensionKey, WeatherSnapshot.decode(weatherTag));
+            }
+        }
         if (tag.contains("server_achievement_disqualified", Tag.TAG_BYTE)) {
             data.serverAchievementDisqualified = tag.getBoolean("server_achievement_disqualified");
         }
@@ -174,6 +189,13 @@ public class CorruptionSavedData extends SavedData {
         tag.putInt("quick_toggle_restore_auto_amount", quickToggleRestoreAutoIncreaseAmount);
         tag.putBoolean("quick_toggle_restore_client_drift", quickToggleRestoreClientDriftEnabled);
         tag.putInt("quick_toggle_restore_seed_randomizer_ticks", quickToggleRestoreSeedRandomizerIntervalTicks);
+        if (!capturedWeatherSnapshots.isEmpty()) {
+            CompoundTag weatherStates = new CompoundTag();
+            for (Map.Entry<String, WeatherSnapshot> entry : capturedWeatherSnapshots.entrySet()) {
+                weatherStates.put(entry.getKey(), entry.getValue().encode());
+            }
+            tag.put("captured_weather_states", weatherStates);
+        }
         tag.putBoolean("server_achievement_disqualified", serverAchievementDisqualified);
         tag.putString("server_achievement_disqualification_reason", serverAchievementDisqualificationReason);
         tag.putBoolean("warranty_started", warrantyStarted);
@@ -326,6 +348,38 @@ public class CorruptionSavedData extends SavedData {
         quickToggleRestorePresent = false;
         setDirty();
         return true;
+    }
+
+    public boolean captureWeatherSnapshot(String dimensionKey, int clearWeatherTime, int rainTime, int thunderTime, boolean raining, boolean thundering) {
+        String sanitizedKey = sanitizeWeatherDimensionKey(dimensionKey);
+        if (sanitizedKey.isBlank() || capturedWeatherSnapshots.containsKey(sanitizedKey)) {
+            return false;
+        }
+        if (capturedWeatherSnapshots.size() >= MAX_WEATHER_SNAPSHOTS) {
+            String firstKey = capturedWeatherSnapshots.keySet().iterator().next();
+            capturedWeatherSnapshots.remove(firstKey);
+        }
+        capturedWeatherSnapshots.put(sanitizedKey, new WeatherSnapshot(
+                Math.max(0, clearWeatherTime),
+                Math.max(0, rainTime),
+                Math.max(0, thunderTime),
+                raining,
+                thundering
+        ));
+        setDirty();
+        return true;
+    }
+
+    public WeatherSnapshot consumeWeatherSnapshot(String dimensionKey) {
+        String sanitizedKey = sanitizeWeatherDimensionKey(dimensionKey);
+        if (sanitizedKey.isBlank()) {
+            return null;
+        }
+        WeatherSnapshot snapshot = capturedWeatherSnapshots.remove(sanitizedKey);
+        if (snapshot != null) {
+            setDirty();
+        }
+        return snapshot;
     }
 
     public boolean isServerAchievementDisqualified() {
@@ -527,6 +581,14 @@ public class CorruptionSavedData extends SavedData {
         return trimmed.length() > 64 ? trimmed.substring(0, 64) : trimmed;
     }
 
+    private static String sanitizeWeatherDimensionKey(String dimensionKey) {
+        if (dimensionKey == null || dimensionKey.isBlank()) {
+            return "";
+        }
+        String trimmed = dimensionKey.trim();
+        return trimmed.length() > 128 ? trimmed.substring(0, 128) : trimmed;
+    }
+
     private static Set<String> parseCsvSet(String value) {
         Set<String> result = new LinkedHashSet<>();
         if (value == null || value.isBlank()) {
@@ -549,5 +611,30 @@ public class CorruptionSavedData extends SavedData {
             return "";
         }
         return String.join(",", values);
+    }
+
+    public record WeatherSnapshot(int clearWeatherTime, int rainTime, int thunderTime, boolean raining, boolean thundering) {
+        private CompoundTag encode() {
+            CompoundTag tag = new CompoundTag();
+            tag.putInt("clear_weather_time", clearWeatherTime);
+            tag.putInt("rain_time", rainTime);
+            tag.putInt("thunder_time", thunderTime);
+            tag.putBoolean("raining", raining);
+            tag.putBoolean("thundering", thundering);
+            return tag;
+        }
+
+        private static WeatherSnapshot decode(CompoundTag tag) {
+            if (tag == null) {
+                return new WeatherSnapshot(0, 0, 0, false, false);
+            }
+            return new WeatherSnapshot(
+                    Math.max(0, tag.getInt("clear_weather_time")),
+                    Math.max(0, tag.getInt("rain_time")),
+                    Math.max(0, tag.getInt("thunder_time")),
+                    tag.getBoolean("raining"),
+                    tag.getBoolean("thundering")
+            );
+        }
     }
 }

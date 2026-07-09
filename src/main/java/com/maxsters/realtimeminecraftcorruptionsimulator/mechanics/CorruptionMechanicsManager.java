@@ -1,9 +1,11 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mechanics;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.RealtimeMinecraftCorruptionSimulator;
+import com.maxsters.realtimeminecraftcorruptionsimulator.config.GlobalCorruptionSettings;
 import com.maxsters.realtimeminecraftcorruptionsimulator.network.ModNetwork;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
+import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionTarget;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
 import com.maxsters.realtimeminecraftcorruptionsimulator.runtime.CorruptionRuntimeManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.state.CorruptionSavedData;
@@ -47,6 +49,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.level.storage.ServerLevelData;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -362,7 +365,11 @@ public final class CorruptionMechanicsManager {
     public static void onGlobalSettingsApplied(MinecraftServer server) {
         serverMutationSuspended = false;
         if (server != null) {
-            CorruptionRuntimeManager.copyGlobalSettingsToData(CorruptionSavedData.get(server));
+            CorruptionSavedData data = CorruptionSavedData.get(server);
+            if (!weatherCorruptionConfigured(GlobalCorruptionSettings.activeLevel(), GlobalCorruptionSettings.enabledTargetsMask())) {
+                restoreCapturedWeather(server, data);
+            }
+            CorruptionRuntimeManager.copyGlobalSettingsToData(data);
             serverMutationResumeTick = Math.min(serverMutationResumeTick, server.getTickCount());
         }
         resetAutoIncreaseTimer(server);
@@ -608,7 +615,14 @@ public final class CorruptionMechanicsManager {
     @SubscribeEvent
     public static void onLevelLoad(LevelEvent.Load event) {
         if (event.getLevel() instanceof ServerLevel level) {
-            syncServerRuntime(level.getServer());
+            MinecraftServer server = level.getServer();
+            syncServerRuntime(server);
+            if (server != null) {
+                CorruptionSavedData data = CorruptionSavedData.get(server);
+                if (!weatherCorruptionConfigured(data.getCorruptionLevel(), data.getEnabledTargetsMask())) {
+                    restoreCapturedWeather(level, data);
+                }
+            }
             scheduleServerMutationWarmup(level.getServer(), SERVER_LEVEL_LOAD_MUTATION_WARMUP_TICKS);
             clearServerStackCache();
             resetTerrainMutationBudget();
@@ -1952,6 +1966,7 @@ public final class CorruptionMechanicsManager {
             return;
         }
 
+        captureWeatherBeforeWorldVisualsMutation(level);
         int mode = Math.floorMod((int) (hash >>> 32), 5);
         if (mode == 0) {
             boolean storm = (level.getGameTime() >> 3 & 1L) == 0L;
@@ -1973,6 +1988,59 @@ public final class CorruptionMechanicsManager {
         boolean raining = unitHash(hash ^ 0x5241494FL) < 0.28F + intensity * 0.56F;
         boolean thundering = raining && unitHash(hash ^ 0x54484E44L) < intensity * 0.46F;
         level.setWeatherParameters(raining ? 0 : rainTime, rainTime, raining, thundering);
+    }
+
+    private static void captureWeatherBeforeWorldVisualsMutation(ServerLevel level) {
+        MinecraftServer server = level.getServer();
+        if (server == null) {
+            return;
+        }
+        if (!(level.getLevelData() instanceof ServerLevelData weather)) {
+            return;
+        }
+        CorruptionSavedData.get(server).captureWeatherSnapshot(
+                weatherDimensionKey(level),
+                weather.getClearWeatherTime(),
+                weather.getRainTime(),
+                weather.getThunderTime(),
+                weather.isRaining(),
+                weather.isThundering()
+        );
+    }
+
+    private static void restoreCapturedWeather(MinecraftServer server, CorruptionSavedData data) {
+        if (server == null || data == null) {
+            return;
+        }
+        for (ServerLevel level : server.getAllLevels()) {
+            restoreCapturedWeather(level, data);
+        }
+    }
+
+    private static void restoreCapturedWeather(ServerLevel level, CorruptionSavedData data) {
+        if (level == null || data == null) {
+            return;
+        }
+        CorruptionSavedData.WeatherSnapshot snapshot = data.consumeWeatherSnapshot(weatherDimensionKey(level));
+        if (snapshot == null) {
+            return;
+        }
+        if (!(level.getLevelData() instanceof ServerLevelData weather)) {
+            return;
+        }
+        weather.setClearWeatherTime(snapshot.clearWeatherTime());
+        weather.setRainTime(snapshot.rainTime());
+        weather.setThunderTime(snapshot.thunderTime());
+        weather.setRaining(snapshot.raining());
+        weather.setThundering(snapshot.thundering());
+    }
+
+    private static boolean weatherCorruptionConfigured(int corruptionLevel, int enabledTargetsMask) {
+        return corruptionLevel > 0 && CorruptionTarget.enabled(enabledTargetsMask, CorruptionTarget.WORLD_VISUALS);
+    }
+
+    private static String weatherDimensionKey(ServerLevel level) {
+        return level.dimension().location().toString();
     }
 
     private static void applyAutoIncrease(MinecraftServer server) {
