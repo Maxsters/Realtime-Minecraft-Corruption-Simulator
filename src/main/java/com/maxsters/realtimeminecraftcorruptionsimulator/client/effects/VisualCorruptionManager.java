@@ -127,80 +127,12 @@ public final class VisualCorruptionManager {
 
     @SubscribeEvent
     public static void onComputeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
-        if (!stack.active(CorruptionSurface.CAMERA_TRANSFORM)) {
-            return;
-        }
-
-        Minecraft minecraft = Minecraft.getInstance();
-        if (!CameraRenderCorruptionHooks.cameraReady(minecraft)) {
-            return;
-        }
-        LocalPlayer player = minecraft.player;
-        if (player == null) {
-            return;
-        }
-
-        String targetId = cameraTargetId(player, minecraft, "angles");
-        float intensity = stack.intensityOrExtreme(CorruptionSurface.CAMERA_TRANSFORM);
-        long clock = staticClock(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x43414D);
-        event.setYaw(CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId + ":yaw", event.getYaw(), 10.0F + intensity * 38.0F, -180.0F, 180.0F, 1, clock));
-        event.setPitch(CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId + ":pitch", event.getPitch(), 9.0F + intensity * 26.0F, -90.0F, 90.0F, 2, clock));
-        event.setRoll(CorruptionValueMutator.mutateScalar(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId + ":roll", event.getRoll(), 14.0F + intensity * 70.0F, -110.0F, 110.0F, 3, clock));
-
+        CameraRenderCorruptionHooks.mutateCameraAngles(event);
     }
 
     @SubscribeEvent
     public static void onComputeFov(ViewportEvent.ComputeFov event) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.current();
-        if (!stack.activeOrExtreme(CorruptionSurface.CAMERA_TRANSFORM)) {
-            return;
-        }
-
-        Minecraft minecraft = Minecraft.getInstance();
-        if (!CameraRenderCorruptionHooks.cameraReady(minecraft)) {
-            return;
-        }
-        LocalPlayer player = minecraft.player;
-        String targetId = cameraTargetId(player, minecraft, "raw_fov") + ":" + event.usedConfiguredFov();
-        float intensity = stack.intensityOrExtreme(CorruptionSurface.CAMERA_TRANSFORM);
-        long clock = staticClock(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x464F56);
-        double baseFov = event.getFOV();
-        double mutated = CorruptionValueMutator.mutateScalar(
-                stack,
-                CorruptionSurface.CAMERA_TRANSFORM,
-                targetId,
-                baseFov,
-                18.0D + intensity * 96.0D,
-                12.0D,
-                165.0D,
-                0x46,
-                clock
-        );
-        double motionSignal = cameraMotionSignal(player);
-        double featureScale = 1.0D + signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x5343414C, 0.10D + intensity * 1.85D);
-        double bobLeak = motionSignal * signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x424F4246, 3.0D + intensity * 74.0D);
-        mutated = mutated * featureScale + bobLeak;
-        if (unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4A) < 0.18D + intensity * 0.28D) {
-            double scale = 0.04D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4B) * (3.05D + intensity * 2.20D);
-            mutated = baseFov * scale + signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4C, 28.0D + intensity * 86.0D) + bobLeak;
-        }
-        if (player != null && (player.isSwimming() || player.isUnderWater())) {
-            mutated += signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x5754, 8.0D + intensity * 32.0D);
-        }
-        if (stack.level() >= 72 && unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x3244464F) < intensity * 0.34D) {
-            mutated = unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x464C4154) < 0.62D
-                    ? 150.0D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x57494445) * 15.0D
-                    : 12.0D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x54494E59) * 18.0D;
-        }
-        if (stack.extreme(CorruptionSurface.CAMERA_TRANSFORM)) {
-            double multiplier = 0.025D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4D) * 5.75D;
-            if (unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x43) < 0.28D) {
-                multiplier = 0.018D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x44) * 0.20D;
-            }
-            mutated = mutated * multiplier + signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x53, 96.0D);
-        }
-        event.setFOV(clampDouble(mutated, 12.0D, 165.0D));
+        CameraRenderCorruptionHooks.mutateFov(event);
     }
 
     @SubscribeEvent
@@ -211,32 +143,6 @@ public final class VisualCorruptionManager {
             return;
         }
         applyPowderSnowFovModifier(event, stack, minecraft);
-        if (!stack.activeOrExtreme(CorruptionSurface.CAMERA_TRANSFORM)) {
-            return;
-        }
-
-        String targetId = cameraTargetId(event.getPlayer(), minecraft, "fov_modifier");
-        float intensity = stack.intensityOrExtreme(CorruptionSurface.CAMERA_TRANSFORM);
-        long clock = staticClock(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x464D);
-        float mutated = CorruptionValueMutator.mutateScalar(
-                stack,
-                CorruptionSurface.CAMERA_TRANSFORM,
-                targetId,
-                event.getNewFovModifier(),
-                0.35F + intensity * 4.50F,
-                0.18F,
-                4.0F,
-                0x4F,
-                clock
-        );
-        double motionSignal = cameraMotionSignal(event.getPlayer());
-        mutated = (float) (mutated * (1.0D + signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x464D5343, 0.08D + intensity * 1.75D))
-                + motionSignal * signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x464D424F, 0.12D + intensity * 2.10D));
-        if (stack.extreme(CorruptionSurface.CAMERA_TRANSFORM)) {
-            mutated = (float) (mutated * (0.16D + unit(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x4E) * 3.60D)
-                    + signed(stack, CorruptionSurface.CAMERA_TRANSFORM, targetId, 0x59, 1.20D));
-        }
-        event.setNewFovModifier((float) clampDouble(mutated, 0.18D, 4.0D));
     }
 
     private static void applyPowderSnowFovModifier(ComputeFovModifierEvent event, CorruptionEffectStack stack, Minecraft minecraft) {
@@ -599,17 +505,6 @@ public final class VisualCorruptionManager {
 
     private static double signed(CorruptionEffectStack stack, CorruptionSurface surface, String targetId, int salt, double amplitude) {
         return (unit(stack, surface, targetId, salt) * 2.0D - 1.0D) * amplitude;
-    }
-
-    private static double cameraMotionSignal(Player player) {
-        if (player == null) {
-            return 0.0D;
-        }
-        double horizontal = player.getDeltaMovement().horizontalDistance();
-        double vertical = Math.abs(player.getDeltaMovement().y) * 0.45D;
-        double sprint = player.isSprinting() ? 0.22D : 0.0D;
-        double fall = player.onGround() ? 0.0D : 0.16D;
-        return Mth.clamp(horizontal * 8.0D + vertical + sprint + fall, 0.0D, 1.0D);
     }
 
     private static double clampDouble(double value, double min, double max) {

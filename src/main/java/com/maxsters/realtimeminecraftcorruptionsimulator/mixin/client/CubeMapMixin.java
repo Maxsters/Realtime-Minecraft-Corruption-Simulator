@@ -1,12 +1,14 @@
 package com.maxsters.realtimeminecraftcorruptionsimulator.mixin.client;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.gui.GuiDirectTextureCorruptionHooks;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.CameraRenderCorruptionHooks;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render.MenuPanoramaCorruptionHooks;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.renderer.CubeMap;
 import net.minecraft.resources.ResourceLocation;
+import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Dynamic;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -17,6 +19,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(CubeMap.class)
 @SuppressWarnings("target")
 public abstract class CubeMapMixin {
+    @Redirect(
+            method = {
+                    "render(Lnet/minecraft/client/Minecraft;FFF)V",
+                    "m_108849_(Lnet/minecraft/client/Minecraft;FFF)V"
+            },
+            at = @At(value = "INVOKE", target = "Lorg/joml/Matrix4f;setPerspective(FFFF)Lorg/joml/Matrix4f;", remap = false),
+            remap = false,
+            require = 0
+    )
+    @Dynamic("Corrupts CubeMap's actual panorama projection matrix through the shared camera profile.")
+    private Matrix4f rmc$corruptPanoramaProjection(Matrix4f matrix, float fovRadians, float aspect, float nearPlane, float farPlane) {
+        return CameraRenderCorruptionHooks.setMenuPerspective(matrix, fovRadians, aspect, nearPlane, farPlane);
+    }
+
     @Redirect(
             method = {
                     "render(Lnet/minecraft/client/Minecraft;FFF)V",

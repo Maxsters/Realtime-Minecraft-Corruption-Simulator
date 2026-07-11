@@ -15,21 +15,11 @@ public final class MenuPanoramaCorruptionHooks {
     }
 
     public static float pitch(float original) {
-        return mutateCameraAngle(original, "title_panorama:pitch", 0x50495443, 72.0F);
+        return CameraRenderCorruptionHooks.mutateMenuPitch(original);
     }
 
     public static float yaw(float original) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.currentForGuiRendering();
-        float intensity = cameraIntensity(stack, "title_panorama:yaw");
-        if (intensity <= 0.025F) {
-            return original;
-        }
-        long seed = stack.stableLong(CorruptionSurface.CAMERA_TRANSFORM, "title_panorama:yaw", 0x594157);
-        float multiplier = stack.extreme(CorruptionSurface.CAMERA_TRANSFORM)
-                ? -3.0F + unit(seed ^ 0x4D554C54L) * 8.0F
-                : 1.0F + signed(seed ^ 0x4D554C54L, intensity * 2.2F);
-        float offset = signed(seed ^ 0x4F464653L, stack.extreme(CorruptionSurface.CAMERA_TRANSFORM) ? 360.0F : 18.0F + intensity * 150.0F);
-        return original * multiplier + offset;
+        return CameraRenderCorruptionHooks.mutateMenuYaw(original);
     }
 
     public static float alpha(float original) {
@@ -69,26 +59,6 @@ public final class MenuPanoramaCorruptionHooks {
         );
     }
 
-    private static float mutateCameraAngle(float original, String targetId, int salt, float span) {
-        CorruptionEffectStack stack = ClientCorruptionEffects.currentForGuiRendering();
-        float intensity = cameraIntensity(stack, targetId);
-        if (intensity <= 0.025F) {
-            return original;
-        }
-        long seed = stack.stableLong(CorruptionSurface.CAMERA_TRANSFORM, targetId, salt);
-        return original + signed(seed, stack.extreme(CorruptionSurface.CAMERA_TRANSFORM) ? span * 2.4F : 4.0F + intensity * span);
-    }
-
-    private static float cameraIntensity(CorruptionEffectStack stack, String targetId) {
-        if (!stack.activeOrExtreme(CorruptionSurface.CAMERA_TRANSFORM)) {
-            return 0.0F;
-        }
-        return Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.CAMERA_TRANSFORM) ? 1.0F : stack.intensity(CorruptionSurface.CAMERA_TRANSFORM) * 0.82F,
-                stack.targetIntensity(CorruptionSurface.CAMERA_TRANSFORM, targetId)
-        ), 0.0F, 1.0F);
-    }
-
     private static float titleIntensity(CorruptionEffectStack stack, String targetId) {
         if (!stack.activeOrExtreme(CorruptionSurface.TITLE_RENDER)) {
             return 0.0F;
@@ -111,10 +81,6 @@ public final class MenuPanoramaCorruptionHooks {
 
     private static double quantize(double value, double step) {
         return step <= 0.0D ? value : Math.rint(value / step) * step;
-    }
-
-    private static float signed(long seed, float amplitude) {
-        return (unit(seed) * 2.0F - 1.0F) * amplitude;
     }
 
     private static double signed(long seed, double amplitude) {

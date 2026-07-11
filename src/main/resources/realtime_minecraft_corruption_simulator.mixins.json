@@ -45,6 +45,7 @@
     "client.BlockEntityRenderDispatcherMixin",
     "client.BlockEntityWithoutLevelRendererMixin",
     "client.BoatRendererMixin",
+    "client.CameraMixin",
     "client.ChannelMixin",
     "client.ChestBlockEntityAnimationMixin",
     "client.ConduitRendererAnimationMixin",
