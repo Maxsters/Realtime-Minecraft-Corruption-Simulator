@@ -65,6 +65,8 @@ public final class AudioCorruptionManager {
     }
 
     public static void onSoundEngineLoad(SoundEngineLoadEvent event) {
+        cachedAvailableSoundCount = -1;
+        cachedAvailableSounds = List.of();
         installMutatingSoundBuffers(event.getEngine());
     }
 
@@ -458,10 +460,8 @@ public final class AudioCorruptionManager {
         float chance = stack.extreme(CorruptionSurface.SOUND_STREAM)
                 ? 0.76F
                 : Math.min(0.68F, 0.035F + intensity * 0.54F + stack.instability() * 0.08F);
-        long clock = soundClock();
-        int cadence = Math.max(1, Math.round(64.0F - intensity * 52.0F));
-        int bucket = (int) (clock / cadence);
-        if (stack.unit(CorruptionSurface.SOUND_STREAM, targetId + ":wrong_event", bucket ^ original.hashCode()) > chance) {
+        int sourceSalt = original.hashCode() ^ 0x57524F4E;
+        if (stack.unit(CorruptionSurface.SOUND_STREAM, targetId + ":wrong_event", sourceSalt) > chance) {
             return original;
         }
 
@@ -469,7 +469,7 @@ public final class AudioCorruptionManager {
         if (available.size() < 2) {
             return original;
         }
-        long seed = stack.stableLong(CorruptionSurface.SOUND_STREAM, targetId + ":replacement", bucket ^ original.hashCode() ^ 0x57524F4E);
+        long seed = stack.stableLong(CorruptionSurface.SOUND_STREAM, targetId + ":replacement", sourceSalt);
         int start = Math.floorMod((int) mix(seed), available.size());
         int stride = 1 + Math.floorMod((int) (seed >>> 33), Math.max(1, available.size() - 1));
         for (int attempt = 0; attempt < Math.min(24, available.size()); attempt++) {
@@ -732,8 +732,6 @@ public final class AudioCorruptionManager {
     private static class MutatedSoundInstance implements SoundInstance {
         protected final SoundInstance delegate;
         @Nullable
-        protected ResourceLocation resolvedReplacementLocation;
-        @Nullable
         protected Sound resolvedReplacementSound;
 
         MutatedSoundInstance(SoundInstance delegate) {
@@ -742,14 +740,18 @@ public final class AudioCorruptionManager {
 
         @Override
         public ResourceLocation getLocation() {
-            return resolvedReplacementLocation == null ? delegate.getLocation() : resolvedReplacementLocation;
+            return delegate.getLocation();
         }
 
         @Override
         @Nullable
         public WeighedSoundEvents resolve(SoundManager soundManager) {
-            resolvedReplacementLocation = null;
             resolvedReplacementSound = null;
+            WeighedSoundEvents logicalEvents = delegate.resolve(soundManager);
+            if (logicalEvents == null) {
+                return null;
+            }
+
             CorruptionEffectStack stack = ClientCorruptionEffects.current();
             String targetId = soundTargetId(delegate);
             ResourceLocation replacement = replacementSoundLocation(soundManager, stack, targetId, delegate.getLocation());
@@ -758,13 +760,11 @@ public final class AudioCorruptionManager {
                 if (events != null) {
                     Sound sound = events.getSound(RandomSource.create(mix(stack.stableLong(CorruptionSurface.SOUND_STREAM, targetId + ":replacement_sound", replacement.hashCode()))));
                     if (sound != null && sound != SoundManager.EMPTY_SOUND && sound != SoundManager.INTENTIONALLY_EMPTY_SOUND) {
-                        resolvedReplacementLocation = replacement;
                         resolvedReplacementSound = sound;
-                        return events;
                     }
                 }
             }
-            return delegate.resolve(soundManager);
+            return logicalEvents;
         }
 
         @Override

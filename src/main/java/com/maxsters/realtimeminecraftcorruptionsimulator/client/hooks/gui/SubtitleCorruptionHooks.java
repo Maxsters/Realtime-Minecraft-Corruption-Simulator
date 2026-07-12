@@ -42,13 +42,14 @@ public final class SubtitleCorruptionHooks {
 
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
         String targetId = targetId(sound, subtitle);
-        float intensity = subtitleIntensity(stack, targetId);
+        CorruptionSurface surface = CorruptionSurface.GUI_FUNCTIONALITY;
+        float intensity = subtitleIntensity(stack, surface, targetId);
         if (intensity <= 0.035F) {
             return false;
         }
 
-        long seed = stack.stableLong(CorruptionSurface.SOUND_STREAM, targetId + ":capture", subtitle.getString().hashCode());
-        float dropChance = stack.extreme(CorruptionSurface.SOUND_STREAM)
+        long seed = stack.stableLong(surface, targetId + ":capture", subtitle.getString().hashCode());
+        float dropChance = stack.extreme(surface)
                 ? 0.36F
                 : Mth.clamp(0.02F + intensity * 0.24F + stack.instability() * 0.07F, 0.0F, 0.30F);
         if (unit(seed ^ 0x44524F50L) < dropChance) {
@@ -57,7 +58,7 @@ public final class SubtitleCorruptionHooks {
 
         List<?> subtitles = subtitleList(overlay);
         if (subtitles != null && !subtitles.isEmpty()) {
-            float clearChance = stack.extreme(CorruptionSurface.SOUND_STREAM)
+            float clearChance = stack.extreme(surface)
                     ? 0.14F
                     : Mth.clamp(intensity * 0.08F + stack.instability() * 0.025F, 0.0F, 0.10F);
             if (unit(seed ^ 0x434C4541L) < clearChance) {
@@ -80,13 +81,14 @@ public final class SubtitleCorruptionHooks {
 
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
         String targetId = targetId(sound, subtitle);
-        float intensity = subtitleIntensity(stack, targetId);
+        CorruptionSurface surface = CorruptionSurface.GUI_FUNCTIONALITY;
+        float intensity = subtitleIntensity(stack, surface, targetId);
         if (intensity <= 0.035F) {
             return;
         }
 
-        long seed = stack.stableLong(CorruptionSurface.SOUND_STREAM, targetId + ":queue", subtitles.size());
-        float chance = stack.extreme(CorruptionSurface.SOUND_STREAM)
+        long seed = stack.stableLong(surface, targetId + ":queue", subtitles.size());
+        float chance = stack.extreme(surface)
                 ? 0.94F
                 : Mth.clamp(0.08F + intensity * 0.72F + stack.instability() * 0.10F, 0.0F, 0.88F);
         if (unit(seed ^ 0x51554555L) > chance) {
@@ -101,7 +103,7 @@ public final class SubtitleCorruptionHooks {
             base = new Vec3(minecraft.player.getX(), minecraft.player.getEyeY(), minecraft.player.getZ());
         }
 
-        double radius = 2.0D + intensity * 42.0D + (stack.extreme(CorruptionSurface.SOUND_STREAM) ? 40.0D : 0.0D);
+        double radius = 2.0D + intensity * 42.0D + (stack.extreme(surface) ? 40.0D : 0.0D);
         Vec3 corrupted = new Vec3(
                 base.x + signed(seed ^ 0x584F4646L, radius),
                 base.y + signed(seed ^ 0x594F4646L, radius * 0.45D),
@@ -128,13 +130,14 @@ public final class SubtitleCorruptionHooks {
 
         CorruptionEffectStack stack = ClientCorruptionEffects.current();
         String targetId = "subtitle_overlay:" + subtitles.size();
-        float intensity = subtitleIntensity(stack, targetId);
+        CorruptionSurface surface = CorruptionSurface.GUI_SURFACE;
+        float intensity = subtitleIntensity(stack, surface, targetId);
         if (intensity <= 0.035F) {
             return;
         }
 
-        long seed = stack.stableLong(CorruptionSurface.SOUND_STREAM, targetId, 0x53554252);
-        float chance = stack.extreme(CorruptionSurface.SOUND_STREAM)
+        long seed = stack.stableLong(surface, targetId, 0x53554252);
+        float chance = stack.extreme(surface)
                 ? 0.86F
                 : Mth.clamp(0.08F + intensity * 0.56F + stack.instability() * 0.08F, 0.0F, 0.74F);
         if (unit(seed ^ 0x52454E44L) > chance) {
@@ -266,13 +269,13 @@ public final class SubtitleCorruptionHooks {
                 || ClientCorruptionProtection.isLifecycleAccessScreen(minecraft.screen);
     }
 
-    private static float subtitleIntensity(CorruptionEffectStack stack, String targetId) {
-        if (!stack.activeOrExtreme(CorruptionSurface.SOUND_STREAM)) {
+    private static float subtitleIntensity(CorruptionEffectStack stack, CorruptionSurface surface, String targetId) {
+        if (!stack.activeOrExtreme(surface)) {
             return 0.0F;
         }
         return Mth.clamp(Math.max(
-                stack.extreme(CorruptionSurface.SOUND_STREAM) ? 1.0F : stack.intensity(CorruptionSurface.SOUND_STREAM) * 0.76F,
-                stack.targetIntensity(CorruptionSurface.SOUND_STREAM, targetId)
+                stack.extreme(surface) ? 1.0F : stack.intensity(surface) * 0.76F,
+                stack.targetIntensity(surface, targetId)
         ) + stack.instability() * 0.08F, 0.0F, 1.0F);
     }
 

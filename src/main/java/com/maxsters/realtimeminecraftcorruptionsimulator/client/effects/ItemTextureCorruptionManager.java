@@ -484,7 +484,7 @@ public final class ItemTextureCorruptionManager {
                 ConcurrentMap<BakedQuad, BakedQuad> transformedQuads = textureLeakedQuadsByBucket.computeIfAbsent(bucket, ignored -> new ConcurrentHashMap<>());
                 BakedQuad cached = transformedQuads.get(transformed);
                 if (cached == null) {
-                    cached = transformTextureMapLeak(transformed, stack, bucket);
+                    cached = transformTextureMapLeak(transformed, stack);
                     if (cached != transformed) {
                         BakedQuad existing = transformedQuads.putIfAbsent(transformed, cached);
                         if (existing != null) {
@@ -510,7 +510,7 @@ public final class ItemTextureCorruptionManager {
             for (BakedQuad quad : quads) {
                 BakedQuad transformed = transformedQuads.get(quad);
                 if (transformed == null) {
-                    transformed = transformTextureMapLeak(quad, stack, bucket);
+                    transformed = transformTextureMapLeak(quad, stack);
                     if (transformed != quad) {
                         BakedQuad cached = transformedQuads.putIfAbsent(quad, transformed);
                         if (cached != null) {
@@ -549,26 +549,30 @@ public final class ItemTextureCorruptionManager {
                     : stack.bucket(CorruptionSurface.MODEL_GEOMETRY, modelId, effectHash ^ 0x4D4F444C, 64);
         }
 
-        private BakedQuad transformTextureMapLeak(BakedQuad quad, CorruptionEffectStack stack, int bucket) {
+        private BakedQuad transformTextureMapLeak(BakedQuad quad, CorruptionEffectStack stack) {
             TextureAtlasSprite sourceSprite = quad.getSprite();
             rememberAtlasSprite(sourceSprite);
-            if (sourceSprite == null) {
+            if (sourceSprite == null || sourceSprite.contents() == null || sourceSprite.contents().name() == null) {
                 return quad;
             }
 
             float intensity = stack.extreme(CorruptionSurface.TEXTURE_MEMORY) ? 1.0F : stack.intensity(CorruptionSurface.TEXTURE_MEMORY);
-            String targetId = modelId + ":texture_map_leak:" + quad.getDirection().getName() + ":" + quad.getTintIndex();
+            ResourceLocation sourceId = sourceSprite.contents().name();
+            ResourceLocation atlasId = sourceSprite.atlasLocation();
+            String targetId = "texture_map_leak:" + (atlasId == null ? "unknown_atlas" : atlasId) + ":" + sourceId;
+            int sourceSalt = sourceId.hashCode() ^ 0x5445584C;
+            int sourceBucket = stack.bucket(CorruptionSurface.TEXTURE_MEMORY, targetId, sourceSalt, 48);
             float chance = Math.min(1.0F, 0.10F + intensity * (blockModel ? 0.88F : 0.72F) + stack.instability() * 0.10F);
             if (!stack.extreme(CorruptionSurface.TEXTURE_MEMORY)
-                    && stack.unit(CorruptionSurface.TEXTURE_MEMORY, targetId, bucket ^ effectHash) > chance) {
+                    && stack.unit(CorruptionSurface.TEXTURE_MEMORY, targetId, sourceBucket ^ sourceSalt) > chance) {
                 return quad;
             }
 
-            long seed = stack.stableLong(CorruptionSurface.TEXTURE_MEMORY, targetId, bucket ^ effectHash);
+            long seed = stack.stableLong(CorruptionSurface.TEXTURE_MEMORY, targetId, sourceBucket ^ sourceSalt);
             int textureMode = Math.floorMod((int) (seed >>> 29), 10);
             TextureAtlasSprite replacement = textureMode >= 6 && unitHash(seed ^ 0x5352434E43484D44L) < 0.72F
                     ? sourceSprite
-                    : replacementSprite(sourceSprite, stack, targetId, bucket);
+                    : replacementSprite(sourceSprite, stack, targetId, sourceBucket ^ sourceSalt);
             if (replacement == null) {
                 replacement = sourceSprite;
             }
@@ -680,14 +684,14 @@ public final class ItemTextureCorruptionManager {
             return alpha << 24 | blue << 16 | green << 8 | red;
         }
 
-        private TextureAtlasSprite replacementSprite(TextureAtlasSprite original, CorruptionEffectStack stack, String targetId, int bucket) {
+        private TextureAtlasSprite replacementSprite(TextureAtlasSprite original, CorruptionEffectStack stack, String targetId, int sourceSalt) {
             synchronized (SPRITE_POOL) {
                 if (SPRITE_POOL.size() < 2) {
                     return original;
                 }
                 int index = stack.extreme(CorruptionSurface.TEXTURE_MEMORY)
-                        ? Math.floorMod(stableHash(targetId, ITEM_TEXTURE_SEED ^ stack.stableLong(CorruptionSurface.TEXTURE_MEMORY, targetId, bucket)), SPRITE_POOL.size())
-                        : CorruptionValueMutator.selectIndex(stack, CorruptionSurface.TEXTURE_MEMORY, targetId, bucket ^ effectHash, SPRITE_POOL.size());
+                        ? Math.floorMod(stableHash(targetId, ITEM_TEXTURE_SEED ^ stack.stableLong(CorruptionSurface.TEXTURE_MEMORY, targetId, sourceSalt)), SPRITE_POOL.size())
+                        : CorruptionValueMutator.selectIndex(stack, CorruptionSurface.TEXTURE_MEMORY, targetId, sourceSalt, SPRITE_POOL.size());
                 TextureAtlasSprite replacement = SPRITE_POOL.get(index);
                 if (sameSprite(original, replacement)) {
                     replacement = SPRITE_POOL.get((index + 1) % SPRITE_POOL.size());
