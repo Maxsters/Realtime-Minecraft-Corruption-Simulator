@@ -343,6 +343,9 @@ public final class GuiEntityPreviewCorruptionHooks {
     }
 
     private static float intensity(CorruptionEffectStack stack, String targetId) {
+        if (stack == null || !stack.activeOrExtreme(CorruptionSurface.GUI_FUNCTIONALITY)) {
+            return 0.0F;
+        }
         return stack.extreme(CorruptionSurface.GUI_FUNCTIONALITY)
                 ? 1.0F
                 : Mth.clamp(Math.max(

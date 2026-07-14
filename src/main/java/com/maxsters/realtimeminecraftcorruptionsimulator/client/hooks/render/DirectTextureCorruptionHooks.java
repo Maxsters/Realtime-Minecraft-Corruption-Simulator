@@ -12,14 +12,14 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @OnlyIn(Dist.CLIENT)
 public final class DirectTextureCorruptionHooks {
     private static final List<ResourceLocation> TEXTURE_POOL = new ArrayList<>();
-    private static final Set<ResourceLocation> TEXTURE_POOL_IDS = new HashSet<>();
+    private static final Set<ResourceLocation> TEXTURE_POOL_IDS = ConcurrentHashMap.newKeySet();
     private static final ThreadLocal<RawTextureState> RAW_TEXTURE = new ThreadLocal<>();
 
     private DirectTextureCorruptionHooks() {
@@ -86,6 +86,9 @@ public final class DirectTextureCorruptionHooks {
 
     private static void remember(ResourceLocation texture) {
         if (!isDirectTextureCandidate(texture)) {
+            return;
+        }
+        if (TEXTURE_POOL_IDS.contains(texture)) {
             return;
         }
         synchronized (TEXTURE_POOL) {

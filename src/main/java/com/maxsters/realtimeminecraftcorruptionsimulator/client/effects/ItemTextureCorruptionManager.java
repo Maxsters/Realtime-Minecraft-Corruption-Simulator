@@ -39,7 +39,6 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -51,7 +50,7 @@ import java.util.function.Supplier;
 public final class ItemTextureCorruptionManager {
     private static final long ITEM_TEXTURE_SEED = DeterministicCorruption.DEFAULT_SEED ^ 0x493354454d55564cL;
     private static final List<TextureAtlasSprite> SPRITE_POOL = new ArrayList<>();
-    private static final Set<ResourceLocation> SPRITE_POOL_IDS = new HashSet<>();
+    private static final Set<ResourceLocation> SPRITE_POOL_IDS = ConcurrentHashMap.newKeySet();
     private static final Map<ResourceLocation, List<TextureAtlasSprite>> SPRITES_BY_ATLAS = new HashMap<>();
     private static final Set<CorruptedItemBakedModel> MODEL_WRAPPERS = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private static final ConcurrentMap<BakedModel, CorruptedItemBakedModel> RUNTIME_ITEM_MODEL_WRAPPERS = new ConcurrentHashMap<>();
@@ -69,6 +68,9 @@ public final class ItemTextureCorruptionManager {
             return;
         }
         ResourceLocation id = sprite.contents().name();
+        if (SPRITE_POOL_IDS.contains(id)) {
+            return;
+        }
         boolean becameUsable = false;
         synchronized (SPRITE_POOL) {
             if (SPRITE_POOL_IDS.add(id)) {

@@ -13,9 +13,9 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @OnlyIn(Dist.CLIENT)
 public final class GuiDirectTextureCorruptionHooks {
@@ -109,7 +109,7 @@ public final class GuiDirectTextureCorruptionHooks {
             "textures/gui/world_selection.png"
     );
     private static final List<ResourceLocation> TEXTURE_POOL = new ArrayList<>();
-    private static final Set<ResourceLocation> TEXTURE_POOL_IDS = new HashSet<>();
+    private static final Set<ResourceLocation> TEXTURE_POOL_IDS = ConcurrentHashMap.newKeySet();
     private static final ThreadLocal<RawTextureState> RAW_TEXTURE = new ThreadLocal<>();
     private static ResourceManager cachedStableResourceManager;
     private static List<ResourceLocation> stableTexturePool = List.of();
@@ -199,6 +199,9 @@ public final class GuiDirectTextureCorruptionHooks {
 
     private static void remember(ResourceLocation texture) {
         if (!isStableGuiTexture(texture)) {
+            return;
+        }
+        if (TEXTURE_POOL_IDS.contains(texture)) {
             return;
         }
         synchronized (TEXTURE_POOL) {

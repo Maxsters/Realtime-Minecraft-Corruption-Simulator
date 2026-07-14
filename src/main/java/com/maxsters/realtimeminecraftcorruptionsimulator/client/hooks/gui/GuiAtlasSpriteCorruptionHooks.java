@@ -11,14 +11,14 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @OnlyIn(Dist.CLIENT)
 public final class GuiAtlasSpriteCorruptionHooks {
     private static final List<TextureAtlasSprite> SPRITE_POOL = new ArrayList<>();
-    private static final Set<ResourceLocation> SPRITE_POOL_IDS = new HashSet<>();
+    private static final Set<ResourceLocation> SPRITE_POOL_IDS = ConcurrentHashMap.newKeySet();
 
     private GuiAtlasSpriteCorruptionHooks() {
     }
@@ -26,6 +26,9 @@ public final class GuiAtlasSpriteCorruptionHooks {
     public static void rememberAtlasSprite(TextureAtlasSprite sprite) {
         ResourceLocation id = spriteId(sprite);
         if (id == null) {
+            return;
+        }
+        if (SPRITE_POOL_IDS.contains(id)) {
             return;
         }
         synchronized (SPRITE_POOL) {

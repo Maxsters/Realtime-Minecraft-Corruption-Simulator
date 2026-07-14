@@ -495,7 +495,7 @@ public final class CorruptionOverlayPanel {
             int descriptionColor = !canUpdateSettings ? 0xFF5F6B70 : enabled ? 0xFF9AA8AD : 0xFF5F6B70;
             drawClipped(graphics, font, target.label(), rowX + 15, y + (compactRows ? 3 : 0), Math.max(20, columnWidth - 18), targetColor);
             if (!compactRows) {
-                drawClipped(graphics, font, target.description(), rowX + 15, y + 11, Math.max(20, columnWidth - 18), descriptionColor);
+                drawMarqueeClipped(graphics, font, target.description(), rowX + 15, y + 11, Math.max(20, columnWidth - 18), descriptionColor, target.id().hashCode() ^ 0x54415247);
             }
         }
     }

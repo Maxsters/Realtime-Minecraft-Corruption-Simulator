@@ -57,6 +57,14 @@ public final class ClientCorruptionEffects {
         return snapshot == null ? INACTIVE_STACK : CorruptionEffectStack.fromGameplay(snapshot);
     }
 
+    /** Server-seed view used by callbacks that Minecraft predicts on both logical sides. */
+    public static CorruptionEffectStack currentForServerPrediction() {
+        CorruptionStateSnapshot snapshot = ClientCorruptionState.snapshot();
+        return snapshot == null
+                ? INACTIVE_STACK
+                : CorruptionEffectStack.local(snapshot.corruptionLevel(), snapshot.fixedCorruptionSeed(), snapshot.enabledTargetsMask());
+    }
+
     private static CorruptionEffectStack fromClientSnapshot() {
         CorruptionStateSnapshot snapshot = ClientCorruptionState.snapshot();
         if (snapshot == null) {

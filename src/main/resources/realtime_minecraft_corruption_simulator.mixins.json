@@ -5,6 +5,8 @@
   "compatibilityLevel": "JAVA_17",
   "mixins": [
     "AbstractFurnaceBlockEntityMixin",
+    "BlockStateBehaviorMixin",
+    "BlockItemMixin",
     "BlockStateRedstoneSignalMixin",
     "BoatFluidStateMixin",
     "BrewingStandBlockEntityMixin",
@@ -17,11 +19,14 @@
     "EntityCollisionMixin",
     "EntityFireAndPowderSnowMixin",
     "EntityFluidStateMixin",
-    "EntityHitboxDimensionsMixin",
+    "EntityHitboxMixin",
     "FeatureMixin",
     "FireBlockMixin",
+    "GameEventDispatcherMixin",
     "HangingEntityBoundingBoxMixin",
     "HangingEntitySubclassBoundingBoxMixin",
+    "ItemEntityPhysicsMixin",
+    "ItemStackUseMixin",
     "LivingEntityMechanicsMixin",
     "LivingEntityTargetingMixin",
     "MobSunBurnMixin",
@@ -29,6 +34,7 @@
     "NoiseRouterMixin",
     "PathNavigationMixin",
     "PlayerMechanicsMixin",
+    "ProjectileMixin",
     "SurfaceRulesStateRuleMixin"
   ],
   "client": [

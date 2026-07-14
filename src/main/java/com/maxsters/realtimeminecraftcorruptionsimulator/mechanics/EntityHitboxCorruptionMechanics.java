@@ -5,7 +5,6 @@ import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurfa
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.phys.AABB;
 import net.minecraftforge.registries.ForgeRegistries;
 
@@ -15,22 +14,10 @@ import java.util.WeakHashMap;
 
 final class EntityHitboxCorruptionMechanics {
     private static final float MIN_ENTITY_MECHANICS_INTENSITY = 0.00025F;
-    private static final ThreadLocal<Integer> DIMENSION_BYPASS_DEPTH = ThreadLocal.withInitial(() -> 0);
     private static final Map<Entity, HitboxSignatureCache> SIGNATURE_CACHE = Collections.synchronizedMap(new WeakHashMap<>());
     private static final EntityHitboxMutation PASS = new EntityHitboxMutation(1.0F, 1.0F, 0);
 
     private EntityHitboxCorruptionMechanics() {
-    }
-
-    static EntityDimensions corruptDimensions(Entity entity, EntityDimensions original, CorruptionEffectStack stack) {
-        if (DIMENSION_BYPASS_DEPTH.get() > 0) {
-            return original;
-        }
-        EntityHitboxMutation mutation = mutation(entity, stack);
-        if (original == null || mutation == PASS) {
-            return original;
-        }
-        return original.scale(mutation.widthScale(), mutation.heightScale());
     }
 
     static AABB corruptBounds(Entity entity, AABB original, CorruptionEffectStack stack) {
@@ -73,22 +60,8 @@ final class EntityHitboxCorruptionMechanics {
         return signature;
     }
 
-    static void beginDimensionBypass() {
-        DIMENSION_BYPASS_DEPTH.set(DIMENSION_BYPASS_DEPTH.get() + 1);
-    }
-
-    static void endDimensionBypass() {
-        int depth = DIMENSION_BYPASS_DEPTH.get() - 1;
-        if (depth <= 0) {
-            DIMENSION_BYPASS_DEPTH.remove();
-        } else {
-            DIMENSION_BYPASS_DEPTH.set(depth);
-        }
-    }
-
     static void clearCaches() {
         SIGNATURE_CACHE.clear();
-        DIMENSION_BYPASS_DEPTH.remove();
     }
 
     private static int profileSignature(CorruptionEffectStack stack) {

@@ -8,8 +8,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
-import java.util.UUID;
-
 public final class InteractionRayCorruptionMechanics {
     private static final CorruptionSurface SURFACE = CorruptionSurface.INTERACTION_ROUTING;
 
@@ -92,18 +90,6 @@ public final class InteractionRayCorruptionMechanics {
                 stack.extreme(SURFACE) ? 1.0F : stack.intensity(SURFACE),
                 stack.targetIntensity(SURFACE, targetId)
         ), 0.0F, 1.0F);
-    }
-
-    public static int positionSalt(BlockPos pos) {
-        return pos == null ? 0 : (int) mixLong(pos.asLong());
-    }
-
-    public static int entitySalt(Entity entity) {
-        UUID uuid = entity == null ? null : entity.getUUID();
-        if (uuid == null) {
-            return 0;
-        }
-        return (int) mixLong(uuid.getMostSignificantBits() ^ Long.rotateLeft(uuid.getLeastSignificantBits(), 32));
     }
 
     private static boolean active(CorruptionEffectStack stack, String targetId, float minimumIntensity) {
