@@ -67,6 +67,7 @@
     "client.GuiGraphicsMixin",
     "client.InventoryScreenMixin",
     "client.ItemEntityRendererMixin",
+    "client.KeyboardHandlerMixin",
     "client.LevelRendererMixin",
     "client.LevelLoadingScreenMixin",
     "client.LightTextureMixin",

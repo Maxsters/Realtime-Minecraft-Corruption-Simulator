@@ -137,7 +137,7 @@ public final class CorruptionOverlayManager {
     }
 
     public static void openOverlayForInteraction() {
-        LAYOUT.setMode(CorruptionOverlayLayout.Mode.OPEN);
+        setOverlayMode(CorruptionOverlayLayout.Mode.OPEN);
         LAYOUT.save();
         interactionMode = true;
         releaseMouseForOverlay();
@@ -222,7 +222,7 @@ public final class CorruptionOverlayManager {
             interactionMode = true;
             releaseMouseForOverlay();
             handleProtectedTextEditKey(event.getKey(), event.getModifiers(), event.getAction(), true);
-            event.setCanceled(true);
+            KeyMapping.releaseAll();
             return;
         }
         if (quickToggleKey != null) {
@@ -236,6 +236,23 @@ public final class CorruptionOverlayManager {
                 releaseMouseForOverlay();
             }
         }
+    }
+
+    public static boolean consumeWorldTextEditKey(long window, int key, int action, int modifiers) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null
+                || minecraft.screen != null
+                || minecraft.getWindow() == null
+                || window != minecraft.getWindow().getWindow()
+                || !isTextEditing()) {
+            return false;
+        }
+
+        interactionMode = true;
+        releaseMouseForOverlay();
+        handleProtectedTextEditKey(key, modifiers, action, true);
+        KeyMapping.releaseAll();
+        return true;
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
@@ -810,7 +827,7 @@ public final class CorruptionOverlayManager {
 
         if (mouseAction == MouseAction.COLLAPSED_BUTTON) {
             if (!dragMoved && CorruptionOverlayPanel.panelBounds(LAYOUT, screenWidth, screenHeight).contains(mouseX, mouseY)) {
-                LAYOUT.setMode(CorruptionOverlayLayout.Mode.OPEN);
+                setOverlayMode(CorruptionOverlayLayout.Mode.OPEN);
             }
             LAYOUT.save();
         } else if (mouseAction == MouseAction.WINDOW || mouseAction == MouseAction.RESIZE_HORIZONTAL || mouseAction == MouseAction.RESIZE_VERTICAL || mouseAction == MouseAction.RESIZE_BOTH) {
@@ -919,18 +936,26 @@ public final class CorruptionOverlayManager {
 
     private static void handleControlRelease(double mouseX, double mouseY, int screenWidth, int screenHeight) {
         if (pendingControl == PendingControl.COLLAPSE && CorruptionOverlayPanel.collapseButtonBounds(LAYOUT, screenWidth, screenHeight).contains(mouseX, mouseY)) {
-            LAYOUT.setMode(CorruptionOverlayLayout.Mode.COLLAPSED);
+            setOverlayMode(CorruptionOverlayLayout.Mode.COLLAPSED);
             LAYOUT.save();
             return;
         }
         if (pendingControl == PendingControl.MINIMIZE && CorruptionOverlayPanel.minimizeButtonBounds(LAYOUT, screenWidth, screenHeight).contains(mouseX, mouseY)) {
             if (LAYOUT.mode() == CorruptionOverlayLayout.Mode.MINIMIZED) {
-                LAYOUT.setMode(CorruptionOverlayLayout.Mode.OPEN);
+                setOverlayMode(CorruptionOverlayLayout.Mode.OPEN);
             } else {
-                LAYOUT.setMode(CorruptionOverlayLayout.Mode.MINIMIZED);
+                setOverlayMode(CorruptionOverlayLayout.Mode.MINIMIZED);
             }
             LAYOUT.save();
         }
+    }
+
+    private static void setOverlayMode(CorruptionOverlayLayout.Mode mode) {
+        if (mode != CorruptionOverlayLayout.Mode.OPEN && isTextEditing()) {
+            cancelActiveTextEdit();
+            KeyMapping.releaseAll();
+        }
+        LAYOUT.setMode(mode);
     }
 
     private static void applyCurrentSettings(int level, long seed, String seedLabel, int enabledTargetsMask, int autoIncreaseIntervalTicks, int autoIncreaseAmount, boolean clientDriftEnabled, int seedRandomizerIntervalTicks) {
