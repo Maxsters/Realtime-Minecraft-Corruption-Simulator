@@ -26,9 +26,11 @@ import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -65,6 +67,80 @@ public abstract class LevelRendererMixin {
     private void rmc$refreshCorruptedStars(PoseStack poseStack, Matrix4f projectionMatrix, float partialTick, net.minecraft.client.Camera camera, boolean fog, Runnable setupFog, CallbackInfo callback) {
         DirectTextureCorruptionHooks.clearRawTexture();
         SkyRenderCorruptionHooks.beginRenderSky((LevelRenderer) (Object) this, partialTick);
+    }
+
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/multiplayer/ClientLevel;getTimeOfDay(F)F",
+                    ordinal = 1,
+                    remap = false
+            ),
+            remap = false,
+            require = 0
+    )
+    private float rmc$corruptCelestialTime(ClientLevel level, float partialTick) {
+        return SkyRenderCorruptionHooks.mutateCelestialTime(level.getTimeOfDay(partialTick));
+    }
+
+    @Redirect(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/multiplayer/ClientLevel;m_46942_(F)F",
+                    ordinal = 1,
+                    remap = false
+            ),
+            remap = false,
+            require = 0
+    )
+    private float rmc$corruptCelestialTimeSrg(ClientLevel level, float partialTick) {
+        return SkyRenderCorruptionHooks.mutateCelestialTime(level.getTimeOfDay(partialTick));
+    }
+
+    @ModifyArg(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/mojang/blaze3d/vertex/PoseStack;mulPose(Lorg/joml/Quaternionf;)V",
+                    ordinal = 4,
+                    remap = false
+            ),
+            index = 0,
+            remap = false,
+            require = 0
+    )
+    private Quaternionf rmc$corruptCelestialOrbit(Quaternionf rotation) {
+        return SkyRenderCorruptionHooks.mutateCelestialOrbit(rotation);
+    }
+
+    @ModifyArg(
+            method = {
+                    "renderSky(Lcom/mojang/blaze3d/vertex/PoseStack;Lorg/joml/Matrix4f;FLnet/minecraft/client/Camera;ZLjava/lang/Runnable;)V",
+                    "m_202423_"
+            },
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/mojang/blaze3d/vertex/PoseStack;m_252781_(Lorg/joml/Quaternionf;)V",
+                    ordinal = 4,
+                    remap = false
+            ),
+            index = 0,
+            remap = false,
+            require = 0
+    )
+    private Quaternionf rmc$corruptCelestialOrbitSrg(Quaternionf rotation) {
+        return SkyRenderCorruptionHooks.mutateCelestialOrbit(rotation);
     }
 
     @Redirect(

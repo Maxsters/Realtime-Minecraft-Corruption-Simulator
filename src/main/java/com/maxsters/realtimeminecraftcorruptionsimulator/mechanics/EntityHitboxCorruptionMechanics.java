@@ -75,7 +75,7 @@ final class EntityHitboxCorruptionMechanics {
     }
 
     private static EntityHitboxMutation mutation(Entity entity, CorruptionEffectStack stack) {
-        if (entity == null || entity.level() == null || stack.level() <= 0) {
+        if (entity == null || entity.level() == null || !entity.isAddedToWorld() || stack.level() <= 0) {
             return PASS;
         }
 

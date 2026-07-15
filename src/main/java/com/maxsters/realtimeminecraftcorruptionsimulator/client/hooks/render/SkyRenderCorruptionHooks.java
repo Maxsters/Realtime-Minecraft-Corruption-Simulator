@@ -14,6 +14,7 @@ import net.minecraft.util.Mth;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 
 import java.lang.reflect.Method;
 
@@ -45,6 +46,93 @@ public final class SkyRenderCorruptionHooks {
             restoreSkyState();
         }
         SKY_RENDER_CONTEXT.remove();
+    }
+
+    public static float mutateCelestialTime(float vanillaTime) {
+        SkyRenderContext context = SKY_RENDER_CONTEXT.get();
+        if (context == null || !Float.isFinite(vanillaTime)) {
+            return vanillaTime;
+        }
+
+        CorruptionEffectStack stack = context.stack();
+        float intensity = skyRenderStateIntensity(stack, "sky_celestial_trajectory", 0.94F);
+        if (intensity <= 0.0F) {
+            context.celestialTime = wrapUnit(vanillaTime);
+            return vanillaTime;
+        }
+
+        long seed = stack.stableLong(CorruptionSurface.WORLD_RENDER, "sky_celestial_trajectory", 0x4F524249);
+        double time = wrapUnit(vanillaTime);
+        double phase = unit(seed ^ 0x5048415345L);
+        int mode = Math.floorMod((int) (seed >>> 29), 8);
+        double mutated = switch (mode) {
+            case 0 -> time + signed(seed ^ 0x504F534CL, 0.5D + intensity * 1.5D);
+            case 1 -> phase - time * (0.25D + unit(seed ^ 0x52455645L) * (2.0D + intensity * 5.0D));
+            case 2 -> phase + time * (0.08D + unit(seed ^ 0x53504545L) * (3.0D + intensity * 12.0D));
+            case 3 -> phase;
+            case 4 -> {
+                int steps = 2 + (int) Math.floor(unit(seed ^ 0x53544550L) * (5.0D + intensity * 19.0D));
+                yield Math.floor((time + phase) * steps) / steps;
+            }
+            case 5 -> time + Math.sin((time * (1.0D + unit(seed ^ 0x46524551L) * 7.0D) + phase) * Mth.TWO_PI)
+                    * intensity * (0.08D + unit(seed ^ 0x574F4242L) * 0.62D);
+            case 6 -> Math.abs(wrapUnit(time * (0.5D + unit(seed ^ 0x50494E47L) * 6.5D) + phase) * 2.0D - 1.0D);
+            default -> phase + Math.copySign(Math.pow(time, 0.25D + unit(seed ^ 0x43555256L) * 3.75D),
+                    unit(seed ^ 0x5349474EL) < 0.5D ? -1.0D : 1.0D);
+        };
+
+        float blend = Mth.clamp(0.18F + intensity * 0.82F, 0.0F, 1.0F);
+        float result = wrapUnit(Mth.lerp(blend, (float) time, (float) mutated));
+        context.celestialTime = result;
+        return result;
+    }
+
+    public static Quaternionf mutateCelestialOrbit(Quaternionf vanillaRotation) {
+        SkyRenderContext context = SKY_RENDER_CONTEXT.get();
+        if (context == null || vanillaRotation == null) {
+            return vanillaRotation;
+        }
+
+        CorruptionEffectStack stack = context.stack();
+        float intensity = skyRenderStateIntensity(stack, "sky_celestial_orbit", 0.92F);
+        if (intensity <= 0.0F) {
+            return vanillaRotation;
+        }
+
+        long seed = stack.stableLong(CorruptionSurface.WORLD_RENDER, "sky_celestial_orbit", 0x41584953);
+        float cycle = Float.isFinite(context.celestialTime) ? context.celestialTime : 0.0F;
+        float angle = cycle * Mth.TWO_PI;
+        int mode = Math.floorMod((int) (seed >>> 33), 5);
+        if (mode == 0 || mode == 1) {
+            float axisX = 1.0F + signed(seed ^ 0x41584958L, intensity * 1.8F);
+            float axisY = signed(seed ^ 0x41584959L, intensity * 2.4F);
+            float axisZ = signed(seed ^ 0x4158495AL, intensity * 2.4F);
+            float length = (float) Math.sqrt(axisX * axisX + axisY * axisY + axisZ * axisZ);
+            if (length > 0.0001F && Float.isFinite(length)) {
+                return new Quaternionf().rotationAxis(angle, axisX / length, axisY / length, axisZ / length);
+            }
+        }
+
+        Quaternionf mutated = new Quaternionf();
+        float fixedYaw = signed(seed ^ 0x594157L, intensity * (float) Math.PI);
+        float fixedRoll = signed(seed ^ 0x524F4C4CL, intensity * (float) Math.PI);
+        switch (mode) {
+            case 2 -> mutated.rotateY(fixedYaw).rotateZ(fixedRoll).mul(vanillaRotation);
+            case 3 -> {
+                float frequency = 1.0F + unitFloat(seed ^ 0x50524651L) * 7.0F;
+                float precession = (cycle * frequency * Mth.TWO_PI + fixedYaw) * intensity;
+                mutated.rotateY(precession).rotateZ(fixedRoll * 0.65F).mul(vanillaRotation);
+            }
+            default -> {
+                float phase = unitFloat(seed ^ 0x57425048L) * Mth.TWO_PI;
+                float yaw = Mth.sin(cycle * Mth.TWO_PI * (1.0F + unitFloat(seed ^ 0x57424651L) * 5.0F) + phase)
+                        * intensity * (0.35F + unitFloat(seed ^ 0x57425941L) * 2.4F);
+                float roll = Mth.cos(cycle * Mth.TWO_PI * (1.0F + unitFloat(seed ^ 0x57425251L) * 4.0F) + phase)
+                        * intensity * (0.25F + unitFloat(seed ^ 0x5742524CL) * 2.0F);
+                mutated.rotateY(yaw).rotateZ(roll).mul(vanillaRotation);
+            }
+        }
+        return mutated;
     }
 
     public static void onRenderSky(LevelRenderer renderer) {
@@ -603,7 +691,6 @@ public final class SkyRenderCorruptionHooks {
     private static String starSignature(CorruptionEffectStack stack) {
         return stack.level()
                 + ":" + stack.fixedSeed()
-                + ":" + stack.enabledTargetsMask()
                 + ":" + stack.bucket(CorruptionSurface.LIGHT_FIELD, 0x53544152, 64)
                 + ":" + stack.bucket(CorruptionSurface.WORLD_RENDER, 0x574F524C, 64);
     }
@@ -611,7 +698,6 @@ public final class SkyRenderCorruptionHooks {
     private static String skyColorSignature(CorruptionEffectStack stack, float partialTick) {
         return stack.level()
                 + ":" + stack.fixedSeed()
-                + ":" + stack.enabledTargetsMask()
                 + ":" + stack.bucket(CorruptionSurface.LIGHT_FIELD, 0x534B594C, 64)
                 + ":" + stack.bucket(CorruptionSurface.WORLD_RENDER, 0x534B5957, 64);
     }
@@ -671,6 +757,10 @@ public final class SkyRenderCorruptionHooks {
         return unit(seed ^ 0x5349474EL) < 0.5D ? -magnitude : magnitude;
     }
 
+    private static float wrapUnit(double value) {
+        return (float) (value - Math.floor(value));
+    }
+
     private static final class SkyRenderContext {
         private final CorruptionEffectStack stack;
         private final String signature;
@@ -678,6 +768,7 @@ public final class SkyRenderCorruptionHooks {
         private int shaderColorOrdinal = -1;
         private int blendOrdinal = -1;
         private int bufferOrdinal = -1;
+        private float celestialTime = Float.NaN;
 
         private SkyRenderContext(CorruptionEffectStack stack, String signature) {
             this.stack = stack;
