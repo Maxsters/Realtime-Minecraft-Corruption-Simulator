@@ -1368,13 +1368,10 @@ public final class CorruptionMechanicsManager {
         }
 
         CorruptionEffectStack stack = serverStack(level);
-        if (usesSaveStableVisualWorldgen(stack)) {
-            return;
-        }
         String targetId = "fluid_place:" + blockTargetId(event.getOriginalState()) + "->" + blockTargetId(event.getNewState());
-        float intensity = stack.targetIntensity(CorruptionSurface.WORLDGEN_SURFACE, targetId);
-        if (targetActive(stack, CorruptionSurface.WORLDGEN_SURFACE, targetId, MIN_WORLD_PROCESS_INTENSITY)
-                && CorruptionValueMutator.decision(stack, CorruptionSurface.WORLDGEN_SURFACE, targetId, event.getPos().hashCode(), 0.52F + intensity * 0.22F)) {
+        float intensity = stack.targetIntensity(CorruptionSurface.BLOCK_BEHAVIOR, targetId);
+        if (targetActive(stack, CorruptionSurface.BLOCK_BEHAVIOR, targetId, MIN_WORLD_PROCESS_INTENSITY)
+                && CorruptionValueMutator.decision(stack, CorruptionSurface.BLOCK_BEHAVIOR, targetId, event.getPos().hashCode(), 0.52F + intensity * 0.22F)) {
             long hash = stableHash(level.getSeed(), event.getPos().getX(), event.getPos().getZ(), event.getPos().getY());
             event.setNewState(mutatedNearbyBlockState(level, event.getPos(), hash, stack, event.getOriginalState(), true));
         }
@@ -1387,26 +1384,23 @@ public final class CorruptionMechanicsManager {
         }
 
         CorruptionEffectStack stack = serverStack(level);
-        if (usesSaveStableVisualWorldgen(stack)) {
-            return;
-        }
         String targetId = "fluid_source:" + blockTargetId(event.getState());
-        float intensity = stack.targetIntensity(CorruptionSurface.WORLDGEN_SURFACE, targetId);
+        float intensity = stack.targetIntensity(CorruptionSurface.BLOCK_BEHAVIOR, targetId);
         if (intensity <= MIN_WORLD_PROCESS_INTENSITY) {
             return;
         }
 
         int salt = event.getPos().hashCode();
-        boolean deny = CorruptionValueMutator.decision(stack, CorruptionSurface.WORLDGEN_SURFACE, targetId + ":deny", salt ^ 0x55, 0.46F + intensity * 0.26F);
+        boolean deny = CorruptionValueMutator.decision(stack, CorruptionSurface.BLOCK_BEHAVIOR, targetId + ":deny", salt ^ 0x55, 0.46F + intensity * 0.26F);
         if (deny) {
             event.setResult(Event.Result.DENY);
             return;
         }
 
-        float allowChance = stack.extreme(CorruptionSurface.WORLDGEN_SURFACE)
+        float allowChance = stack.extreme(CorruptionSurface.BLOCK_BEHAVIOR)
                 ? 0.22F
                 : Mth.clamp(0.015F + intensity * 0.12F + stack.instability() * 0.035F, 0.0F, 0.18F);
-        boolean allow = CorruptionValueMutator.decision(stack, CorruptionSurface.WORLDGEN_SURFACE, targetId + ":allow", salt, allowChance);
+        boolean allow = CorruptionValueMutator.decision(stack, CorruptionSurface.BLOCK_BEHAVIOR, targetId + ":allow", salt, allowChance);
         if (allow && claimWorldProcessMutation(level) && claimFluidSourceAllow(level)) {
             event.setResult(Event.Result.ALLOW);
         }
@@ -2959,7 +2953,7 @@ public final class CorruptionMechanicsManager {
     }
 
     private static BlockState mutatedNearbyBlockState(ServerLevel level, BlockPos pos, long hash, CorruptionEffectStack stack, BlockState fallback, boolean allowAirTears) {
-        float intensity = stack.intensityOrExtreme(CorruptionSurface.WORLDGEN_SURFACE);
+        float intensity = stack.intensityOrExtreme(CorruptionSurface.BLOCK_BEHAVIOR);
         if (allowAirTears && unitHash(hash ^ 0x4E454152414952L) < 0.02F + intensity * 0.16F) {
             return Blocks.AIR.defaultBlockState();
         }
