@@ -44,8 +44,10 @@ public class CorruptionSavedData extends SavedData {
     private boolean serverAchievementDisqualified;
     private String serverAchievementDisqualificationReason = "";
     private boolean warrantyStarted;
+    private long warrantyAttemptSeed = DeterministicCorruption.DEFAULT_SEED;
     private boolean warrantyDisqualified;
     private boolean blessingStarted;
+    private long blessingAttemptSeed = DeterministicCorruption.DEFAULT_SEED;
     private boolean blessingDisqualified;
     private final Set<String> armedDragonIds = new LinkedHashSet<>();
     private final Set<String> spoiledDragonIds = new LinkedHashSet<>();
@@ -145,6 +147,9 @@ public class CorruptionSavedData extends SavedData {
         if (tag.contains("warranty_started", Tag.TAG_BYTE)) {
             data.warrantyStarted = tag.getBoolean("warranty_started");
         }
+        data.warrantyAttemptSeed = tag.contains("warranty_attempt_seed", Tag.TAG_LONG)
+                ? tag.getLong("warranty_attempt_seed")
+                : data.fixedCorruptionSeed;
         if (tag.contains("warranty_disqualified", Tag.TAG_BYTE)) {
             data.warrantyDisqualified = tag.getBoolean("warranty_disqualified");
         }
@@ -153,6 +158,9 @@ public class CorruptionSavedData extends SavedData {
         } else {
             data.blessingStarted = data.warrantyStarted;
         }
+        data.blessingAttemptSeed = tag.contains("blessing_attempt_seed", Tag.TAG_LONG)
+                ? tag.getLong("blessing_attempt_seed")
+                : data.fixedCorruptionSeed;
         if (tag.contains("blessing_disqualified", Tag.TAG_BYTE)) {
             data.blessingDisqualified = tag.getBoolean("blessing_disqualified");
         } else {
@@ -199,8 +207,10 @@ public class CorruptionSavedData extends SavedData {
         tag.putBoolean("server_achievement_disqualified", serverAchievementDisqualified);
         tag.putString("server_achievement_disqualification_reason", serverAchievementDisqualificationReason);
         tag.putBoolean("warranty_started", warrantyStarted);
+        tag.putLong("warranty_attempt_seed", warrantyAttemptSeed);
         tag.putBoolean("warranty_disqualified", warrantyDisqualified);
         tag.putBoolean("blessing_started", blessingStarted);
+        tag.putLong("blessing_attempt_seed", blessingAttemptSeed);
         tag.putBoolean("blessing_disqualified", blessingDisqualified);
         tag.putString("armed_dragon_ids", csv(armedDragonIds));
         tag.putString("spoiled_dragon_ids", csv(spoiledDragonIds));
@@ -226,9 +236,23 @@ public class CorruptionSavedData extends SavedData {
     }
 
     public void setCorruptionSeed(long fixedCorruptionSeed, String corruptionSeedLabel) {
+        boolean changed = this.fixedCorruptionSeed != fixedCorruptionSeed;
         this.fixedCorruptionSeed = fixedCorruptionSeed;
         this.corruptionSeedLabel = sanitizeSeedLabel(corruptionSeedLabel, fixedCorruptionSeed);
+        if (changed) {
+            disqualifyActiveSeedLockedAttempts();
+        }
         setDirty();
+    }
+
+    private void disqualifyActiveSeedLockedAttempts() {
+        if (warrantyStarted) {
+            warrantyDisqualified = true;
+            armedDragonIds.clear();
+        }
+        if (blessingStarted) {
+            blessingDisqualified = true;
+        }
     }
 
     public int getEnabledTargetsMask() {
@@ -413,13 +437,18 @@ public class CorruptionSavedData extends SavedData {
         return warrantyStarted;
     }
 
-    public boolean setWarrantyStarted(boolean warrantyStarted) {
-        if (this.warrantyStarted == warrantyStarted) {
+    public boolean startWarrantyAttempt(long corruptionSeed) {
+        if (warrantyStarted) {
             return false;
         }
-        this.warrantyStarted = warrantyStarted;
+        warrantyStarted = true;
+        warrantyAttemptSeed = corruptionSeed;
         setDirty();
         return true;
+    }
+
+    public boolean isWarrantyAttemptSeedCurrent() {
+        return warrantyStarted && warrantyAttemptSeed == fixedCorruptionSeed;
     }
 
     public boolean isWarrantyDisqualified() {
@@ -439,13 +468,18 @@ public class CorruptionSavedData extends SavedData {
         return blessingStarted;
     }
 
-    public boolean setBlessingStarted(boolean blessingStarted) {
-        if (this.blessingStarted == blessingStarted) {
+    public boolean startBlessingAttempt(long corruptionSeed) {
+        if (blessingStarted) {
             return false;
         }
-        this.blessingStarted = blessingStarted;
+        blessingStarted = true;
+        blessingAttemptSeed = corruptionSeed;
         setDirty();
         return true;
+    }
+
+    public boolean isBlessingAttemptSeedCurrent() {
+        return blessingStarted && blessingAttemptSeed == fixedCorruptionSeed;
     }
 
     public boolean isBlessingDisqualified() {

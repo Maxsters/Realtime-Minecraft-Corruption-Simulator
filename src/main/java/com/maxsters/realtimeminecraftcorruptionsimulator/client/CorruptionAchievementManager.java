@@ -192,13 +192,13 @@ public final class CorruptionAchievementManager {
             return humanDisqualificationReason(activeWorldState.disqualificationReason);
         }
         if (index == WARRANTY_VOIDED && activeWorldState.warrantyDisqualified) {
-            return "world did not keep 10% corruption with all required targets";
+            return "world did not keep 10% corruption, all required targets, and the same seed";
         }
         if (index == WARRANTY_VOIDED && currentDragonFightSpoiled(Minecraft.getInstance())) {
             return "current Ender Dragon fight was disqualified before the kill";
         }
         if (index == DIAMOND_BLESSING && activeWorldState.blessingDisqualified) {
-            return "world did not keep 10% corruption with all required targets";
+            return "world did not keep 10% corruption, all required targets, and the same seed";
         }
         return "";
     }

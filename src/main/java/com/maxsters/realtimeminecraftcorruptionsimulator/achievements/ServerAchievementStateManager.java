@@ -114,11 +114,11 @@ public final class ServerAchievementStateManager {
         boolean exactWarrantySettings = AchievementRules.warrantySettingsActive(data.getCorruptionLevel(), data.getEnabledTargetsMask());
         if (!data.isWarrantyStarted()) {
             if (exactWarrantySettings) {
-                return data.setWarrantyStarted(true);
+                return data.startWarrantyAttempt(data.getFixedCorruptionSeed());
             }
             return data.setWarrantyDisqualified(true);
         }
-        if (!exactWarrantySettings) {
+        if (!exactWarrantySettings || !data.isWarrantyAttemptSeedCurrent()) {
             boolean changed = data.setWarrantyDisqualified(true);
             changed |= data.clearArmedDragonFights();
             return changed;
@@ -134,11 +134,11 @@ public final class ServerAchievementStateManager {
         boolean runtimeSettings = AchievementRules.blessingRuntimeSettingsActive(data.getCorruptionLevel(), data.getEnabledTargetsMask());
         if (!data.isBlessingStarted()) {
             if (AchievementRules.blessingStartSettingsActive(data.getCorruptionLevel(), data.getEnabledTargetsMask())) {
-                return data.setBlessingStarted(true);
+                return data.startBlessingAttempt(data.getFixedCorruptionSeed());
             }
             return data.setBlessingDisqualified(true);
         }
-        if (!runtimeSettings) {
+        if (!runtimeSettings || !data.isBlessingAttemptSeedCurrent()) {
             return data.setBlessingDisqualified(true);
         }
         return false;
@@ -177,6 +177,7 @@ public final class ServerAchievementStateManager {
                 && !data.isAchievementWorldDisqualified()
                 && data.isWarrantyStarted()
                 && !data.isWarrantyDisqualified()
+                && data.isWarrantyAttemptSeedCurrent()
                 && AchievementRules.warrantySettingsActive(data.getCorruptionLevel(), data.getEnabledTargetsMask());
     }
 
@@ -186,6 +187,7 @@ public final class ServerAchievementStateManager {
                 && !data.isAchievementWorldDisqualified()
                 && data.isBlessingStarted()
                 && !data.isBlessingDisqualified()
+                && data.isBlessingAttemptSeedCurrent()
                 && AchievementRules.blessingRuntimeSettingsActive(data.getCorruptionLevel(), data.getEnabledTargetsMask());
     }
 
