@@ -2,6 +2,7 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.gui;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ClientCorruptionEffects;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.TextureMutationManager;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
@@ -122,6 +123,7 @@ public final class GuiDirectTextureCorruptionHooks {
         if (texture == null || ClientCorruptionProtection.isProtectedResource(texture)) {
             return null;
         }
+        TextureMutationManager.rememberGuiRenderedTexture(texture);
         remember(texture);
 
         CorruptionEffectStack stack = ClientCorruptionEffects.currentForGuiRendering();

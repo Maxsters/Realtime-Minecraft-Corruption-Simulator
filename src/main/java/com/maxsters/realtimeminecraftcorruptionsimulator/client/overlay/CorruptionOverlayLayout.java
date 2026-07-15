@@ -49,7 +49,7 @@ public final class CorruptionOverlayLayout {
             layout.height = parseInt(properties.getProperty("height"), DEFAULT_HEIGHT);
             layout.mode = parseMode(properties.getProperty("mode"));
         } catch (IOException exception) {
-            RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to load Realtime Minecraft Corruption Simulator overlay layout", exception);
+            RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to load Real-Time Minecraft Corruption Simulator overlay layout", exception);
         }
         return layout;
     }
@@ -66,10 +66,10 @@ public final class CorruptionOverlayLayout {
         try {
             Files.createDirectories(path.getParent());
             try (OutputStream outputStream = Files.newOutputStream(path)) {
-                properties.store(outputStream, "Realtime Minecraft Corruption Simulator overlay layout");
+                properties.store(outputStream, "Real-Time Minecraft Corruption Simulator overlay layout");
             }
         } catch (IOException exception) {
-            RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to save Realtime Minecraft Corruption Simulator overlay layout", exception);
+            RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to save Real-Time Minecraft Corruption Simulator overlay layout", exception);
         }
     }
 

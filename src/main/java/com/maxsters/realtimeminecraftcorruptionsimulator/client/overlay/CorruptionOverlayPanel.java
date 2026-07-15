@@ -353,7 +353,7 @@ public final class CorruptionOverlayPanel {
     private static void renderHeader(GuiGraphics graphics, Font font, CorruptionOverlayLayout layout, CorruptionStateSnapshot snapshot, Rect panel, int mouseX, int mouseY, boolean minimized) {
         graphics.fill(panel.x(), panel.y(), panel.x() + panel.width(), panel.y() + HEADER_HEIGHT, 0xF0263034);
         graphics.fill(panel.x(), panel.y() + HEADER_HEIGHT - 1, panel.x() + panel.width(), panel.y() + HEADER_HEIGHT, 0xFF52636A);
-        String title = minimized ? "Realtime Corruption Simulator" : "Realtime Minecraft Corruption Simulator";
+        String title = minimized ? "Real-Time Corruption Simulator" : "Real-Time Minecraft Corruption Simulator";
         drawClipped(graphics, font, title, panel.x() + 8, panel.y() + 6, panel.width() - 52, 0xFFEAF4F7);
 
         Rect min = minimizeButtonBounds(layout, graphics.guiWidth(), graphics.guiHeight());

@@ -2,6 +2,7 @@ package com.maxsters.realtimeminecraftcorruptionsimulator.client.hooks.render;
 
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.ClientCorruptionProtection;
 import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.ClientCorruptionEffects;
+import com.maxsters.realtimeminecraftcorruptionsimulator.client.effects.TextureRenderOwnership;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionEffectStack;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionSurface;
 import com.maxsters.realtimeminecraftcorruptionsimulator.profile.CorruptionValueMutator;
@@ -84,6 +85,17 @@ public final class DirectTextureCorruptionHooks {
         RAW_TEXTURE.remove();
     }
 
+    public static void forgetTexture(ResourceLocation texture) {
+        if (texture == null) {
+            return;
+        }
+        synchronized (TEXTURE_POOL) {
+            if (TEXTURE_POOL_IDS.remove(texture)) {
+                TEXTURE_POOL.remove(texture);
+            }
+        }
+    }
+
     private static void remember(ResourceLocation texture) {
         if (!isDirectTextureCandidate(texture)) {
             return;
@@ -149,7 +161,9 @@ public final class DirectTextureCorruptionHooks {
     }
 
     private static boolean isDirectTextureCandidate(ResourceLocation texture) {
-        if (texture == null || ClientCorruptionProtection.isProtectedResource(texture)) {
+        if (texture == null
+                || ClientCorruptionProtection.isProtectedResource(texture)
+                || TextureRenderOwnership.isGuiOwned(texture)) {
             return false;
         }
         String path = texture.getPath();

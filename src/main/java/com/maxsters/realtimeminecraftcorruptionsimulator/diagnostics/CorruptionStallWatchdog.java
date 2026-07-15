@@ -84,7 +84,7 @@ public final class CorruptionStallWatchdog {
                 Thread.currentThread().interrupt();
                 return;
             } catch (RuntimeException exception) {
-                RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Realtime Minecraft Corruption Simulator stall watchdog failed", exception);
+                RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Real-Time Minecraft Corruption Simulator stall watchdog failed", exception);
             }
         }
     }
@@ -114,7 +114,7 @@ public final class CorruptionStallWatchdog {
                     StandardOpenOption.CREATE,
                     StandardOpenOption.APPEND
             )) {
-                writer.write("==== Realtime Minecraft Corruption Simulator stall detected ====");
+                writer.write("==== Real-Time Minecraft Corruption Simulator stall detected ====");
                 writer.newLine();
                 writer.write("time=" + Instant.now() + " side=" + side + " stalled_ms=" + stalledMs);
                 writer.newLine();
@@ -124,7 +124,7 @@ public final class CorruptionStallWatchdog {
                 writer.newLine();
             }
         } catch (IOException exception) {
-            RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to write Realtime Minecraft Corruption Simulator stall dump", exception);
+            RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to write Real-Time Minecraft Corruption Simulator stall dump", exception);
         }
     }
 
@@ -140,7 +140,7 @@ public final class CorruptionStallWatchdog {
                     StandardOpenOption.TRUNCATE_EXISTING
             );
         } catch (IOException exception) {
-            RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to reset Realtime Minecraft Corruption Simulator stall dump", exception);
+            RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to reset Real-Time Minecraft Corruption Simulator stall dump", exception);
         }
     }
 

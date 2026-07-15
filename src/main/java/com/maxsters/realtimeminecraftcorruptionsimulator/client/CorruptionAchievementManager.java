@@ -778,7 +778,7 @@ public final class CorruptionAchievementManager {
         try {
             Files.createDirectories(path.getParent());
             try (OutputStream output = Files.newOutputStream(path)) {
-                properties.store(output, "Realtime Minecraft Corruption Simulator achievements");
+                properties.store(output, "Real-Time Minecraft Corruption Simulator achievements");
             }
         } catch (IOException exception) {
             RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to save corruption achievements", exception);

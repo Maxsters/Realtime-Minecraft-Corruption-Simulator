@@ -76,6 +76,28 @@ public final class TextureMutationManager {
         startupTextureScanRequested = true;
     }
 
+    public static void rememberGuiRenderedTexture(ResourceLocation texture) {
+        if (texture == null
+                || ClientCorruptionProtection.isProtectedResource(texture)
+                || !TextureRenderOwnership.rememberGuiRendered(texture)) {
+            return;
+        }
+
+        DirectTextureCorruptionHooks.forgetTexture(texture);
+        if (!MUTATED_GLOBAL_TEXTURES.remove(texture)) {
+            return;
+        }
+
+        PendingGlobalTextureScan scan = pendingGlobalTextureScan;
+        if (scan != null) {
+            scan.staleTextureIds.remove(texture);
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft != null && minecraft.getTextureManager() != null && minecraft.getResourceManager() != null) {
+            restoreTexture(minecraft, minecraft.getResourceManager(), texture, CorruptionSurface.TEXTURE_MEMORY, "texture_resource:", "global");
+        }
+    }
+
     public static void onSettingsChanged(CorruptionStateSnapshot previous, CorruptionStateSnapshot current) {
         CorruptionEffectStack previousStack = CorruptionEffectStack.from(previous);
         CorruptionEffectStack currentStack = CorruptionEffectStack.from(current);
@@ -304,6 +326,11 @@ public final class TextureMutationManager {
                 && scan.ordinal < MAX_GLOBAL_TEXTURES_PER_SCAN
                 && processedThisTick < MAX_GLOBAL_TEXTURE_MUTATIONS_PER_TICK) {
             ResourceLocation textureId = scan.textureIds.get(scan.ordinal);
+            if (TextureRenderOwnership.isGuiOwned(textureId)) {
+                scan.ordinal++;
+                processedThisTick++;
+                continue;
+            }
             float intensity = globalTextureIntensity(scan.stack, textureId, scan.ordinal);
             Resource resource = scan.resources.get(textureId);
             scan.ordinal++;
@@ -498,7 +525,7 @@ public final class TextureMutationManager {
         if (!path.startsWith(ALL_TEXTURE_PREFIX + "/") || !path.endsWith(".png")) {
             return false;
         }
-        if (path.startsWith(GUI_TEXTURE_PREFIX + "/") || path.startsWith("textures/font/") || path.startsWith("textures/atlas/")) {
+        if (TextureRenderOwnership.isGuiOwned(location) || path.startsWith("textures/font/") || path.startsWith("textures/atlas/")) {
             return false;
         }
         if (isDestroyStageTexturePath(path)) {

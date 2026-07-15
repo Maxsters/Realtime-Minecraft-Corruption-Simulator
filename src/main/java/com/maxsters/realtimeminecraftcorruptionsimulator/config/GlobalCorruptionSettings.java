@@ -141,7 +141,7 @@ public final class GlobalCorruptionSettings {
             try (InputStream inputStream = Files.newInputStream(path)) {
                 properties.load(inputStream);
             } catch (IOException exception) {
-                RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to load Realtime Minecraft Corruption Simulator settings", exception);
+                RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to load Real-Time Minecraft Corruption Simulator settings", exception);
             }
         }
 
@@ -182,10 +182,10 @@ public final class GlobalCorruptionSettings {
         try {
             Files.createDirectories(path.getParent());
             try (OutputStream outputStream = Files.newOutputStream(path)) {
-                properties.store(outputStream, "Realtime Minecraft Corruption Simulator settings");
+                properties.store(outputStream, "Real-Time Minecraft Corruption Simulator settings");
             }
         } catch (IOException exception) {
-            RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to save Realtime Minecraft Corruption Simulator settings", exception);
+            RealtimeMinecraftCorruptionSimulator.LOGGER.warn("Unable to save Real-Time Minecraft Corruption Simulator settings", exception);
         }
     }
 
