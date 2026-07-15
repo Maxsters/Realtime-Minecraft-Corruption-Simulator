@@ -1,0 +1,1 @@
+RTMCS is an independent project and is **not** affiliated with, endorsed by, or developed by Redscientist Labs or the RTCV team. RTCV is referenced only to describe the style of real-time corruption that inspired this mod.
