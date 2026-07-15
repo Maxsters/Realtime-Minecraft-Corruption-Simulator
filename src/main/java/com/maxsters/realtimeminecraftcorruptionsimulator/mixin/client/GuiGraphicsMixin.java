@@ -16,6 +16,22 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @SuppressWarnings("target")
 public abstract class GuiGraphicsMixin {
     @Inject(
+            method = "blitRepeating(Lnet/minecraft/resources/ResourceLocation;IIIIIIIIII)V",
+            at = @At("HEAD"),
+            cancellable = true,
+            remap = false,
+            require = 0
+    )
+    @Dynamic("Guards Forge's extended tiled blit overload, whose name is unchanged at runtime.")
+    private void rmc$skipEmptyRepeatingSlice(ResourceLocation texture, int x, int y, int width, int height, int sourceU, int sourceV, int tileWidth, int tileHeight, int textureWidth, int textureHeight, CallbackInfo callback) {
+        // Corrupted widget dimensions can make a nine-slice border zero-sized. Vanilla
+        // divides by the tile span before noticing that the slice has no pixels to draw.
+        if (width <= 0 || height <= 0 || tileWidth <= 0 || tileHeight <= 0) {
+            callback.cancel();
+        }
+    }
+
+    @Inject(
             method = {
                     "blit(Lnet/minecraft/resources/ResourceLocation;IIIIIIIFFII)V",
                     "m_280312_(Lnet/minecraft/resources/ResourceLocation;IIIIIIIFFII)V"
