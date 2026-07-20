@@ -14,6 +14,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
 import net.minecraft.world.level.levelgen.DensityFunction;
+import net.minecraft.world.level.levelgen.NoiseRouter;
 import net.minecraft.world.level.levelgen.feature.Feature;
 import net.minecraftforge.registries.ForgeRegistries;
 
@@ -272,6 +273,29 @@ public final class WorldgenCorruptionHooks {
             return function;
         }
         return new CorruptedDensityFunction(channel, function);
+    }
+
+    public static NoiseRouter corruptRuntimeNoiseRouter(NoiseRouter router) {
+        if (router == null) {
+            return null;
+        }
+        return new NoiseRouter(
+                router.barrierNoise(),
+                router.fluidLevelFloodednessNoise(),
+                router.fluidLevelSpreadNoise(),
+                router.lavaNoise(),
+                corruptDensity("temperature", router.temperature()),
+                corruptDensity("vegetation", router.vegetation()),
+                corruptDensity("continents", router.continents()),
+                corruptDensity("erosion", router.erosion()),
+                corruptDensity("depth", router.depth()),
+                corruptDensity("ridges", router.ridges()),
+                corruptDensity("initial_density", router.initialDensityWithoutJaggedness()),
+                corruptDensity("final_density", router.finalDensity()),
+                router.veinToggle(),
+                router.veinRidged(),
+                router.veinGap()
+        );
     }
 
     public static boolean shouldCorruptDensity(String channel) {

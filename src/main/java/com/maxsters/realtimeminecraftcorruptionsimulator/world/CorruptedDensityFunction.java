@@ -75,7 +75,8 @@ public final class CorruptedDensityFunction implements DensityFunction {
 
     @Override
     public KeyDispatchDataCodec<? extends DensityFunction> codec() {
-        return delegate.codec();
+        // This decorator is installed only in RandomState's runtime router and must never enter saved worldgen data.
+        throw new UnsupportedOperationException("CorruptedDensityFunction is a runtime-only density decorator");
     }
 
     private WorldgenCorruptionHooks.DensityRuntime runtime() {

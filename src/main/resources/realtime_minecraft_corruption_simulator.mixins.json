@@ -31,10 +31,10 @@
     "LivingEntityTargetingMixin",
     "MobSunBurnMixin",
     "MerchantResultSlotMixin",
-    "NoiseRouterMixin",
     "PathNavigationMixin",
     "PlayerMechanicsMixin",
     "ProjectileMixin",
+    "RandomStateMixin",
     "SurfaceRulesStateRuleMixin"
   ],
   "client": [
