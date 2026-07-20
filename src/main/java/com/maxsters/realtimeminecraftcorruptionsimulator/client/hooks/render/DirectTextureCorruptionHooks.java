@@ -76,6 +76,11 @@ public final class DirectTextureCorruptionHooks {
         return replacement;
     }
 
+    public static boolean shouldInterceptTexture(ResourceLocation texture) {
+        return isDirectTextureCandidate(texture)
+                && ClientCorruptionEffects.currentForWorldRendering().activeOrExtreme(CorruptionSurface.TEXTURE_MEMORY);
+    }
+
     public static Uv rawUv(float u, float v) {
         RawTextureState state = RAW_TEXTURE.get();
         return state == null ? new Uv(u, v) : state.rawUv(u, v);
